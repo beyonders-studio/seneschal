@@ -4,23 +4,41 @@
  * Hoard
  * OpenAPI spec version: 0.0.1
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
   DataTag,
   DefinedInitialDataOptions,
   DefinedUseQueryResult,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { SettingsRead } from "../hoard.schemas";
+import type {
+  HTTPValidationError,
+  ListSettingsCategoriesParams,
+  SettingsCategoryCreate,
+  SettingsCategoryRead,
+  SettingsCategoryUpdate,
+  SettingsLocationCreate,
+  SettingsLocationRead,
+  SettingsLocationUpdate,
+  SettingsRead,
+  SettingsReasonRead,
+  SettingsReasonWrite,
+  SettingsUnitRead,
+  SettingsUnitWrite,
+  SettingsUpdate,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
-import type { ErrorType } from "../../mutator";
+import type { ErrorType, BodyType } from "../../mutator";
 
 type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
@@ -158,3 +176,1649 @@ export function useReadSettings<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Change the organization's settings.
+ * @summary Update Settings
+ */
+export const updateSettings = (
+  settingsUpdate: BodyType<SettingsUpdate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsRead>(
+    {
+      url: `/api/v1/settings`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: settingsUpdate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsMutationKey = () => ["updateSettings"] as const;
+
+export const getUpdateSettingsMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettings>>,
+    TError,
+    UpdateSettingsMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettings>>,
+  TError,
+  UpdateSettingsMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettings>>,
+    UpdateSettingsMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateSettings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsMutationResult = NonNullable<Awaited<ReturnType<typeof updateSettings>>>;
+export type UpdateSettingsMutationBody = BodyType<SettingsUpdate>;
+export type UpdateSettingsMutationError = ErrorType<void>;
+export type UpdateSettingsMutationVariables = { data: BodyType<SettingsUpdate> };
+
+/**
+ * Change the organization's settings.
+ * @summary Update Settings
+ */
+export const useUpdateSettings = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettings>>,
+      TError,
+      UpdateSettingsMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettings>>,
+  TError,
+  UpdateSettingsMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsMutationOptions(options), queryClient);
+};
+/**
+ * The units stock is counted and bought in, by name.
+ * @summary List Settings Units
+ */
+export const listSettingsUnits = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsUnitRead[]>(
+    { url: `/api/v1/settings/units`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListSettingsUnitsQueryKey = () => {
+  return [`/api/v1/settings/units`] as const;
+};
+
+export const getListSettingsUnitsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsUnits>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsUnits>>, TError, TData>>;
+  request?: SecondParameter<typeof apiMutator>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsUnitsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsUnits>>> = ({ signal }) =>
+    listSettingsUnits(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsUnits>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsUnitsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsUnits>>
+>;
+export type ListSettingsUnitsQueryError = ErrorType<void>;
+
+/**
+ * The units stock is counted and bought in, by name.
+ * @summary List Settings Units
+ */
+export function useListSettingsUnits<
+  TData = Awaited<ReturnType<typeof listSettingsUnits>>,
+  TError = ErrorType<void>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsUnits>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsUnits>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsUnits>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The units stock is counted and bought in, by name.
+ * @summary List Settings Units
+ */
+export function useListSettingsUnits<
+  TData = Awaited<ReturnType<typeof listSettingsUnits>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsUnits>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsUnits>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsUnits>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The units stock is counted and bought in, by name.
+ * @summary List Settings Units
+ */
+export function useListSettingsUnits<
+  TData = Awaited<ReturnType<typeof listSettingsUnits>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsUnits>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The units stock is counted and bought in, by name.
+ * @summary List Settings Units
+ */
+export function useListSettingsUnits<
+  TData = Awaited<ReturnType<typeof listSettingsUnits>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsUnits>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsUnitsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Unit
+ */
+export const createSettingsUnit = (
+  settingsUnitWrite: BodyType<SettingsUnitWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsUnitRead>(
+    {
+      url: `/api/v1/settings/units`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsUnitWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsUnitMutationKey = () => ["createSettingsUnit"] as const;
+
+export const getCreateSettingsUnitMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsUnit>>,
+    TError,
+    CreateSettingsUnitMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsUnit>>,
+  TError,
+  CreateSettingsUnitMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsUnitMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsUnit>>,
+    CreateSettingsUnitMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsUnit(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsUnit>>
+>;
+export type CreateSettingsUnitMutationBody = BodyType<SettingsUnitWrite>;
+export type CreateSettingsUnitMutationError = ErrorType<void>;
+export type CreateSettingsUnitMutationVariables = { data: BodyType<SettingsUnitWrite> };
+
+/** @summary Create Settings Unit */
+export const useCreateSettingsUnit = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsUnit>>,
+      TError,
+      CreateSettingsUnitMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsUnit>>,
+  TError,
+  CreateSettingsUnitMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsUnitMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Unit
+ */
+export const updateSettingsUnit = (
+  unitId: number,
+  settingsUnitWrite: BodyType<SettingsUnitWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsUnitRead>(
+    {
+      url: `/api/v1/settings/units/${unitId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: settingsUnitWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsUnitMutationKey = () => ["updateSettingsUnit"] as const;
+
+export const getUpdateSettingsUnitMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsUnit>>,
+    TError,
+    UpdateSettingsUnitMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsUnit>>,
+  TError,
+  UpdateSettingsUnitMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsUnitMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsUnit>>,
+    UpdateSettingsUnitMutationVariables
+  > = (props) => {
+    const { unitId, data } = props ?? {};
+
+    return updateSettingsUnit(unitId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsUnit>>
+>;
+export type UpdateSettingsUnitMutationBody = BodyType<SettingsUnitWrite>;
+export type UpdateSettingsUnitMutationError = ErrorType<void>;
+export type UpdateSettingsUnitMutationVariables = {
+  unitId: number;
+  data: BodyType<SettingsUnitWrite>;
+};
+
+/** @summary Update Settings Unit */
+export const useUpdateSettingsUnit = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsUnit>>,
+      TError,
+      UpdateSettingsUnitMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsUnit>>,
+  TError,
+  UpdateSettingsUnitMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsUnitMutationOptions(options), queryClient);
+};
+/**
+ * @summary Delete Settings Unit
+ */
+export const deleteSettingsUnit = (
+  unitId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/units/${unitId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsUnitMutationKey = () => ["deleteSettingsUnit"] as const;
+
+export const getDeleteSettingsUnitMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsUnit>>,
+    TError,
+    DeleteSettingsUnitMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsUnit>>,
+  TError,
+  DeleteSettingsUnitMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsUnitMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsUnit>>,
+    DeleteSettingsUnitMutationVariables
+  > = (props) => {
+    const { unitId } = props ?? {};
+
+    return deleteSettingsUnit(unitId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsUnitMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsUnit>>
+>;
+
+export type DeleteSettingsUnitMutationError = ErrorType<void>;
+export type DeleteSettingsUnitMutationVariables = { unitId: number };
+
+/** @summary Delete Settings Unit */
+export const useDeleteSettingsUnit = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsUnit>>,
+      TError,
+      DeleteSettingsUnitMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsUnit>>,
+  TError,
+  DeleteSettingsUnitMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsUnitMutationOptions(options), queryClient);
+};
+/**
+ * The categories of one kind of record, or of every kind, by name.
+ * @summary List Settings Categories
+ */
+export const listSettingsCategories = (
+  params?: ListSettingsCategoriesParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsCategoryRead[]>(
+    { url: `/api/v1/settings/categories`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getListSettingsCategoriesQueryKey = (params?: ListSettingsCategoriesParams) => {
+  return [`/api/v1/settings/categories`, ...(params ? [params] : [])] as const;
+};
+
+export const getListSettingsCategoriesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsCategories>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsCategoriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsCategories>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsCategoriesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsCategories>>> = ({ signal }) =>
+    listSettingsCategories(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsCategories>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsCategoriesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsCategories>>
+>;
+export type ListSettingsCategoriesQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The categories of one kind of record, or of every kind, by name.
+ * @summary List Settings Categories
+ */
+export function useListSettingsCategories<
+  TData = Awaited<ReturnType<typeof listSettingsCategories>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: undefined | ListSettingsCategoriesParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsCategories>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsCategories>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsCategories>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The categories of one kind of record, or of every kind, by name.
+ * @summary List Settings Categories
+ */
+export function useListSettingsCategories<
+  TData = Awaited<ReturnType<typeof listSettingsCategories>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsCategoriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsCategories>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsCategories>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsCategories>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The categories of one kind of record, or of every kind, by name.
+ * @summary List Settings Categories
+ */
+export function useListSettingsCategories<
+  TData = Awaited<ReturnType<typeof listSettingsCategories>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsCategoriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsCategories>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The categories of one kind of record, or of every kind, by name.
+ * @summary List Settings Categories
+ */
+export function useListSettingsCategories<
+  TData = Awaited<ReturnType<typeof listSettingsCategories>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsCategoriesParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsCategories>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsCategoriesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Category
+ */
+export const createSettingsCategory = (
+  settingsCategoryCreate: BodyType<SettingsCategoryCreate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsCategoryRead>(
+    {
+      url: `/api/v1/settings/categories`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsCategoryCreate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsCategoryMutationKey = () => ["createSettingsCategory"] as const;
+
+export const getCreateSettingsCategoryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsCategory>>,
+    TError,
+    CreateSettingsCategoryMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsCategory>>,
+  TError,
+  CreateSettingsCategoryMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsCategoryMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsCategory>>,
+    CreateSettingsCategoryMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsCategory(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsCategoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsCategory>>
+>;
+export type CreateSettingsCategoryMutationBody = BodyType<SettingsCategoryCreate>;
+export type CreateSettingsCategoryMutationError = ErrorType<void>;
+export type CreateSettingsCategoryMutationVariables = { data: BodyType<SettingsCategoryCreate> };
+
+/** @summary Create Settings Category */
+export const useCreateSettingsCategory = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsCategory>>,
+      TError,
+      CreateSettingsCategoryMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsCategory>>,
+  TError,
+  CreateSettingsCategoryMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsCategoryMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Category
+ */
+export const updateSettingsCategory = (
+  categoryId: number,
+  settingsCategoryUpdate: BodyType<SettingsCategoryUpdate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsCategoryRead>(
+    {
+      url: `/api/v1/settings/categories/${categoryId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: settingsCategoryUpdate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsCategoryMutationKey = () => ["updateSettingsCategory"] as const;
+
+export const getUpdateSettingsCategoryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsCategory>>,
+    TError,
+    UpdateSettingsCategoryMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsCategory>>,
+  TError,
+  UpdateSettingsCategoryMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsCategoryMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsCategory>>,
+    UpdateSettingsCategoryMutationVariables
+  > = (props) => {
+    const { categoryId, data } = props ?? {};
+
+    return updateSettingsCategory(categoryId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsCategoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsCategory>>
+>;
+export type UpdateSettingsCategoryMutationBody = BodyType<SettingsCategoryUpdate>;
+export type UpdateSettingsCategoryMutationError = ErrorType<void>;
+export type UpdateSettingsCategoryMutationVariables = {
+  categoryId: number;
+  data: BodyType<SettingsCategoryUpdate>;
+};
+
+/** @summary Update Settings Category */
+export const useUpdateSettingsCategory = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsCategory>>,
+      TError,
+      UpdateSettingsCategoryMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsCategory>>,
+  TError,
+  UpdateSettingsCategoryMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsCategoryMutationOptions(options), queryClient);
+};
+/**
+ * @summary Delete Settings Category
+ */
+export const deleteSettingsCategory = (
+  categoryId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/categories/${categoryId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsCategoryMutationKey = () => ["deleteSettingsCategory"] as const;
+
+export const getDeleteSettingsCategoryMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsCategory>>,
+    TError,
+    DeleteSettingsCategoryMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsCategory>>,
+  TError,
+  DeleteSettingsCategoryMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsCategoryMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsCategory>>,
+    DeleteSettingsCategoryMutationVariables
+  > = (props) => {
+    const { categoryId } = props ?? {};
+
+    return deleteSettingsCategory(categoryId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsCategoryMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsCategory>>
+>;
+
+export type DeleteSettingsCategoryMutationError = ErrorType<void>;
+export type DeleteSettingsCategoryMutationVariables = { categoryId: number };
+
+/** @summary Delete Settings Category */
+export const useDeleteSettingsCategory = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsCategory>>,
+      TError,
+      DeleteSettingsCategoryMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsCategory>>,
+  TError,
+  DeleteSettingsCategoryMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsCategoryMutationOptions(options), queryClient);
+};
+/**
+ * Where stock is kept: the main location first, then the rest by name.
+ * @summary List Settings Locations
+ */
+export const listSettingsLocations = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsLocationRead[]>(
+    { url: `/api/v1/settings/locations`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListSettingsLocationsQueryKey = () => {
+  return [`/api/v1/settings/locations`] as const;
+};
+
+export const getListSettingsLocationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsLocations>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof listSettingsLocations>>, TError, TData>
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsLocationsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsLocations>>> = ({ signal }) =>
+    listSettingsLocations(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsLocations>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsLocationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsLocations>>
+>;
+export type ListSettingsLocationsQueryError = ErrorType<void>;
+
+/**
+ * Where stock is kept: the main location first, then the rest by name.
+ * @summary List Settings Locations
+ */
+export function useListSettingsLocations<
+  TData = Awaited<ReturnType<typeof listSettingsLocations>>,
+  TError = ErrorType<void>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsLocations>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsLocations>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsLocations>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Where stock is kept: the main location first, then the rest by name.
+ * @summary List Settings Locations
+ */
+export function useListSettingsLocations<
+  TData = Awaited<ReturnType<typeof listSettingsLocations>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsLocations>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsLocations>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsLocations>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Where stock is kept: the main location first, then the rest by name.
+ * @summary List Settings Locations
+ */
+export function useListSettingsLocations<
+  TData = Awaited<ReturnType<typeof listSettingsLocations>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsLocations>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Where stock is kept: the main location first, then the rest by name.
+ * @summary List Settings Locations
+ */
+export function useListSettingsLocations<
+  TData = Awaited<ReturnType<typeof listSettingsLocations>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsLocations>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsLocationsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Location
+ */
+export const createSettingsLocation = (
+  settingsLocationCreate: BodyType<SettingsLocationCreate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsLocationRead>(
+    {
+      url: `/api/v1/settings/locations`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsLocationCreate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsLocationMutationKey = () => ["createSettingsLocation"] as const;
+
+export const getCreateSettingsLocationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsLocation>>,
+    TError,
+    CreateSettingsLocationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsLocation>>,
+  TError,
+  CreateSettingsLocationMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsLocationMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsLocation>>,
+    CreateSettingsLocationMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsLocation(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsLocationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsLocation>>
+>;
+export type CreateSettingsLocationMutationBody = BodyType<SettingsLocationCreate>;
+export type CreateSettingsLocationMutationError = ErrorType<void>;
+export type CreateSettingsLocationMutationVariables = { data: BodyType<SettingsLocationCreate> };
+
+/** @summary Create Settings Location */
+export const useCreateSettingsLocation = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsLocation>>,
+      TError,
+      CreateSettingsLocationMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsLocation>>,
+  TError,
+  CreateSettingsLocationMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsLocationMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Location
+ */
+export const updateSettingsLocation = (
+  locationId: number,
+  settingsLocationUpdate: BodyType<SettingsLocationUpdate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsLocationRead>(
+    {
+      url: `/api/v1/settings/locations/${locationId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: settingsLocationUpdate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsLocationMutationKey = () => ["updateSettingsLocation"] as const;
+
+export const getUpdateSettingsLocationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsLocation>>,
+    TError,
+    UpdateSettingsLocationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsLocation>>,
+  TError,
+  UpdateSettingsLocationMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsLocationMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsLocation>>,
+    UpdateSettingsLocationMutationVariables
+  > = (props) => {
+    const { locationId, data } = props ?? {};
+
+    return updateSettingsLocation(locationId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsLocationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsLocation>>
+>;
+export type UpdateSettingsLocationMutationBody = BodyType<SettingsLocationUpdate>;
+export type UpdateSettingsLocationMutationError = ErrorType<void>;
+export type UpdateSettingsLocationMutationVariables = {
+  locationId: number;
+  data: BodyType<SettingsLocationUpdate>;
+};
+
+/** @summary Update Settings Location */
+export const useUpdateSettingsLocation = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsLocation>>,
+      TError,
+      UpdateSettingsLocationMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsLocation>>,
+  TError,
+  UpdateSettingsLocationMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsLocationMutationOptions(options), queryClient);
+};
+/**
+ * @summary Delete Settings Location
+ */
+export const deleteSettingsLocation = (
+  locationId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/locations/${locationId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsLocationMutationKey = () => ["deleteSettingsLocation"] as const;
+
+export const getDeleteSettingsLocationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsLocation>>,
+    TError,
+    DeleteSettingsLocationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsLocation>>,
+  TError,
+  DeleteSettingsLocationMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsLocationMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsLocation>>,
+    DeleteSettingsLocationMutationVariables
+  > = (props) => {
+    const { locationId } = props ?? {};
+
+    return deleteSettingsLocation(locationId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsLocationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsLocation>>
+>;
+
+export type DeleteSettingsLocationMutationError = ErrorType<void>;
+export type DeleteSettingsLocationMutationVariables = { locationId: number };
+
+/** @summary Delete Settings Location */
+export const useDeleteSettingsLocation = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsLocation>>,
+      TError,
+      DeleteSettingsLocationMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsLocation>>,
+  TError,
+  DeleteSettingsLocationMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsLocationMutationOptions(options), queryClient);
+};
+/**
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
+ * @summary List Settings Reasons
+ */
+export const listSettingsReasons = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsReasonRead[]>(
+    { url: `/api/v1/settings/reasons`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListSettingsReasonsQueryKey = () => {
+  return [`/api/v1/settings/reasons`] as const;
+};
+
+export const getListSettingsReasonsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsReasons>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsReasons>>, TError, TData>>;
+  request?: SecondParameter<typeof apiMutator>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsReasonsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsReasons>>> = ({ signal }) =>
+    listSettingsReasons(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsReasons>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsReasonsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsReasons>>
+>;
+export type ListSettingsReasonsQueryError = ErrorType<void>;
+
+/**
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
+ * @summary List Settings Reasons
+ */
+export function useListSettingsReasons<
+  TData = Awaited<ReturnType<typeof listSettingsReasons>>,
+  TError = ErrorType<void>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsReasons>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsReasons>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsReasons>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
+ * @summary List Settings Reasons
+ */
+export function useListSettingsReasons<
+  TData = Awaited<ReturnType<typeof listSettingsReasons>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsReasons>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsReasons>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsReasons>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
+ * @summary List Settings Reasons
+ */
+export function useListSettingsReasons<
+  TData = Awaited<ReturnType<typeof listSettingsReasons>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsReasons>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
+ * @summary List Settings Reasons
+ */
+export function useListSettingsReasons<
+  TData = Awaited<ReturnType<typeof listSettingsReasons>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsReasons>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsReasonsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Reason
+ */
+export const createSettingsReason = (
+  settingsReasonWrite: BodyType<SettingsReasonWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsReasonRead>(
+    {
+      url: `/api/v1/settings/reasons`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsReasonWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsReasonMutationKey = () => ["createSettingsReason"] as const;
+
+export const getCreateSettingsReasonMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsReason>>,
+    TError,
+    CreateSettingsReasonMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsReason>>,
+  TError,
+  CreateSettingsReasonMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsReasonMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsReason>>,
+    CreateSettingsReasonMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsReason(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsReason>>
+>;
+export type CreateSettingsReasonMutationBody = BodyType<SettingsReasonWrite>;
+export type CreateSettingsReasonMutationError = ErrorType<void>;
+export type CreateSettingsReasonMutationVariables = { data: BodyType<SettingsReasonWrite> };
+
+/** @summary Create Settings Reason */
+export const useCreateSettingsReason = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsReason>>,
+      TError,
+      CreateSettingsReasonMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsReason>>,
+  TError,
+  CreateSettingsReasonMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsReasonMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Reason
+ */
+export const updateSettingsReason = (
+  reasonId: number,
+  settingsReasonWrite: BodyType<SettingsReasonWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsReasonRead>(
+    {
+      url: `/api/v1/settings/reasons/${reasonId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: settingsReasonWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsReasonMutationKey = () => ["updateSettingsReason"] as const;
+
+export const getUpdateSettingsReasonMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsReason>>,
+    TError,
+    UpdateSettingsReasonMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsReason>>,
+  TError,
+  UpdateSettingsReasonMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsReasonMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsReason>>,
+    UpdateSettingsReasonMutationVariables
+  > = (props) => {
+    const { reasonId, data } = props ?? {};
+
+    return updateSettingsReason(reasonId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsReason>>
+>;
+export type UpdateSettingsReasonMutationBody = BodyType<SettingsReasonWrite>;
+export type UpdateSettingsReasonMutationError = ErrorType<void>;
+export type UpdateSettingsReasonMutationVariables = {
+  reasonId: number;
+  data: BodyType<SettingsReasonWrite>;
+};
+
+/** @summary Update Settings Reason */
+export const useUpdateSettingsReason = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsReason>>,
+      TError,
+      UpdateSettingsReasonMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsReason>>,
+  TError,
+  UpdateSettingsReasonMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsReasonMutationOptions(options), queryClient);
+};
+/**
+ * @summary Delete Settings Reason
+ */
+export const deleteSettingsReason = (
+  reasonId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/reasons/${reasonId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsReasonMutationKey = () => ["deleteSettingsReason"] as const;
+
+export const getDeleteSettingsReasonMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsReason>>,
+    TError,
+    DeleteSettingsReasonMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsReason>>,
+  TError,
+  DeleteSettingsReasonMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsReasonMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsReason>>,
+    DeleteSettingsReasonMutationVariables
+  > = (props) => {
+    const { reasonId } = props ?? {};
+
+    return deleteSettingsReason(reasonId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsReasonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsReason>>
+>;
+
+export type DeleteSettingsReasonMutationError = ErrorType<void>;
+export type DeleteSettingsReasonMutationVariables = { reasonId: number };
+
+/** @summary Delete Settings Reason */
+export const useDeleteSettingsReason = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsReason>>,
+      TError,
+      DeleteSettingsReasonMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsReason>>,
+  TError,
+  DeleteSettingsReasonMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsReasonMutationOptions(options), queryClient);
+};

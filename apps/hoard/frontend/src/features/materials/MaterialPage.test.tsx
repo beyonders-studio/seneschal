@@ -1,0 +1,63 @@
+import { screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+
+import { materialDetail, SETTINGS } from "@/features/items/testing";
+import { SEE_COSTS } from "@/lib/permissions";
+import { openSignedIn, signedIn } from "@/testing";
+
+const OOLONG = materialDetail({
+  on_hand: "13.000000",
+  low_stock_limit: "5.000000",
+  purchase_unit_id: 1,
+  purchase_conversion: "250.000000",
+  average_cost: "2.000000",
+  stock: [
+    { location_id: 10, quantity: "10.000000" },
+    { location_id: 11, quantity: "3.000000" },
+  ],
+  lots: [
+    {
+      id: 1,
+      location_id: 10,
+      number: "L-42",
+      dated_on: "2026-11-01",
+      expires_on: null,
+      notes: null,
+      balance: "10.000000",
+    },
+  ],
+});
+
+const opened = { ...SETTINGS, "GET /api/v1/materials/5": { status: 200, data: OOLONG } };
+
+describe("MaterialPage", () => {
+  it("shows a material's stock and lots at each location, and who added it", async () => {
+    await openSignedIn("/stock/materials/5", signedIn(), opened);
+
+    await screen.findByRole("heading", { name: "Oolong" });
+    const [stock, lots] = screen.getAllByRole("table");
+    await within(stock).findByText("Main location");
+    within(stock).getByText("10 g");
+    within(stock).getByText("Back room");
+    within(stock).getByText("3 g");
+    within(lots).getByText("L-42");
+    screen.getByText("13 g");
+    screen.getByText("g of 250 g");
+    await screen.findByText(/Added by Ada/);
+    expect(screen.queryByText("Average cost")).toBeNull();
+  });
+
+  it("shows its average cost to a member who sees costs", async () => {
+    await openSignedIn("/stock/materials/5", signedIn({ permissions: ["use", SEE_COSTS] }), opened);
+
+    await screen.findByText("Average cost");
+    await screen.findByText("$2.00");
+  });
+
+  it("leaves out editing while Hoard is read-only", async () => {
+    await openSignedIn("/stock/materials/5", signedIn({ read_only: true }), opened);
+
+    await screen.findByRole("heading", { name: "Oolong" });
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+  });
+});
