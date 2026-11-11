@@ -64,4 +64,21 @@ export interface Me {
   plan: string | null;
 }
 
+export interface MemberName {
+  member_ref: string;
+  name: string | null;
+}
+
+export interface SettingsRead {
+  currency: string;
+}
+
 export type Healthz200 = { [key: string]: string };
+
+export type ListMemberNamesParams = {
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  member_ref: string[];
+};

@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
@@ -21,12 +22,13 @@ export const signedIn = (overrides: Partial<Me> = {}): Me => ({
   ...overrides,
 });
 
-interface Answer {
+export interface Answer {
   status: number;
   data?: unknown;
 }
 
-/** Answers Hoard's API by `"<METHOD> <path>"`; returns the requests it was asked. */
+/** Answers Hoard's API by `"<METHOD> <path>"` (without the query); returns the
+ *  requests it was asked. */
 export function answerApi(answers: Record<string, Answer>): InternalAxiosRequestConfig[] {
   const asked: InternalAxiosRequestConfig[] = [];
   apiClient.defaults.adapter = async (config) => {
@@ -41,10 +43,14 @@ export function answerApi(answers: Record<string, Answer>): InternalAxiosRequest
   return asked;
 }
 
-/** Opens Hoard at `path`, framed in Initiative, and waits until it asks for the handoff. */
+/** Opens Hoard at `path`, framed in Initiative, and waits until it asks for the handoff.
+ *  Each opening has a cache of its own, and a failed read is not tried again. */
 export async function openPage(path: string) {
+  const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <RouterProvider router={createAppRouter(createMemoryHistory({ initialEntries: [path] }))} />
+    <QueryClientProvider client={queries}>
+      <RouterProvider router={createAppRouter(createMemoryHistory({ initialEntries: [path] }))} />
+    </QueryClientProvider>
   );
   await screen.findByText("Connecting to Initiative…");
 }
@@ -57,12 +63,19 @@ export const sendHandoff = (fields: Record<string, unknown> = {}) =>
 export const post = (data: Record<string, unknown>) =>
   window.dispatchEvent(new MessageEvent("message", { data }));
 
-/** Opens Hoard at `path` with the session `/auth/me` gives. */
-export async function openSignedIn(path: string, me: Me = signedIn()) {
-  answerApi({
+/** Opens Hoard at `path` with the session `/auth/me` gives, answering the
+ *  page's other calls from `answers`; returns the requests it was asked. */
+export async function openSignedIn(
+  path: string,
+  me: Me = signedIn(),
+  answers: Record<string, Answer> = {}
+) {
+  const asked = answerApi({
     "POST /api/v1/auth/handoff/exchange": { status: 200, data: me },
     "GET /api/v1/auth/me": { status: 200, data: me },
+    ...answers,
   });
   await openPage(path);
   sendHandoff();
+  return asked;
 }

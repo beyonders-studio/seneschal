@@ -6,16 +6,18 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
 from hoard import plugin_manifest
+from hoard.api import router as api_router
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
+from hoard.endpoints import ENDPOINTS
 from seneschal_core.api import Plugin, install
-from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
+from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.platform import ORGANIZATION_HOOKS, platform_router
 from seneschal_core.sessions import Sessions
 
@@ -31,6 +33,11 @@ def plugin_for(settings: Settings) -> Plugin:
             public_id=plugin_manifest.PUBLIC_ID,
             listing_uid=plugin_manifest.UID,
             statement_key_pem=settings.entitlement_issuer_key_pem,
+        ),
+        api=InitiativeApi(
+            api_url=settings.initiative_api_url,
+            public_id=plugin_manifest.PUBLIC_ID,
+            key_pem=settings.plugin_private_key_pem,
         ),
         sessions=Sessions(
             app="hoard",
@@ -48,15 +55,6 @@ def _version() -> str:
 def _operation_id(route: APIRoute) -> str:
     """The route's function name, which names the generated client's call."""
     return route.name
-
-
-health = APIRouter(tags=["health"])
-
-
-@health.get("/healthz")
-async def healthz() -> dict[str, str]:
-    """Whether the process is up."""
-    return {"status": "ok"}
 
 
 def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -> FastAPI:
@@ -84,11 +82,8 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     )
     install(app, plugin)
 
-    api = APIRouter(prefix="/api/v1")
-    api.include_router(health)
-    api.include_router(auth_router)
-    app.include_router(api)
-    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints={}))
+    app.include_router(api_router)
+    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints=ENDPOINTS))
 
     static = settings.static_dir.resolve()
 

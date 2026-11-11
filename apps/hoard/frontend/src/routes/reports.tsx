@@ -1,22 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { ChartColumn } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { HoardPage } from "@/components/HoardPage";
-import { StatusMessage } from "@/ui/status-message";
+import { ReportsPage } from "@/features/reports/ReportsPage";
 
 /** Reports, opened inside an initiative. */
-export const Route = createFileRoute("/reports")({ component: ReportsPage });
+export const Route = createFileRoute("/reports")({ component: Reports });
 
-function ReportsPage() {
+function Reports() {
   const { t } = useTranslation();
   return (
     <HoardPage title={t("reports.title")}>
-      <StatusMessage
-        icon={<ChartColumn />}
-        title={t("reports.emptyTitle")}
-        description={t("reports.emptyBody")}
-      />
+      <ReportsPage />
     </HoardPage>
   );
 }

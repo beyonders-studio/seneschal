@@ -163,15 +163,48 @@ async def app(
     plugin = Plugin(
         database=serving_database,
         initiative=initiative_stand_in.initiative(),
+        api=initiative_stand_in.api(),
         sessions=Sessions(
             app="hoard", private_key_pem=settings.session_private_key_pem, cookie_secure=False
         ),
     )
     yield create_app(settings, plugin)
     await plugin.initiative.aclose()
+    await plugin.api.aclose()
 
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         yield client
+
+
+SignIn = Callable[..., Awaitable[dict[str, Any]]]
+
+
+@pytest.fixture
+def sign_in(initiative_stand_in: InitiativeStandIn, community_ref: str) -> SignIn:
+    """Sign ``client`` in to the test's community as a page does, as a member
+    holding ``use`` and ``permissions`` (``admin``: one who administers the
+    community), and answer who it is signed in as."""
+
+    async def sign_in(
+        client: AsyncClient,
+        permissions: tuple[str, ...] = (),
+        admin: bool = False,
+        *,
+        member_ref: str = MEMBER,
+        initiative_id: int | None = 1,
+    ) -> dict[str, Any]:
+        token = initiative_stand_in.handoff(
+            community_ref=community_ref,
+            member_ref=member_ref,
+            initiative_id=initiative_id,
+            admin=admin,
+            permissions=("use", *permissions),
+        )
+        answer = await client.post("/api/v1/auth/handoff/exchange", json={"handoff_token": token})
+        assert answer.status_code == 200, answer.text
+        return answer.json()
+
+    return sign_in
