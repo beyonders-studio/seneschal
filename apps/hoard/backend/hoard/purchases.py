@@ -135,6 +135,7 @@ async def receive_line(
 async def unreceive_line(db: WriteSession, line: PurchaseLine) -> None:
     """Undo receiving ``line``: its purchase adjustment and its lot go. Refused
     while any other adjustment draws on the lot."""
+    await db.flush()
     lot = (await db.exec(select(Lot).where(Lot.purchase_line_id == line.id))).first()
     if lot is not None:
         others = await db.exec(
