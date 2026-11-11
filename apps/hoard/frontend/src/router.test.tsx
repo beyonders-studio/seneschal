@@ -1,7 +1,18 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { openSignedIn } from "@/testing";
+import { materialDetail, productDetail, SETTINGS } from "@/features/items/testing";
+import { openSignedIn, signedIn } from "@/testing";
+
+/** What the catalog's pages read: no materials or products, but the ones opened. */
+const CATALOG = {
+  ...SETTINGS,
+  "GET /api/v1/materials": { status: 200, data: { items: [], total: 0 } },
+  "GET /api/v1/products": { status: 200, data: { items: [], total: 0 } },
+  "GET /api/v1/materials/3": { status: 200, data: materialDetail({ id: 3 }) },
+  "GET /api/v1/products/3": { status: 200, data: productDetail({ id: 3 }) },
+  "GET /api/v1/products/3/images": { status: 200, data: [] },
+};
 
 /** Waits for Stock's page, and answers which tab is selected. */
 const stockTab = async () => {
@@ -17,24 +28,24 @@ describe("Hoard's pages", () => {
     ["/stock/adjustments", "Adjustments", "No adjustments yet"],
     ["/stock/stocktakes", "Stocktakes", "No stocktakes yet"],
   ])("%s opens under Stock, on its tab", async (path, tab, empty) => {
-    await openSignedIn(path);
+    await openSignedIn(path, signedIn(), CATALOG);
     expect(await stockTab()).toBe(tab);
     await screen.findByText(empty);
   });
 
   it.each([
-    ["/stock/materials/3", "Materials", "Material"],
-    ["/stock/products/3", "Products", "Product"],
+    ["/stock/materials/3", "Materials", "Oolong"],
+    ["/stock/products/3", "Products", "Chai"],
     ["/stock/purchases/3", "Purchases", "Purchase"],
     ["/stock/stocktakes/3", "Stocktakes", "Stocktake"],
   ])("%s opens one record, under its tab", async (path, tab, heading) => {
-    await openSignedIn(path);
+    await openSignedIn(path, signedIn(), CATALOG);
     expect(await stockTab()).toBe(tab);
     await screen.findByRole("heading", { level: 2, name: heading });
   });
 
   it("Stock opens on its materials, and its tabs move between records", async () => {
-    await openSignedIn("/stock");
+    await openSignedIn("/stock", signedIn(), CATALOG);
     expect(await stockTab()).toBe("Materials");
     await screen.findByText("No materials yet");
 
