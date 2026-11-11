@@ -2,7 +2,22 @@
   "materials": {
     "emptyTitle": "No materials yet",
     "emptyBody": "The materials you buy will be here: how much you hold of each, where it's kept and when to order more.",
-    "pageTitle": "Material"
+    "pageTitle": "Material",
+    "add": "Add material",
+    "edit": "Edit material",
+    "trackingUnit": "Counted in",
+    "purchaseUnit": "Bought in",
+    "sameUnit": "The unit it's counted in",
+    "conversion": "How many it holds",
+    "conversionHint": "How many of the unit it's counted in make one of the unit it's bought in.",
+    "purchaseUnitIs": "{{unit}} of {{conversion}} {{trackingUnit}}",
+    "noUnits": "Add the units you count in under Settings first.",
+    "supplierCode": "Supplier's code",
+    "inventoriable": "Keeps stock",
+    "inventoriableHint": "Turn this off for something you buy but don't count, such as a tool.",
+    "notInventoriable": "Not stocked",
+    "saveFailed": "Couldn't save the material.",
+    "loadFailed": "Couldn't load the material."
   },
   "products": {
     "emptyTitle": "No products yet",
@@ -65,5 +80,20 @@
     "LAST_VARIATION": "A product keeps at least one variation.",
     "IMAGE_TYPE": "Add a GIF, JPEG, PNG or WebP picture.",
     "IMAGE_TOO_LARGE": "That picture is larger than 5 MB."
+  },
+  "items": {
+    "stock": "Stock by location",
+    "lots": "Lots",
+    "noStock": "Nothing on hand at any location yet.",
+    "noLots": "No lots yet.",
+    "lot": "Lot",
+    "expires": "Expires",
+    "balance": "Left",
+    "averageCost": "Average cost",
+    "low": "Low stock",
+    "noMatch": "Nothing matches that search.",
+    "removeTitle": "Delete {{name}}?",
+    "removeBody": "Its stock, lots and adjustments go with it.",
+    "removeFailed": "Couldn't delete it."
   }
 }
