@@ -35,22 +35,6 @@ apps/*/frontend/openapi.json
 .DS_Store
 Thumbs.db
 
-# AI planning docs (gitignored per CLAUDE.md convention)
+# Planning and design documents (AGENTS.md)
 history/
 .claude/worktrees/
-
-# Test artifacts
-htmlcov/
-.coverage*
-
-# Dev harness: the pairwise subjects the mock has minted (see dev/README.md).
-dev/.harness-subjects.json
-dev/.harness-subscriptions.json
-dev/.harness-guild-refs.json
-dev/.harness-store.json
-# A session signing key generated for local dev by scripts/dev-backend.sh.
-dev/.harness-session-key.pem
-# The key sealing webhook subscription secrets, generated beside it.
-dev/.harness-webhook-secret-key
-# The mock's stand-in for billing's statement key (it signs; the app verifies).
-dev/.harness-entitlement-issuer-key.pem

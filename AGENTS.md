@@ -38,6 +38,8 @@ Each app has its own Docker image, database, plug-in manifest, `VERSION` and
 - **The plug-in platform's routes** sit outside `/api/v1`, at the paths the
   protocol fixes: `POST /v1/endpoints` and `POST /v1/hooks/{name}`, each
   carrying an Initiative-signed context or lifecycle token.
+- **Hoard's pages** are `/stock`, `/production` and `/reports` at initiative
+  level and `/settings` at community level.
 - **Pages** receive Initiative's one-minute handoff over the parent bridge,
   exchange it at `POST /api/v1/auth/handoff/exchange` for the app's own signed
   session, and read who is signed in at `GET /api/v1/auth/me`.
