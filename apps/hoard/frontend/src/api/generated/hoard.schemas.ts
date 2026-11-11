@@ -14,6 +14,20 @@ export const CategoryKind = {
   product: "product",
 } as const;
 
+/**
+ * The adjustment reasons an organization starts with, which people rename
+ * or remove.
+ */
+export type DefaultReason = (typeof DefaultReason)[keyof typeof DefaultReason];
+
+export const DefaultReason = {
+  correction: "correction",
+  damaged: "damaged",
+  expired: "expired",
+  lost: "lost",
+  personal_use: "personal_use",
+} as const;
+
 export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
 
 export const ExportFormat = {
@@ -84,6 +98,88 @@ export const ItemKind = {
   variation: "variation",
 } as const;
 
+/**
+ * A lot of an item at a location, and what is left of it.
+ */
+export interface ItemLotRead {
+  id: number;
+  location_id: number;
+  number: string;
+  dated_on: string;
+  expires_on: string | null;
+  notes: string | null;
+  balance: string;
+}
+
+/**
+ * What is on hand of an item at one location.
+ */
+export interface ItemStockRead {
+  location_id: number;
+  quantity: string;
+}
+
+/**
+ * A material, with its stock and lots at each location.
+ */
+export interface MaterialDetail {
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  on_hand: string;
+  stock: ItemStockRead[];
+  lots: ItemLotRead[];
+  id: number;
+  name: string;
+  sku: string | null;
+  inventoriable: boolean;
+  tracking_unit_id: number;
+  purchase_unit_id: number | null;
+  purchase_conversion: string;
+  low_stock_limit: string | null;
+  category_id: number | null;
+  supplier_contact_id: number | null;
+  supplier_code: string | null;
+  average_cost: string | null;
+}
+
+export interface MaterialRead {
+  id: number;
+  name: string;
+  sku: string | null;
+  inventoriable: boolean;
+  tracking_unit_id: number;
+  purchase_unit_id: number | null;
+  purchase_conversion: string;
+  low_stock_limit: string | null;
+  category_id: number | null;
+  supplier_contact_id: number | null;
+  supplier_code: string | null;
+  on_hand: string;
+  average_cost: string | null;
+}
+
+/**
+ * A material as it is added, or as an edit leaves it.
+ */
+export interface MaterialWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  sku?: string | null;
+  inventoriable?: boolean;
+  tracking_unit_id: number;
+  purchase_unit_id?: number | null;
+  purchase_conversion?: number | string;
+  low_stock_limit?: number | string | null;
+  category_id?: number | null;
+  supplier_contact_id?: number | null;
+  supplier_code?: string | null;
+}
+
 export type MeTheme = (typeof MeTheme)[keyof typeof MeTheme] | null;
 
 export const MeTheme = {
@@ -111,6 +207,102 @@ export interface Me {
 export interface MemberName {
   member_ref: string;
   name: string | null;
+}
+
+export interface PageMaterialRead {
+  items: MaterialRead[];
+  total: number;
+}
+
+export type ProductStatus = (typeof ProductStatus)[keyof typeof ProductStatus];
+
+export const ProductStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+export interface ProductRead {
+  id: number;
+  name: string;
+  status: ProductStatus;
+  category_id: number | null;
+  low_stock_limit: string | null;
+  on_hand: string;
+  default_price: string | null;
+}
+
+export interface PageProductRead {
+  items: ProductRead[];
+  total: number;
+}
+
+export type ProductVariationReadAttributes = { [key: string]: string };
+
+export interface ProductVariationRead {
+  on_hand: string;
+  stock: ItemStockRead[];
+  lots: ItemLotRead[];
+  id: number;
+  attributes: ProductVariationReadAttributes;
+  sku: string | null;
+  is_default: boolean;
+  price: string | null;
+  average_cost: string | null;
+}
+
+/**
+ * A product, with its variations' stock and lots at each location.
+ */
+export interface ProductDetail {
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  id: number;
+  name: string;
+  status: ProductStatus;
+  category_id: number | null;
+  low_stock_limit: string | null;
+  on_hand: string;
+  default_price: string | null;
+  variations: ProductVariationRead[];
+}
+
+export interface ProductImageRead {
+  id: number;
+  position: number;
+  content_type: string;
+  size: number;
+  created_at: string;
+  created_by: string | null;
+}
+
+export type ProductVariationWriteAttributes = { [key: string]: string };
+
+/**
+ * A variation as it is added, or as an edit leaves it. Its price is taken
+ * only from a member who sees costs.
+ */
+export interface ProductVariationWrite {
+  attributes?: ProductVariationWriteAttributes;
+  sku?: string | null;
+  price?: number | string | null;
+}
+
+/**
+ * A product as it is added, or as an edit leaves it. Its default price is
+ * taken only from a member who sees costs.
+ */
+export interface ProductWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  status?: ProductStatus;
+  category_id?: number | null;
+  low_stock_limit?: number | string | null;
+  default_price?: number | string | null;
 }
 
 /**
@@ -149,11 +341,110 @@ export interface ReportValuation {
   total: string;
 }
 
+export interface SettingsCategoryCreate {
+  kind: CategoryKind;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface SettingsCategoryRead {
+  id: number;
+  kind: CategoryKind;
+  name: string;
+}
+
+export interface SettingsCategoryUpdate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface SettingsLocationCreate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface SettingsLocationRead {
+  id: number;
+  name: string | null;
+  main: boolean;
+}
+
+export interface SettingsLocationUpdate {
+  name: string | null;
+}
+
 export interface SettingsRead {
   currency: string;
 }
 
+export interface SettingsReasonRead {
+  id: number;
+  key: DefaultReason | null;
+  name: string | null;
+}
+
+export interface SettingsReasonWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface SettingsUnitRead {
+  id: number;
+  name: string;
+}
+
+export interface SettingsUnitWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface SettingsUpdate {
+  /** @pattern ^[A-Z]{3}$ */
+  currency: string;
+}
+
 export type Healthz200 = { [key: string]: string };
+
+export type ListSettingsCategoriesParams = {
+  kind?: CategoryKind | null;
+};
+
+export type ListMaterialsParams = {
+  q?: string | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListProductsParams = {
+  q?: string | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
 
 export type ExportRecordsParams = {
   format?: ExportFormat;
