@@ -30,4 +30,5 @@ apps/*/frontend/openapi.json
 # in an image
 **/*_test.py
 **/conftest.py
+packages/core/seneschal_core/testing.py
 apps/*/backend/scripts/
