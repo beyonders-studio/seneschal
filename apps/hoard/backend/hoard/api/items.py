@@ -1,18 +1,27 @@
-"""What materials' and products' pages share: who made a record and changed
-it, and an item's stock and lots at each location."""
+"""What materials' and products' pages share: the fields they take, who made
+a record and changed it, and an item's stock and lots at each location."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard.records import Lot, StockLevel
+
+#: A name or code someone types.
+Text = Annotated[str, Field(min_length=1, max_length=200)]
+OptionalText = Text | None
+#: A quantity, cost or price: exact, to six places, and never below zero.
+Amount = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=6)]
+#: The same, above zero.
+Positive = Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=6)]
 
 
 class ItemStamps(BaseModel):
