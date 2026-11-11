@@ -11,6 +11,7 @@
     "conversionHint": "How many of the unit it's counted in make one of the unit it's bought in.",
     "purchaseUnitIs": "{{unit}} of {{conversion}} {{trackingUnit}}",
     "noUnits": "Add the units you count in under Settings first.",
+    "supplier": "Preferred supplier",
     "supplierCode": "Supplier's code",
     "inventoriable": "Keeps stock",
     "inventoriableHint": "Turn this off for something you buy but don't count, such as a tool.",

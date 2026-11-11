@@ -18,10 +18,6 @@ async function openNewPurchase(contacts: Answer) {
   await openSignedIn("/stock/purchases", undefined, {
     "GET /api/v1/purchases": { status: 200, data: { items: [], total: 0 } },
     "GET /api/v1/contacts": contacts,
-    "GET /api/v1/adjustments/options": {
-      status: 200,
-      data: { items: [], locations: [], reasons: [], categories: [] },
-    },
   });
   fireEvent.click(await screen.findByRole("button", { name: "New purchase" }));
   return screen.findByRole("dialog", { name: "New purchase" });

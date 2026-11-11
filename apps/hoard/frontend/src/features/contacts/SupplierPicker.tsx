@@ -25,14 +25,17 @@ export function useSupplierNames(): (contactId: number | null | undefined) => st
 }
 
 /**
- * Picks a purchase's supplier among the community's contacts in Initiative.
+ * Picks a supplier among the community's contacts in Initiative, under
+ * `label` when it is not a purchase's.
  * A name typed that no contact has is added as a new contact. When the
  * community has no contacts yet, a notice says so.
  */
 export function SupplierPicker({
+  label,
   value,
   onChange,
 }: {
+  label?: string;
   value: number | null;
   onChange: (contactId: number) => void;
 }) {
@@ -57,7 +60,7 @@ export function SupplierPicker({
 
   return (
     <Field
-      label={t("suppliers.label")}
+      label={label ?? t("suppliers.label")}
       hint={contacts.data?.length === 0 ? t("suppliers.noContacts") : undefined}
       error={contacts.isError ? errorMessage(contacts.error, t, "suppliers.loadFailed") : undefined}
     >
