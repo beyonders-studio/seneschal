@@ -10,10 +10,60 @@
     "pageTitle": "Product"
   },
   "settings": {
-    "currency": "Currency",
-    "units": "Units",
-    "categories": "Categories",
-    "locations": "Locations",
-    "reasons": "Adjustment reasons"
+    "rename": "Rename",
+    "removeTitle": "Delete {{name}}?",
+    "saveFailed": "Couldn't save that.",
+    "removeFailed": "Couldn't delete that.",
+    "currency": {
+      "title": "Currency",
+      "description": "Every cost and price in Hoard is in this currency.",
+      "code": "Currency code",
+      "codeHint": "Three letters, such as USD or EUR.",
+      "saved": "Currency saved."
+    },
+    "units": {
+      "title": "Units",
+      "add": "Add unit",
+      "empty": "No units yet. Add the ones you count and buy in, such as g, kg or box.",
+      "name": "Unit"
+    },
+    "categories": {
+      "title": "Categories",
+      "material": "Material categories",
+      "product": "Product categories",
+      "materials": {
+        "add": "Add material category",
+        "empty": "No material categories yet.",
+        "name": "Category"
+      },
+      "products": {
+        "add": "Add product category",
+        "empty": "No product categories yet.",
+        "name": "Category"
+      }
+    },
+    "locations": {
+      "title": "Locations",
+      "add": "Add location",
+      "empty": "No locations yet.",
+      "name": "Location"
+    },
+    "reasons": {
+      "title": "Adjustment reasons",
+      "add": "Add reason",
+      "empty": "No reasons yet.",
+      "name": "Reason"
+    }
+  },
+  "errors": {
+    "NAME_TAKEN": "That name is already used.",
+    "NAME_REQUIRED": "Give it a name.",
+    "IN_USE": "Records still use it, so it can't be deleted.",
+    "MAIN_LOCATION": "The main location can't be deleted.",
+    "UNIT_UNKNOWN": "Pick one of your units.",
+    "CATEGORY_UNKNOWN": "Pick one of your categories.",
+    "LAST_VARIATION": "A product keeps at least one variation.",
+    "IMAGE_TYPE": "Add a GIF, JPEG, PNG or WebP picture.",
+    "IMAGE_TOO_LARGE": "That picture is larger than 5 MB."
   }
 }
