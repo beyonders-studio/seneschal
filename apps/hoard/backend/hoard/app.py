@@ -6,14 +6,15 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
 from hoard import plugin_manifest
+from hoard.api import router as api_router
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
+from hoard.endpoints import ENDPOINTS
 from seneschal_core.api import Plugin, install
-from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
@@ -56,15 +57,6 @@ def _operation_id(route: APIRoute) -> str:
     return route.name
 
 
-health = APIRouter(tags=["health"])
-
-
-@health.get("/healthz")
-async def healthz() -> dict[str, str]:
-    """Whether the process is up."""
-    return {"status": "ok"}
-
-
 def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -> FastAPI:
     settings = settings or get_settings()
     plugin = plugin or plugin_for(settings)
@@ -90,11 +82,8 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     )
     install(app, plugin)
 
-    api = APIRouter(prefix="/api/v1")
-    api.include_router(health)
-    api.include_router(auth_router)
-    app.include_router(api)
-    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints={}))
+    app.include_router(api_router)
+    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints=ENDPOINTS))
 
     static = settings.static_dir.resolve()
 
