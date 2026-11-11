@@ -29,6 +29,20 @@ Each app has its own Docker image, database, plug-in manifest, `VERSION` and
   `pnpm test` (Vitest), `pnpm build`, `pnpm check:kit` (the kit copy is the
   stamped Initiative revision's).
 - `docker compose up -d db`: Postgres 17 for dev and tests, on port 5236.
+- Ports in dev: Hoard's backend on 8300, its Vite dev server on 5300.
+
+## How an app meets Initiative
+
+- **One image per app** serves its API under `/api/v1` and its built pages
+  from the same origin.
+- **The plug-in platform's routes** sit outside `/api/v1`, at the paths the
+  protocol fixes: `POST /v1/endpoints` and `POST /v1/hooks/{name}`, each
+  carrying an Initiative-signed context or lifecycle token.
+- **Pages** receive Initiative's one-minute handoff over the parent bridge,
+  exchange it at `POST /api/v1/auth/handoff/exchange` for the app's own signed
+  session, and read who is signed in at `GET /api/v1/auth/me`.
+- The plug-in contract is the plug-in SDK's
+  ([initiative-plugin-sdk](https://github.com/beyonders-studio/initiative-plugin-sdk)).
 - `scripts/ci/check`: what CI runs, for what the branch changed against
   `origin/dev`; `scripts/ci/check all` runs everything.
 
