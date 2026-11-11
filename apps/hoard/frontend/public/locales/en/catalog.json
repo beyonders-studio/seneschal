@@ -2,7 +2,6 @@
   "materials": {
     "emptyTitle": "No materials yet",
     "emptyBody": "The materials you buy will be here: how much you hold of each, where it's kept and when to order more.",
-    "pageTitle": "Material",
     "add": "Add material",
     "edit": "Edit material",
     "trackingUnit": "Counted in",
@@ -22,7 +21,36 @@
   "products": {
     "emptyTitle": "No products yet",
     "emptyBody": "The products you sell will be here, with their variations, pictures and stock.",
-    "pageTitle": "Product"
+    "add": "Add product",
+    "edit": "Edit product",
+    "status": "Status",
+    "statuses": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "defaultPrice": "Default price",
+    "usesDefaultPrice": "Default",
+    "priceHint": "Leave it blank to sell it at the product's default price.",
+    "images": "Pictures",
+    "noImages": "No pictures yet.",
+    "imagePrompt": "Drop a GIF, JPEG, PNG or WebP picture of up to 5 MB here.",
+    "imageOf": "{{name}}, picture {{number}}",
+    "removeImage": "Delete picture {{number}}",
+    "imageFailed": "Couldn't change the pictures.",
+    "variations": "Variations",
+    "variation": "Variation",
+    "defaultVariation": "Default",
+    "addVariation": "Add variation",
+    "editVariation": "Edit variation",
+    "attributes": "Attributes",
+    "attribute": "Attribute",
+    "attributeHint": "Size",
+    "attributeValue": "Value",
+    "attributeValueHint": "Large",
+    "addAttribute": "Add attribute",
+    "removeAttribute": "Remove attribute",
+    "saveFailed": "Couldn't save the product.",
+    "loadFailed": "Couldn't load the product."
   },
   "settings": {
     "rename": "Rename",

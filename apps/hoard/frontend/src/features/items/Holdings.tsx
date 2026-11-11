@@ -51,7 +51,7 @@ export function StockTable({
             {ofVariations && <TableCell>{row.variation}</TableCell>}
             <TableCell>{location(row.location_id)}</TableCell>
             <TableCell className="text-right tabular-nums">
-              {quantity(row.quantity)} {unit}
+              {[quantity(row.quantity), unit].filter(Boolean).join(" ")}
             </TableCell>
           </TableRow>
         ))}
