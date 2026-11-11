@@ -1,3 +1,8 @@
 packages:
   - packages/ui
   - apps/*/frontend
+
+# Dependencies whose install scripts may run. esbuild links its native binary
+# in one.
+allowBuilds:
+  esbuild: true
