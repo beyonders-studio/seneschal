@@ -18,9 +18,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import stock
 from hoard.api import items
 from hoard.api.deps import SeesCostsDep
+from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found, refused_as, require_references
 from hoard.api.shapes import Page, PageDep
-from hoard.records import CategoryKind, Item, Material
+from hoard.records import CategoryKind, Item, Material, RecordKind
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
 
 router = APIRouter(prefix="/materials", tags=["materials"])
@@ -58,6 +59,8 @@ class MaterialRead(BaseModel):
     on_hand: Decimal
     #: The moving average cost of one tracking unit; null without ``costs``.
     average_cost: Decimal | None
+    #: What it holds of the properties people add to materials.
+    properties: list[HoardPropertySummary]
 
 
 class MaterialDetail(MaterialRead, items.ItemHoldings, items.ItemStamps):
@@ -79,11 +82,18 @@ class MaterialWrite(BaseModel):
     supplier_code: items.OptionalText = None
 
 
-def _read(material: Material, item: Item, on_hand: Decimal, sees_costs: bool) -> dict[str, Any]:
+def _read(
+    material: Material,
+    item: Item,
+    on_hand: Decimal,
+    sees_costs: bool,
+    properties: list[HoardPropertySummary],
+) -> dict[str, Any]:
     return {
         **material.model_dump(),
         "on_hand": on_hand,
         "average_cost": item.average_cost if sees_costs else None,
+        "properties": properties,
     }
 
 
@@ -93,8 +103,9 @@ async def _detail(db: AsyncSession, material_id: int, sees_costs: bool) -> Mater
     material = await found(db, Material, material_id)
     item = await found(db, Item, material_id)
     held = (await items.holdings(db, [material_id]))[material_id]
+    values = (await values_of(db, RecordKind.MATERIAL, [material_id]))[material_id]
     return MaterialDetail.model_validate(
-        {**_read(material, item, held.on_hand, sees_costs), **held.model_dump()}
+        {**_read(material, item, held.on_hand, sees_costs, values), **held.model_dump()}
     )
 
 
@@ -132,11 +143,19 @@ async def list_materials(
             .limit(page.limit)
         )
     ).all()
-    totals = await items.on_hand(db, [material.id for material, _ in rows])
+    ids = [material.id for material, _ in rows]
+    totals = await items.on_hand(db, ids)
+    values = await values_of(db, RecordKind.MATERIAL, ids)
     return Page(
         items=[
             MaterialRead.model_validate(
-                _read(material, item, totals.get(material.id, Decimal(0)), sees_costs)
+                _read(
+                    material,
+                    item,
+                    totals.get(material.id, Decimal(0)),
+                    sees_costs,
+                    values[material.id],
+                )
             )
             for material, item in rows
         ],
