@@ -1,0 +1,31 @@
+{
+  "session": {
+    "connecting": "Connecting to Initiative…",
+    "failedTitle": "Hoard couldn't open",
+    "failedBody": "Try opening Hoard again in a moment."
+  },
+  "readOnly": {
+    "title": "Hoard is read-only",
+    "body": "You can read and export everything here, but nothing can be changed."
+  },
+  "stock": {
+    "title": "Stock",
+    "emptyTitle": "No stock yet",
+    "emptyBody": "Your materials and products will be here: how much you hold of each, where it's kept and when to order more."
+  },
+  "production": {
+    "title": "Production",
+    "emptyTitle": "No production runs yet",
+    "emptyBody": "Your production runs will be here: what you make, from which recipe, and the lots each run produces."
+  },
+  "reports": {
+    "title": "Reports",
+    "emptyTitle": "No reports yet",
+    "emptyBody": "Reports on your stock and production will be here: what your stock is worth, what to reorder and what you made."
+  },
+  "settings": {
+    "title": "Settings",
+    "emptyTitle": "Nothing to set up yet",
+    "emptyBody": "Hoard's settings for the whole community will be here: units of measure, categories, price tiers and store connections."
+  }
+}

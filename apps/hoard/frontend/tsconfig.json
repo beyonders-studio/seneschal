@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "resolveJsonModule": true,
+    "useDefineForClassFields": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["vite/client"],
+    // As vite.config.ts resolves them: the UI kit's own imports reach the copy
+    // in packages/ui, and the rest of `@/` is Hoard's src.
+    "paths": {
+      "@/ui/*": ["../../../packages/ui/src/ui/*"],
+      "@/api/generated/initiativeAPI.schemas": [
+        "../../../packages/ui/src/api/generated/initiativeAPI.schemas.ts"
+      ],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}
