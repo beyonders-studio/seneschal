@@ -155,7 +155,7 @@ function LineForm({
         value={material}
         onChange={(picked) => setMaterial(picked.id)}
       />
-      <div className="grid-cols-pair grid gap-4">
+      <div className="grid grid-cols-pair gap-4">
         <Field label={t("purchases.lines.purchaseQuantity")}>
           <Input
             required
@@ -231,7 +231,11 @@ function ReceiveForm({
         <Input value={number} onChange={(event) => setNumber(event.target.value)} />
       </Field>
       <Field label={t("purchases.lines.expiresOn")}>
-        <Input type="date" value={expiresOn} onChange={(event) => setExpiresOn(event.target.value)} />
+        <Input
+          type="date"
+          value={expiresOn}
+          onChange={(event) => setExpiresOn(event.target.value)}
+        />
       </Field>
       <Field label={t("hoard:common.notes")}>
         <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />

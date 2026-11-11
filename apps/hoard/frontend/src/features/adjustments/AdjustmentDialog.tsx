@@ -116,7 +116,7 @@ function AdjustmentForm({
             onChange={(picked) => setItem(picked.id)}
           />
         )}
-        <div className="grid-cols-pair grid gap-4">
+        <div className="grid grid-cols-pair gap-4">
           <Field label={t("adjustments.change")} hint={t("adjustments.changeHint")}>
             <Input
               required

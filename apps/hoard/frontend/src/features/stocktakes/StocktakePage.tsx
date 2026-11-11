@@ -56,7 +56,7 @@ function Stocktake({ stocktake }: { stocktake: StocktakeRead }) {
             </Badge>
           )}
         </h2>
-        <p className="text-muted-foreground text-sm">
+        <p className="text-sm text-muted-foreground">
           {[
             t(`stocktakes.kinds.${stocktake.kind}`),
             category(stocktake.category_id),
@@ -67,12 +67,12 @@ function Stocktake({ stocktake }: { stocktake: StocktakeRead }) {
             .join(" · ")}
         </p>
         {stocktake.notes && <p className="text-sm">{stocktake.notes}</p>}
-        <p className="text-muted-foreground text-xs">
+        <p className="text-xs text-muted-foreground">
           {t("hoard:common.createdBy", { name: memberName(stocktake.created_by) })}
         </p>
       </div>
       {stocktake.rows.length === 0 ? (
-        <p className="text-muted-foreground text-sm">{t("stocktakes.noRows")}</p>
+        <p className="text-sm text-muted-foreground">{t("stocktakes.noRows")}</p>
       ) : (
         <Table>
           <TableHeader>

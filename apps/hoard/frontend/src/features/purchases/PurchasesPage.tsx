@@ -41,7 +41,8 @@ export function PurchasesPage() {
 
   let body: ReactNode;
   if (purchases.isError) body = <StatusMessage onRetry={() => void purchases.refetch()} />;
-  else if (!purchases.data) body = <p className="text-muted-foreground">{t("hoard:common.loading")}</p>;
+  else if (!purchases.data)
+    body = <p className="text-muted-foreground">{t("hoard:common.loading")}</p>;
   else if (purchases.data.total === 0)
     body = (
       <StatusMessage
@@ -86,7 +87,10 @@ export function PurchasesPage() {
                 <TableCell>{supplier(purchase.supplier_contact_id)}</TableCell>
                 <TableCell>{location(purchase.location_id)}</TableCell>
                 <TableCell>
-                  {t("purchases.receivedOf", { received: purchase.received, lines: purchase.lines })}
+                  {t("purchases.receivedOf", {
+                    received: purchase.received,
+                    lines: purchase.lines,
+                  })}
                 </TableCell>
                 {seesCosts && (
                   <TableCell className="text-right">{money(purchase.total ?? "0")}</TableCell>

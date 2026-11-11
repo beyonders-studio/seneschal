@@ -57,7 +57,7 @@ export function AdjustmentsPage() {
     body = <p className="text-muted-foreground">{t("hoard:common.loading")}</p>;
   else if (adjustments.data.total === 0)
     body = filtered ? (
-      <p className="text-muted-foreground text-sm">{t("adjustments.noneMatch")}</p>
+      <p className="text-sm text-muted-foreground">{t("adjustments.noneMatch")}</p>
     ) : (
       <StatusMessage
         icon={<ArrowUpDown />}
@@ -216,7 +216,7 @@ function AdjustmentsTable({
               <TableCell>
                 {item(adjustment.item)}
                 {adjustment.notes && (
-                  <p className="text-muted-foreground text-xs">{adjustment.notes}</p>
+                  <p className="text-xs text-muted-foreground">{adjustment.notes}</p>
                 )}
               </TableCell>
               <TableCell className="text-right tabular-nums">

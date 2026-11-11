@@ -97,7 +97,7 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
   return (
     <form onSubmit={submit} className="contents">
       <DialogBody className="space-y-4">
-        <div className="grid-cols-pair grid gap-4">
+        <div className="grid grid-cols-pair gap-4">
           <Field label={t("stocktakes.kind")}>
             <Select
               value={kind}
@@ -140,7 +140,7 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
           </Field>
         </div>
         <LocationField value={location} onChange={setLocation} />
-        <div className="grid-cols-pair grid gap-4">
+        <div className="grid grid-cols-pair gap-4">
           <Field label={t("stocktakes.sampleSize")} hint={t("stocktakes.sampleSizeHint")}>
             <Input
               type="number"

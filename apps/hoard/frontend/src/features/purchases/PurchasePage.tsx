@@ -91,12 +91,16 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
               </Badge>
             )}
           </h2>
-          <p className="text-muted-foreground text-sm">
-            {[date(purchase.dated_on), supplier(purchase.supplier_contact_id), location(purchase.location_id)]
+          <p className="text-sm text-muted-foreground">
+            {[
+              date(purchase.dated_on),
+              supplier(purchase.supplier_contact_id),
+              location(purchase.location_id),
+            ]
               .filter(Boolean)
               .join(" · ")}
           </p>
-          <p className="text-muted-foreground text-xs">
+          <p className="text-xs text-muted-foreground">
             {t("hoard:common.createdBy", { name: memberName(purchase.created_by) })}
           </p>
         </div>
@@ -200,17 +204,21 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
         </TableBody>
       </Table>
       {purchase.lines.length === 0 && (
-        <p className="text-muted-foreground text-sm">{t("purchases.lines.empty")}</p>
+        <p className="text-sm text-muted-foreground">{t("purchases.lines.empty")}</p>
       )}
       <div>
-        <Button variant="outline" onClick={() => setLineAction({ kind: "add" })} disabled={read_only}>
+        <Button
+          variant="outline"
+          onClick={() => setLineAction({ kind: "add" })}
+          disabled={read_only}
+        >
           <Plus aria-hidden />
           {t("purchases.lines.add")}
         </Button>
       </div>
 
       {seesCosts && (
-        <dl className="grid-cols-fill-40/4 grid gap-4 text-sm">
+        <dl className="grid grid-cols-fill-40/4 gap-4 text-sm">
           {(["discount", "shipping", "tax", "total"] as const).map((name) => (
             <div key={name}>
               <dt className="text-muted-foreground">

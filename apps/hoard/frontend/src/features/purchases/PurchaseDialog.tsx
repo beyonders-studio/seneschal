@@ -97,9 +97,7 @@ function PurchaseForm({
       supplier_contact_id: supplier,
       ...(location === null ? {} : { location_id: location }),
       paid,
-      ...(seesCosts
-        ? Object.fromEntries(COSTS.map((name) => [name, costs[name] || "0"]))
-        : {}),
+      ...(seesCosts ? Object.fromEntries(COSTS.map((name) => [name, costs[name] || "0"])) : {}),
     };
     try {
       const saved = purchase
@@ -116,7 +114,7 @@ function PurchaseForm({
   return (
     <form onSubmit={submit} className="contents">
       <DialogBody className="space-y-4">
-        <div className="grid-cols-pair grid gap-4">
+        <div className="grid grid-cols-pair gap-4">
           <Field label={t("purchases.code")} hint={purchase ? undefined : t("purchases.codeHint")}>
             <Input value={code} onChange={(event) => setCode(event.target.value)} />
           </Field>
@@ -132,7 +130,7 @@ function PurchaseForm({
         <SupplierPicker value={supplier} onChange={setSupplier} />
         <LocationField value={location} onChange={setLocation} />
         {seesCosts && (
-          <div className="grid-cols-pair grid gap-4">
+          <div className="grid grid-cols-pair gap-4">
             {COSTS.map((name) => (
               <Field key={name} label={t(`purchases.${name}`)}>
                 <Input
