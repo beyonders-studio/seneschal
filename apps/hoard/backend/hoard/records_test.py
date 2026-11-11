@@ -10,7 +10,15 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import select
 
-from hoard.records import CategoryKind, Material, Stocktake, Unit
+from hoard.records import (
+    MAX_IMAGE_BYTES,
+    CategoryKind,
+    Material,
+    Product,
+    ProductImage,
+    Stocktake,
+    Unit,
+)
 from hoard.stock import add_material
 from hoard.stocktakes import confirm_row, start_stocktake
 from seneschal_core import organizations
@@ -101,3 +109,33 @@ async def test_erasing_an_organization_takes_its_stock_with_it(
                 assert remaining.scalar_one() == 0, table
     finally:
         await engine.dispose()
+
+
+async def test_a_product_image_is_an_image_of_at_most_five_megabytes(db: WriteSession):
+    product = Product(organization_id=db.organization_id, name="Loaf")
+    db.add(product)
+    await db.flush()
+
+    def image(content_type: str, content: bytes) -> ProductImage:
+        return ProductImage(
+            organization_id=db.organization_id,
+            product_id=product.id,
+            content_type=content_type,
+            content=content,
+        )
+
+    db.add(image("image/png", b"\x89PNG"))
+    await db.flush()
+    for refused in (
+        image("text/html", b"<p>"),
+        image("image/png", b""),
+        image("image/png", b"0" * (MAX_IMAGE_BYTES + 1)),
+    ):
+        async with db.begin_nested():
+            db.add(refused)
+            with pytest.raises(DBAPIError, match="ck_product_images"):
+                await db.flush()
+
+    await db.delete(product)
+    await db.flush()
+    assert (await db.exec(select(ProductImage))).all() == []

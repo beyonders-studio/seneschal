@@ -12,7 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as ProductionRouteImport } from './routes/production'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as StockRouteImport } from './routes/stock'
+import { Route as StockRouteRouteImport } from './routes/stock/route'
+import { Route as StockIndexRouteImport } from './routes/stock/index'
+import { Route as StockAdjustmentsIndexRouteImport } from './routes/stock/adjustments/index'
+import { Route as StockMaterialsIndexRouteImport } from './routes/stock/materials/index'
+import { Route as StockMaterialsMaterialIdRouteImport } from './routes/stock/materials/$materialId'
+import { Route as StockProductsIndexRouteImport } from './routes/stock/products/index'
+import { Route as StockProductsProductIdRouteImport } from './routes/stock/products/$productId'
+import { Route as StockPurchasesIndexRouteImport } from './routes/stock/purchases/index'
+import { Route as StockPurchasesPurchaseIdRouteImport } from './routes/stock/purchases/$purchaseId'
+import { Route as StockStocktakesIndexRouteImport } from './routes/stock/stocktakes/index'
+import { Route as StockStocktakesStocktakeIdRouteImport } from './routes/stock/stocktakes/$stocktakeId'
 
 const ProductionRoute = ProductionRouteImport.update({
   id: '/production',
@@ -29,44 +39,168 @@ const SettingsRoute = SettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => rootRouteImport,
 } as any)
-const StockRoute = StockRouteImport.update({
+const StockRouteRoute = StockRouteRouteImport.update({
   id: '/stock',
   path: '/stock',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StockIndexRoute = StockIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockAdjustmentsIndexRoute = StockAdjustmentsIndexRouteImport.update({
+  id: '/adjustments/',
+  path: '/adjustments/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockMaterialsIndexRoute = StockMaterialsIndexRouteImport.update({
+  id: '/materials/',
+  path: '/materials/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockMaterialsMaterialIdRoute =
+  StockMaterialsMaterialIdRouteImport.update({
+    id: '/materials/$materialId',
+    path: '/materials/$materialId',
+    getParentRoute: () => StockRouteRoute,
+  } as any)
+const StockProductsIndexRoute = StockProductsIndexRouteImport.update({
+  id: '/products/',
+  path: '/products/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockProductsProductIdRoute = StockProductsProductIdRouteImport.update({
+  id: '/products/$productId',
+  path: '/products/$productId',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockPurchasesIndexRoute = StockPurchasesIndexRouteImport.update({
+  id: '/purchases/',
+  path: '/purchases/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockPurchasesPurchaseIdRoute =
+  StockPurchasesPurchaseIdRouteImport.update({
+    id: '/purchases/$purchaseId',
+    path: '/purchases/$purchaseId',
+    getParentRoute: () => StockRouteRoute,
+  } as any)
+const StockStocktakesIndexRoute = StockStocktakesIndexRouteImport.update({
+  id: '/stocktakes/',
+  path: '/stocktakes/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockStocktakesStocktakeIdRoute =
+  StockStocktakesStocktakeIdRouteImport.update({
+    id: '/stocktakes/$stocktakeId',
+    path: '/stocktakes/$stocktakeId',
+    getParentRoute: () => StockRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
+  '/stock': typeof StockRouteRouteWithChildren
   '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
-  '/stock': typeof StockRoute
+  '/stock/': typeof StockIndexRoute
+  '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
+  '/stock/products/$productId': typeof StockProductsProductIdRoute
+  '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
+  '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/stock/adjustments/': typeof StockAdjustmentsIndexRoute
+  '/stock/materials/': typeof StockMaterialsIndexRoute
+  '/stock/products/': typeof StockProductsIndexRoute
+  '/stock/purchases/': typeof StockPurchasesIndexRoute
+  '/stock/stocktakes/': typeof StockStocktakesIndexRoute
 }
 export interface FileRoutesByTo {
   '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
-  '/stock': typeof StockRoute
+  '/stock': typeof StockIndexRoute
+  '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
+  '/stock/products/$productId': typeof StockProductsProductIdRoute
+  '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
+  '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/stock/adjustments': typeof StockAdjustmentsIndexRoute
+  '/stock/materials': typeof StockMaterialsIndexRoute
+  '/stock/products': typeof StockProductsIndexRoute
+  '/stock/purchases': typeof StockPurchasesIndexRoute
+  '/stock/stocktakes': typeof StockStocktakesIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/stock': typeof StockRouteRouteWithChildren
   '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
-  '/stock': typeof StockRoute
+  '/stock/': typeof StockIndexRoute
+  '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
+  '/stock/products/$productId': typeof StockProductsProductIdRoute
+  '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
+  '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/stock/adjustments/': typeof StockAdjustmentsIndexRoute
+  '/stock/materials/': typeof StockMaterialsIndexRoute
+  '/stock/products/': typeof StockProductsIndexRoute
+  '/stock/purchases/': typeof StockPurchasesIndexRoute
+  '/stock/stocktakes/': typeof StockStocktakesIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/production' | '/reports' | '/settings' | '/stock'
+  fullPaths:
+    | '/stock'
+    | '/production'
+    | '/reports'
+    | '/settings'
+    | '/stock/'
+    | '/stock/materials/$materialId'
+    | '/stock/products/$productId'
+    | '/stock/purchases/$purchaseId'
+    | '/stock/stocktakes/$stocktakeId'
+    | '/stock/adjustments/'
+    | '/stock/materials/'
+    | '/stock/products/'
+    | '/stock/purchases/'
+    | '/stock/stocktakes/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/production' | '/reports' | '/settings' | '/stock'
-  id: '__root__' | '/production' | '/reports' | '/settings' | '/stock'
+  to:
+    | '/production'
+    | '/reports'
+    | '/settings'
+    | '/stock'
+    | '/stock/materials/$materialId'
+    | '/stock/products/$productId'
+    | '/stock/purchases/$purchaseId'
+    | '/stock/stocktakes/$stocktakeId'
+    | '/stock/adjustments'
+    | '/stock/materials'
+    | '/stock/products'
+    | '/stock/purchases'
+    | '/stock/stocktakes'
+  id:
+    | '__root__'
+    | '/stock'
+    | '/production'
+    | '/reports'
+    | '/settings'
+    | '/stock/'
+    | '/stock/materials/$materialId'
+    | '/stock/products/$productId'
+    | '/stock/purchases/$purchaseId'
+    | '/stock/stocktakes/$stocktakeId'
+    | '/stock/adjustments/'
+    | '/stock/materials/'
+    | '/stock/products/'
+    | '/stock/purchases/'
+    | '/stock/stocktakes/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  StockRouteRoute: typeof StockRouteRouteWithChildren
   ProductionRoute: typeof ProductionRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
-  StockRoute: typeof StockRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -96,17 +230,117 @@ declare module '@tanstack/react-router' {
       id: '/stock'
       path: '/stock'
       fullPath: '/stock'
-      preLoaderRoute: typeof StockRouteImport
+      preLoaderRoute: typeof StockRouteRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/stock/': {
+      id: '/stock/'
+      path: '/'
+      fullPath: '/stock/'
+      preLoaderRoute: typeof StockIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/adjustments/': {
+      id: '/stock/adjustments/'
+      path: '/adjustments'
+      fullPath: '/stock/adjustments/'
+      preLoaderRoute: typeof StockAdjustmentsIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/materials/': {
+      id: '/stock/materials/'
+      path: '/materials'
+      fullPath: '/stock/materials/'
+      preLoaderRoute: typeof StockMaterialsIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/materials/$materialId': {
+      id: '/stock/materials/$materialId'
+      path: '/materials/$materialId'
+      fullPath: '/stock/materials/$materialId'
+      preLoaderRoute: typeof StockMaterialsMaterialIdRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/products/': {
+      id: '/stock/products/'
+      path: '/products'
+      fullPath: '/stock/products/'
+      preLoaderRoute: typeof StockProductsIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/products/$productId': {
+      id: '/stock/products/$productId'
+      path: '/products/$productId'
+      fullPath: '/stock/products/$productId'
+      preLoaderRoute: typeof StockProductsProductIdRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/purchases/': {
+      id: '/stock/purchases/'
+      path: '/purchases'
+      fullPath: '/stock/purchases/'
+      preLoaderRoute: typeof StockPurchasesIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/purchases/$purchaseId': {
+      id: '/stock/purchases/$purchaseId'
+      path: '/purchases/$purchaseId'
+      fullPath: '/stock/purchases/$purchaseId'
+      preLoaderRoute: typeof StockPurchasesPurchaseIdRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/stocktakes/': {
+      id: '/stock/stocktakes/'
+      path: '/stocktakes'
+      fullPath: '/stock/stocktakes/'
+      preLoaderRoute: typeof StockStocktakesIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/stocktakes/$stocktakeId': {
+      id: '/stock/stocktakes/$stocktakeId'
+      path: '/stocktakes/$stocktakeId'
+      fullPath: '/stock/stocktakes/$stocktakeId'
+      preLoaderRoute: typeof StockStocktakesStocktakeIdRouteImport
+      parentRoute: typeof StockRouteRoute
     }
   }
 }
 
+interface StockRouteRouteChildren {
+  StockIndexRoute: typeof StockIndexRoute
+  StockMaterialsMaterialIdRoute: typeof StockMaterialsMaterialIdRoute
+  StockProductsProductIdRoute: typeof StockProductsProductIdRoute
+  StockPurchasesPurchaseIdRoute: typeof StockPurchasesPurchaseIdRoute
+  StockStocktakesStocktakeIdRoute: typeof StockStocktakesStocktakeIdRoute
+  StockAdjustmentsIndexRoute: typeof StockAdjustmentsIndexRoute
+  StockMaterialsIndexRoute: typeof StockMaterialsIndexRoute
+  StockProductsIndexRoute: typeof StockProductsIndexRoute
+  StockPurchasesIndexRoute: typeof StockPurchasesIndexRoute
+  StockStocktakesIndexRoute: typeof StockStocktakesIndexRoute
+}
+
+const StockRouteRouteChildren: StockRouteRouteChildren = {
+  StockIndexRoute: StockIndexRoute,
+  StockMaterialsMaterialIdRoute: StockMaterialsMaterialIdRoute,
+  StockProductsProductIdRoute: StockProductsProductIdRoute,
+  StockPurchasesPurchaseIdRoute: StockPurchasesPurchaseIdRoute,
+  StockStocktakesStocktakeIdRoute: StockStocktakesStocktakeIdRoute,
+  StockAdjustmentsIndexRoute: StockAdjustmentsIndexRoute,
+  StockMaterialsIndexRoute: StockMaterialsIndexRoute,
+  StockProductsIndexRoute: StockProductsIndexRoute,
+  StockPurchasesIndexRoute: StockPurchasesIndexRoute,
+  StockStocktakesIndexRoute: StockStocktakesIndexRoute,
+}
+
+const StockRouteRouteWithChildren = StockRouteRoute._addFileChildren(
+  StockRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
+  StockRouteRoute: StockRouteRouteWithChildren,
   ProductionRoute: ProductionRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
-  StockRoute: StockRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

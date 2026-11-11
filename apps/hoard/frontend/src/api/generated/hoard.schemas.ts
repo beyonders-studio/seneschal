@@ -4,6 +4,40 @@
  * Hoard
  * OpenAPI spec version: 0.0.1
  */
+/**
+ * The kinds of record a category sorts, and a stocktake counts.
+ */
+export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
+
+export const CategoryKind = {
+  material: "material",
+  product: "product",
+} as const;
+
+export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
+
+export const ExportFormat = {
+  csv: "csv",
+  json: "json",
+} as const;
+
+/**
+ * The kinds of record that export.
+ */
+export type ExportKind = (typeof ExportKind)[keyof typeof ExportKind];
+
+export const ExportKind = {
+  materials: "materials",
+  products: "products",
+  variations: "variations",
+  purchases: "purchases",
+  purchase_lines: "purchase_lines",
+  lots: "lots",
+  adjustments: "adjustments",
+  stocktakes: "stocktakes",
+  stocktake_rows: "stocktake_rows",
+} as const;
+
 export type ValidationErrorCtx = { [key: string]: unknown };
 
 export interface ValidationError {
@@ -40,6 +74,16 @@ export interface HandoffExchange {
   locale?: string | null;
 }
 
+/**
+ * What an item is.
+ */
+export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
+
+export const ItemKind = {
+  material: "material",
+  variation: "variation",
+} as const;
+
 export type MeTheme = (typeof MeTheme)[keyof typeof MeTheme] | null;
 
 export const MeTheme = {
@@ -64,4 +108,61 @@ export interface Me {
   plan: string | null;
 }
 
+export interface MemberName {
+  member_ref: string;
+  name: string | null;
+}
+
+/**
+ * A material or product at or below its low-stock limit.
+ */
+export interface ReportReorderRow {
+  kind: CategoryKind;
+  id: number;
+  name: string;
+  unit: string | null;
+  on_hand: string;
+  low_stock_limit: string;
+}
+
+export type ReportValuationRowAttributes = { [key: string]: string };
+
+/**
+ * What one item's stock is worth.
+ */
+export interface ReportValuationRow {
+  item_id: number;
+  kind: ItemKind;
+  name: string;
+  attributes: ReportValuationRowAttributes;
+  on_hand: string;
+  average_cost: string;
+  value: string;
+}
+
+/**
+ * What the stock is worth, in the organization's currency.
+ */
+export interface ReportValuation {
+  currency: string;
+  items: ReportValuationRow[];
+  total: string;
+}
+
+export interface SettingsRead {
+  currency: string;
+}
+
 export type Healthz200 = { [key: string]: string };
+
+export type ExportRecordsParams = {
+  format?: ExportFormat;
+};
+
+export type ListMemberNamesParams = {
+  /**
+   * @minItems 1
+   * @maxItems 100
+   */
+  member_ref: string[];
+};

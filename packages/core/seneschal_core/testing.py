@@ -16,7 +16,10 @@ and tests check access as the serving login (``serving_database``).
 
 **Initiative.** :class:`InitiativeStandIn` holds an Ed25519 key for the plug-in
 platform and one for billing, publishes the first as Initiative does, and signs
-handoffs, context tokens and statements with them.
+handoffs, context tokens and statements with them. It holds the app's own key
+too, issues installation tokens for assertions signed with it, and answers the
+community's routes of its plug-in API: member lookups from :attr:`people`, and
+whatever a test adds to :attr:`routes`.
 """
 
 from __future__ import annotations
@@ -28,6 +31,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from urllib.parse import parse_qsl
 
 import httpx2
 import jwt
@@ -51,6 +55,13 @@ from seneschal_core.initiative import (
     STATEMENT_TYPE,
     Initiative,
     audience,
+)
+from seneschal_core.initiative_api import (
+    ASSERTION_TYPE,
+    COMMUNITY_PREFIX,
+    TOKEN_PATH,
+    InitiativeApi,
+    key_id,
 )
 
 DEFAULT_TEST_POSTGRES_URL = "postgresql://postgres:postgres@localhost:5236/postgres"
@@ -158,17 +169,32 @@ def new_key_pem() -> str:
     return private_key_pem(ed25519.Ed25519PrivateKey.generate())
 
 
+#: A route of the community's plug-in API: the request, answered.
+Route = Callable[[httpx2.Request], httpx2.Response]
+
+
 class InitiativeStandIn:
     """Initiative's plug-in platform and its billing, as far as an app's tests need them."""
 
     API_URL = "http://initiative.test/api/v1"
     KID = "platform-key"
+    #: How long an installation token lives.
+    TOKEN_LIFETIME_SECONDS = 3600
 
     def __init__(self, *, public_id: str, listing_uid: str) -> None:
         self.public_id = public_id
         self.listing_uid = listing_uid
         self.platform_key = ed25519.Ed25519PrivateKey.generate()
         self.billing_key = ed25519.Ed25519PrivateKey.generate()
+        #: The app's own key, as its registration holds it.
+        self.plugin_key = ed25519.Ed25519PrivateKey.generate()
+        #: Each member the lookup finds, by the install's reference for them,
+        #: as Initiative reads a person: ``display_name``, ``username``, ….
+        self.people: dict[str, dict[str, Any]] = {}
+        #: The community's routes, by method and path under ``/c/0``.
+        self.routes: dict[tuple[str, str], Route] = {("GET", "/users/search"): self._search_people}
+        #: Each installation token issued, and the community it is for.
+        self.tokens: dict[str, str] = {}
 
     def jwks(self) -> dict[str, Any]:
         """The key set Initiative publishes."""
@@ -176,14 +202,87 @@ class InitiativeStandIn:
         return {"keys": [{**jwk, "kid": self.KID, "alg": ALGORITHM, "use": "sig"}]}
 
     def http(self) -> httpx2.AsyncClient:
-        """A client that reaches only this stand-in's published keys."""
+        """A client that reaches only this stand-in."""
 
         def answer(request: httpx2.Request) -> httpx2.Response:
             if request.url == f"{self.API_URL}{JWKS_PATH}":
                 return httpx2.Response(200, json=self.jwks())
-            return httpx2.Response(404)
+            if (request.method, request.url.copy_with(query=None)) == (
+                "POST",
+                f"{self.API_URL}{TOKEN_PATH}",
+            ):
+                return self._issue(request)
+            community = f"{httpx2.URL(self.API_URL).path}{COMMUNITY_PREFIX}"
+            route = self.routes.get((request.method, request.url.path.removeprefix(community)))
+            if not request.url.path.startswith(community) or route is None:
+                return httpx2.Response(404)
+            scheme, _, token = request.headers.get("authorization", "").partition(" ")
+            if scheme != "Bearer" or token not in self.tokens:
+                return httpx2.Response(401, json={"detail": "NOT_AUTHENTICATED"})
+            return route(request)
 
         return httpx2.AsyncClient(transport=httpx2.MockTransport(answer))
+
+    def api(self) -> InitiativeApi:
+        """The app's client of this stand-in's plug-in API, signing with its key."""
+        return InitiativeApi(
+            api_url=self.API_URL,
+            public_id=self.public_id,
+            key_pem=private_key_pem(self.plugin_key),
+            http=self.http(),
+        )
+
+    def _issue(self, request: httpx2.Request) -> httpx2.Response:
+        """An installation token, for an assertion the app's key signed."""
+        form = dict(parse_qsl(request.content.decode()))
+        assertion = form.get("client_assertion", "")
+        try:
+            if jwt.get_unverified_header(assertion).get("kid") != key_id(self.plugin_key):
+                raise jwt.InvalidTokenError("unknown key")
+            claims = jwt.decode(
+                assertion,
+                self.plugin_key.public_key(),
+                algorithms=[ALGORITHM],
+                audience=f"{self.API_URL}{TOKEN_PATH}",
+                issuer=self.public_id,
+                subject=self.public_id,
+                options={"require": ["iss", "sub", "aud", "jti", "iat", "exp"]},
+            )
+        except jwt.PyJWTError:
+            return httpx2.Response(401, json={"error": "invalid_client"})
+        if (
+            form.get("grant_type") != "client_credentials"
+            or form.get("client_assertion_type") != ASSERTION_TYPE
+            or not form.get("installation")
+            or claims["exp"] - claims["iat"] > 300
+        ):
+            return httpx2.Response(400, json={"error": "invalid_grant"})
+        token = secrets.token_hex(16)
+        self.tokens[token] = form["installation"]
+        return httpx2.Response(
+            200,
+            json={
+                "access_token": token,
+                "token_type": "Bearer",
+                "expires_in": self.TOKEN_LIFETIME_SECONDS,
+                "scope": "members:read",
+            },
+        )
+
+    def _search_people(self, request: httpx2.Request) -> httpx2.Response:
+        named = request.url.params.get_list("user_id")
+        items = [{"id": ref, **self.people[ref]} for ref in named if ref in self.people]
+        return httpx2.Response(
+            200,
+            json={
+                "items": items,
+                "total_count": len(items),
+                "page": 1,
+                "page_size": int(request.url.params.get("page_size", 20)),
+                "has_next": False,
+                "has_prev": False,
+            },
+        )
 
     def initiative(self) -> Initiative:
         """The app's connection to this stand-in."""

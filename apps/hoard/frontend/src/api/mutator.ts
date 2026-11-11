@@ -8,9 +8,12 @@ import axios, { type AxiosRequestConfig } from "axios";
  * pages and API share an origin (the Vite server proxies them in dev), so the
  * session cookie the handoff exchange sets goes with each one.
  *
+ * A list in the query is sent as the API reads it, the name once per value
+ * (`member_ref=a&member_ref=b`).
+ *
  * Reads no `import.meta.env`: Orval loads this file to generate the client.
  */
-export const apiClient = axios.create();
+export const apiClient = axios.create({ paramsSerializer: { indexes: null } });
 
 export const apiMutator = <T>(config: AxiosRequestConfig, options?: AxiosRequestConfig) =>
   apiClient<T>({ ...config, ...options, headers: { ...config.headers, ...options?.headers } }).then(

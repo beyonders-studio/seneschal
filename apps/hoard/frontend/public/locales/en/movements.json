@@ -1,0 +1,16 @@
+{
+  "purchases": {
+    "emptyTitle": "No purchases yet",
+    "emptyBody": "What you buy from your suppliers will be here, and what has arrived.",
+    "pageTitle": "Purchase"
+  },
+  "adjustments": {
+    "emptyTitle": "No adjustments yet",
+    "emptyBody": "Every change to your stock will be here: what changed, when, and why."
+  },
+  "stocktakes": {
+    "emptyTitle": "No stocktakes yet",
+    "emptyBody": "Your stock counts will be here, and how far each was from what Hoard expected.",
+    "pageTitle": "Stocktake"
+  }
+}

@@ -19,6 +19,8 @@
   with lines that are received into lots.
 * **Stocktakes**: counts of materials or products at a location, whose
   variances become adjustments.
+* **Settings**: the organization's one row of them, such as its currency.
+* **Product images**: pictures of a product, which Hoard keeps itself.
 
 Quantities, costs and prices are exact decimals to six places. A supplier is an
 Initiative contact, named by its id. Every record says who made it and when,
@@ -33,7 +35,15 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import BigInteger, CheckConstraint, Column, Index, UniqueConstraint, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    Column,
+    Index,
+    LargeBinary,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
 
@@ -48,6 +58,13 @@ from seneschal_core.models import (
 
 #: The places every quantity, cost and price is kept to.
 PLACES = Decimal("0.000001")
+#: The currency an organization keeps money in until it picks another: an
+#: ISO 4217 code.
+DEFAULT_CURRENCY = "USD"
+#: The types a product image may be.
+IMAGE_TYPES = frozenset({"image/gif", "image/jpeg", "image/png", "image/webp"})
+#: The most one product image may hold, in bytes.
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 def amount(default: Decimal | None = Decimal(0)) -> Any:
@@ -432,3 +449,43 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     #: What caused it, by kind: the received purchase line, or the stocktake's row.
     purchase_line_id: int | None = Field(default=None, sa_type=BigInteger)
     stocktake_row_id: int | None = Field(default=None, sa_type=BigInteger)
+
+
+class OrganizationSettings(OrganizationRow, Stamped, table=True):
+    """The organization's settings, one row of them. Until it is made, each
+    setting is its default."""
+
+    __tablename__ = "settings"
+    __table_args__ = (
+        UniqueConstraint("organization_id", name="uq_settings_organization_id"),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settings_currency"),
+    )
+
+    id: int = identity()
+    #: The ISO 4217 code every cost and price is in.
+    currency: str = DEFAULT_CURRENCY
+
+
+class ProductImage(OrganizationRow, Stamped, table=True):
+    """A picture of a product: one of :data:`IMAGE_TYPES`, of at most
+    :data:`MAX_IMAGE_BYTES`."""
+
+    __tablename__ = "product_images"
+    __table_args__ = (
+        reference("product_images", "product_id", "products", ondelete="CASCADE"),
+        CheckConstraint(
+            "content_type IN ('image/gif', 'image/jpeg', 'image/png', 'image/webp')",
+            name="ck_product_images_content_type",
+        ),
+        CheckConstraint(
+            "octet_length(content) BETWEEN 1 AND 5242880", name="ck_product_images_size"
+        ),
+        Index("ix_product_images_product", "organization_id", "product_id", "position"),
+    )
+
+    id: int = identity()
+    product_id: int = Field(sa_type=BigInteger)
+    #: Its place among the product's images; the first shows for the product.
+    position: int = 0
+    content_type: str
+    content: bytes = Field(sa_type=LargeBinary)

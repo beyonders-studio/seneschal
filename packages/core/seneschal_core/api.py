@@ -1,5 +1,5 @@
 """What an app's routes depend on: its database, its connection to Initiative
-and its sessions, and the request's organization.
+and its plug-in API, its sessions, and the request's organization.
 
 An app builds one :class:`Plugin` and installs it on its FastAPI app
 (:func:`install`). A page's request then names its organization only through
@@ -28,6 +28,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, status
 from seneschal_core import organizations
 from seneschal_core.db import Database, OrganizationSession, WriteSession, verify_serving_login
 from seneschal_core.initiative import Initiative
+from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.organizations import Organization
 from seneschal_core.sessions import SessionClaims, SessionRefused, Sessions
 
@@ -50,17 +51,20 @@ class ErrorCode(StrEnum):
     STATEMENT_REFUSED = "STATEMENT_REFUSED"
 
 
-def refuse(status_code: int, code: ErrorCode) -> HTTPException:
+def refuse(status_code: int, code: StrEnum) -> HTTPException:
+    """A refusal whose ``detail`` is ``code``: one of :class:`ErrorCode`, or of
+    an app's own codes."""
     return HTTPException(status_code=status_code, detail=code.value)
 
 
 @dataclass(frozen=True)
 class Plugin:
-    """An app's database (as its serving login), its connection to Initiative,
-    and its sessions."""
+    """An app's database (as its serving login), its connection to Initiative
+    and the plug-in API it calls there, and its sessions."""
 
     database: Database
     initiative: Initiative
+    api: InitiativeApi
     sessions: Sessions
 
     async def start(self) -> None:
@@ -69,6 +73,7 @@ class Plugin:
 
     async def stop(self) -> None:
         await self.initiative.aclose()
+        await self.api.aclose()
         await self.database.dispose()
 
 

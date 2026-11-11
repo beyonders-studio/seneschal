@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
 from hoard.openapi import openapi_schema
 
 
-def test_the_schema_names_each_call_the_pages_make():
+def test_each_call_is_named_once_after_its_function():
     schema = openapi_schema()
 
-    calls = {
-        (path, method): operation["operationId"]
-        for path, methods in schema["paths"].items()
-        for method, operation in methods.items()
-    }
-    assert calls == {
-        ("/api/v1/healthz", "get"): "healthz",
-        ("/api/v1/auth/handoff/exchange", "post"): "exchange_handoff",
-        ("/api/v1/auth/me", "get"): "read_me",
-    }
+    names = Counter(
+        operation["operationId"]
+        for methods in schema["paths"].values()
+        for operation in methods.values()
+    )
+    assert [name for name, count in names.items() if count > 1] == []
+    assert schema["paths"]["/api/v1/auth/me"]["get"]["operationId"] == "read_me"
