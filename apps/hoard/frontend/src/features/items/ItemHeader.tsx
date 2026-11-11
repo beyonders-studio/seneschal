@@ -21,6 +21,7 @@ export function ItemHeader({
   onEdit,
   remove,
   onRemoved,
+  more,
 }: {
   back: { to: "/stock/materials" | "/stock/products"; label: string };
   title: string;
@@ -28,6 +29,8 @@ export function ItemHeader({
   onEdit: () => void;
   remove: () => Promise<unknown>;
   onRemoved: () => void;
+  /** What else can be done with it, before editing it. */
+  more?: ReactNode;
 }) {
   const { t } = useTranslation("catalog");
   const { read_only } = useSession();
@@ -53,6 +56,7 @@ export function ItemHeader({
         </div>
         {!read_only && (
           <div className="flex gap-2">
+            {more}
             <Button variant="outline" size="sm" onClick={onEdit}>
               <Pencil aria-hidden />
               {t("hoard:common.edit")}

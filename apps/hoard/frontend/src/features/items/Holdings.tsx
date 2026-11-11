@@ -1,15 +1,14 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ItemLotRead, ItemStockRead } from "@/api/generated/hoard.schemas";
+import type { ItemStockRead } from "@/api/generated/hoard.schemas";
 import { useQuantity } from "@/features/items/format";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMemberNames } from "@/lib/members";
-import { formatDate } from "@/ui/lib/formatDate";
 import { RelativeTime } from "@/ui/relative-time";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
-/** A row of stock or a lot, and the variation it is of on a product's page. */
+/** A row of stock, and the variation it is of on a product's page. */
 type OfVariation<T> = T & { variation?: string };
 
 /** One part of an item's page: its heading, then what it holds. */
@@ -53,44 +52,6 @@ export function StockTable({
             <TableCell className="text-right tabular-nums">
               {[quantity(row.quantity), unit].filter(Boolean).join(" ")}
             </TableCell>
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
-/** An item's lots, oldest first, with what is left of each. */
-export function LotsTable({ lots }: { lots: OfVariation<ItemLotRead>[] }) {
-  const { t } = useTranslation("catalog");
-  const quantity = useQuantity();
-  const { location } = useSettingsNames();
-  if (lots.length === 0)
-    return <p className="text-sm text-muted-foreground">{t("items.noLots")}</p>;
-  const ofVariations = lots.some((lot) => lot.variation !== undefined);
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          {ofVariations && <TableHead>{t("products.variation")}</TableHead>}
-          <TableHead>{t("items.lot")}</TableHead>
-          <TableHead>{t("hoard:common.location")}</TableHead>
-          <TableHead>{t("hoard:common.date")}</TableHead>
-          <TableHead>{t("items.expires")}</TableHead>
-          <TableHead className="text-right">{t("items.balance")}</TableHead>
-          <TableHead>{t("hoard:common.notes")}</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {lots.map((lot) => (
-          <TableRow key={lot.id}>
-            {ofVariations && <TableCell>{lot.variation}</TableCell>}
-            <TableCell>{lot.number}</TableCell>
-            <TableCell>{location(lot.location_id)}</TableCell>
-            <TableCell>{formatDate(lot.dated_on)}</TableCell>
-            <TableCell>{formatDate(lot.expires_on)}</TableCell>
-            <TableCell className="text-right tabular-nums">{quantity(lot.balance)}</TableCell>
-            <TableCell>{lot.notes}</TableCell>
           </TableRow>
         ))}
       </TableBody>

@@ -8,31 +8,24 @@ import {
   getListMaterialsQueryKey,
   useReadMaterial,
 } from "@/api/generated/materials/materials";
-import { useSupplierNames } from "@/features/contacts/SupplierPicker";
-import { isLow, useQuantity } from "@/features/items/format";
-import { ItemSection, LotsTable, RecordStamps, StockTable } from "@/features/items/Holdings";
-import { ItemFacts, ItemHeader } from "@/features/items/ItemHeader";
+import { LayoutsButton, RecordDetail } from "@/features/fields/records";
+import { isLow } from "@/features/items/format";
+import { ItemHeader } from "@/features/items/ItemHeader";
 import { LowStockBadge } from "@/features/items/ItemList";
+import { MATERIALS } from "@/features/materials/fields";
 import { MaterialDialog } from "@/features/materials/MaterialDialog";
-import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
-import { useMoney } from "@/lib/money";
-import { useSeesCosts } from "@/lib/permissions";
 import { Badge } from "@/ui/badge";
 import { StatusMessage } from "@/ui/status-message";
 
-/** One material, under Stock: what it is, and its stock and lots at each location. */
+/** One material, under Stock: its fields, properties, and stock and lots at each
+ *  location, where its layout puts them. */
 export function MaterialPage({ materialId }: { materialId: number }) {
   const { t } = useTranslation("catalog");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: material, error, refetch } = useReadMaterial(materialId);
   const [editing, setEditing] = useState(false);
-  const names = useSettingsNames();
-  const supplier = useSupplierNames();
-  const quantity = useQuantity();
-  const money = useMoney();
-  const seesCosts = useSeesCosts();
 
   if (error)
     return (
@@ -44,7 +37,6 @@ export function MaterialPage({ materialId }: { materialId: number }) {
   if (!material)
     return <p className="text-sm text-muted-foreground">{t("hoard:common.loading")}</p>;
 
-  const unit = names.unit(material.tracking_unit_id);
   return (
     <div className="flex flex-col gap-6">
       <ItemHeader
@@ -64,41 +56,9 @@ export function MaterialPage({ materialId }: { materialId: number }) {
           void queryClient.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
           void navigate({ to: "/stock/materials" });
         }}
+        more={<LayoutsButton of={MATERIALS} rows={[material]} page={material} />}
       />
-      <ItemFacts
-        facts={[
-          [t("hoard:common.onHand"), `${quantity(material.on_hand)} ${unit}`],
-          [
-            t("hoard:common.lowStockLimit"),
-            material.low_stock_limit && `${quantity(material.low_stock_limit)} ${unit}`,
-          ],
-          [t("hoard:common.sku"), material.sku],
-          [t("hoard:common.category"), names.category(material.category_id)],
-          [t("materials.trackingUnit"), unit],
-          [
-            t("materials.purchaseUnit"),
-            material.purchase_unit_id !== null &&
-              t("materials.purchaseUnitIs", {
-                unit: names.unit(material.purchase_unit_id),
-                conversion: quantity(material.purchase_conversion),
-                trackingUnit: unit,
-              }),
-          ],
-          [t("materials.supplier"), supplier(material.supplier_contact_id)],
-          [t("materials.supplierCode"), material.supplier_code],
-          [
-            t("items.averageCost"),
-            seesCosts && material.average_cost && money(material.average_cost, { exact: true }),
-          ],
-        ]}
-      />
-      <ItemSection title={t("items.stock")}>
-        <StockTable stock={material.stock} unit={unit} />
-      </ItemSection>
-      <ItemSection title={t("items.lots")}>
-        <LotsTable lots={material.lots} />
-      </ItemSection>
-      <RecordStamps record={material} />
+      <RecordDetail of={MATERIALS} item={material} onSaved={() => void refetch()} />
       <MaterialDialog material={material} open={editing} onOpenChange={setEditing} />
     </div>
   );
