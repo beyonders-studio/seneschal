@@ -125,6 +125,8 @@ class HoardPropertyShape(BaseModel):
 
 
 class HoardPropertyRead(HoardPropertyShape):
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
+
     id: int
     kind: RecordKind
     name: str
@@ -151,6 +153,8 @@ class HoardPropertySummary(HoardPropertyShape):
     """A record's value of one property, as the UI kit draws it. The kit's
     summary names an owner and an install, which Hoard's properties never
     have."""
+
+    model_config = ConfigDict(json_schema_serialization_defaults_required=True)
 
     property_id: int
     name: str

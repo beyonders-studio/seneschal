@@ -56,6 +56,7 @@ export const material = (fields: Partial<MaterialRead> = {}): MaterialRead => ({
   supplier_code: null,
   on_hand: "0",
   average_cost: null,
+  properties: [],
   ...fields,
 });
 
@@ -75,6 +76,7 @@ export const product = (fields: Partial<ProductRead> = {}): ProductRead => ({
   low_stock_limit: null,
   on_hand: "0",
   default_price: null,
+  properties: [],
   ...fields,
 });
 
