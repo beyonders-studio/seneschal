@@ -1,6 +1,6 @@
-"""The core's tests run against a database holding the registry and one
-organization table of their own, ``widgets``, made by the same helpers an
-app's migrations call."""
+"""The core's tests run against a database holding the registry and
+organization tables of their own, ``widgets`` and a ledger of their moves,
+made by the same helpers an app's migrations call."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from alembic.operations import Operations
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 
-from seneschal_core import migrations
+from seneschal_core import ledger, migrations
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
@@ -36,8 +36,49 @@ def _migrate(database: AppDatabase) -> None:
                 "widgets",
                 sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
                 sa.Column("name", sa.Text(), nullable=False),
+                sa.Column("stock", sa.Numeric(), nullable=False, server_default="0"),
             )
             migrations.isolate("widgets")
+            migrations.referable("widgets")
+            # A ledger: moves of widgets, kept as each widget's stock and as
+            # its stock in each bin.
+            op.create_table(
+                "widget_bins",
+                sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
+                sa.Column("widget_id", sa.BigInteger(), nullable=False),
+                sa.Column("bin", sa.Text(), nullable=False),
+                sa.Column("quantity", sa.Numeric(), nullable=False),
+            )
+            migrations.isolate("widget_bins")
+            migrations.reference("widget_bins", "widget_id", "widgets", ondelete="CASCADE")
+            op.create_unique_constraint(
+                "uq_widget_bins", "widget_bins", ["organization_id", "widget_id", "bin"]
+            )
+            op.create_table(
+                "widget_moves",
+                sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
+                sa.Column("widget_id", sa.BigInteger(), nullable=False),
+                sa.Column("bin", sa.Text(), nullable=True),
+                sa.Column("amount", sa.Numeric(), nullable=False),
+            )
+            migrations.isolate("widget_moves")
+            migrations.reference("widget_moves", "widget_id", "widgets", ondelete="CASCADE")
+            ledger.keep_balance(
+                "widget_moves",
+                amount="amount",
+                balances="widgets",
+                total="stock",
+                keys={"id": "widget_id"},
+                create=False,
+            )
+            ledger.keep_balance(
+                "widget_moves",
+                amount="amount",
+                balances="widget_bins",
+                total="quantity",
+                keys={"widget_id": "widget_id", "bin": "bin"},
+                create=True,
+            )
     engine.dispose()
 
 

@@ -79,6 +79,23 @@ async def test_one_organization_reads_and_writes_none_of_anothers(serving_databa
         assert await _widgets(db) == ["second's"]
 
 
+async def test_a_row_references_only_its_own_organizations_rows(serving_database: Database):
+    first, second = await _organization(serving_database), await _organization(serving_database)
+    await _add_widget(serving_database, second, "second's")
+    async with serving_database.organization_session(second) as db:
+        theirs = (await db.execute(text("SELECT id FROM widgets"))).scalar_one()
+
+    async with serving_database.organization_session(first) as db:
+        with pytest.raises(DBAPIError, match="foreign key"):
+            await db.execute(
+                text(
+                    "INSERT INTO widget_moves (organization_id, widget_id, amount) "
+                    "VALUES (:org, :widget, 1)"
+                ),
+                {"org": first, "widget": theirs},
+            )
+
+
 async def test_the_organization_is_set_for_every_transaction_and_outlasts_none(
     database: AppDatabase,
 ):

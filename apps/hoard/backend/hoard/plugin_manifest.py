@@ -4,8 +4,9 @@ Hoard is a container plug-in. Its manifest names its service, the scopes it
 asks a community to grant, and its pages: Stock, Production and Reports inside
 each initiative it is placed in, and Settings for the whole community, which
 only the community's admins open. Each page opens on Hoard's implicit ``use``
-permission. ``scripts/export_plugin.py`` writes it for the plug-in SDK, which
-checks it and builds its registry source.
+permission; seeing costs and prices takes :data:`SEE_COSTS` as well.
+``scripts/export_plugin.py`` writes it for the plug-in SDK, which checks it and
+builds its registry source.
 """
 
 from __future__ import annotations
@@ -27,6 +28,15 @@ PROTOCOL_VERSION = 1
 #: documents its records link to; ``members:read``: names to show.
 SCOPES = sorted(["contacts:read", "contacts:write", "files:read", "members:read", "projects:read"])
 
+#: The permission to see what goods cost and what they sell for, held by an
+#: initiative's roles. Members start without it.
+SEE_COSTS = "costs"
+
+#: What the community decides who may do with Hoard, beside the implicit ``use``.
+PERMISSIONS = [
+    {"id": SEE_COSTS, "name": {"en": "See costs and prices"}, "level": "initiative"},
+]
+
 #: Each page: its id, the path Hoard serves it at, where it renders, and its name.
 PAGES = [
     ("stock", "/stock", "initiative", "Stock"),
@@ -42,6 +52,7 @@ def definition() -> dict[str, Any]:
         "plugin_kind": "service",
         "service": {"public_id": PUBLIC_ID, "protocol": PROTOCOL_VERSION, "scopes": SCOPES},
         "features": ["pages"],
+        "permissions": PERMISSIONS,
         "pages": [
             {"id": page, "path": path, "scopes": [scope], "name": {"en": name}}
             for page, path, scope, name in PAGES
