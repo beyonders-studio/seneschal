@@ -10,8 +10,12 @@
   },
   "stock": {
     "title": "Stock",
-    "emptyTitle": "No stock yet",
-    "emptyBody": "Your materials and products will be here: how much you hold of each, where it's kept and when to order more."
+    "tabs": "Stock records",
+    "materials": "Materials",
+    "products": "Products",
+    "purchases": "Purchases",
+    "adjustments": "Adjustments",
+    "stocktakes": "Stocktakes"
   },
   "production": {
     "title": "Production",
@@ -19,13 +23,49 @@
     "emptyBody": "Your production runs will be here: what you make, from which recipe, and the lots each run produces."
   },
   "reports": {
-    "title": "Reports",
-    "emptyTitle": "No reports yet",
-    "emptyBody": "Reports on your stock and production will be here: what your stock is worth, what to reorder and what you made."
+    "title": "Reports"
   },
   "settings": {
-    "title": "Settings",
-    "emptyTitle": "Nothing to set up yet",
-    "emptyBody": "Hoard's settings for the whole community will be here: units of measure, categories, price tiers and store connections."
+    "title": "Settings"
+  },
+  "common": {
+    "add": "Add",
+    "edit": "Edit",
+    "save": "Save",
+    "saving": "Saving…",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "remove": "Remove",
+    "close": "Close",
+    "back": "Back",
+    "search": "Search",
+    "loading": "Loading…",
+    "none": "None",
+    "name": "Name",
+    "notes": "Notes",
+    "date": "Date",
+    "sku": "SKU",
+    "category": "Category",
+    "location": "Location",
+    "mainLocation": "Main location",
+    "unit": "Unit",
+    "quantity": "Quantity",
+    "onHand": "On hand",
+    "lowStockLimit": "Low-stock limit",
+    "cost": "Cost",
+    "unitCost": "Unit cost",
+    "price": "Price",
+    "total": "Total",
+    "createdBy": "Added by {{name}}",
+    "updatedBy": "Last changed by {{name}}"
+  },
+  "errors": {
+    "NOT_AUTHENTICATED": "Your session ended. Open Hoard again from Initiative.",
+    "COMMUNITY_UNAVAILABLE": "This community can't use Hoard right now.",
+    "READ_ONLY": "Hoard is read-only, so nothing can be changed.",
+    "REQUEST_INVALID": "Hoard couldn't read that request.",
+    "ADMIN_ONLY": "Only the community's admins can do that.",
+    "NOT_FOUND": "That record isn't in Hoard.",
+    "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment."
   }
 }

@@ -1,0 +1,19 @@
+{
+  "materials": {
+    "emptyTitle": "No materials yet",
+    "emptyBody": "The materials you buy will be here: how much you hold of each, where it's kept and when to order more.",
+    "pageTitle": "Material"
+  },
+  "products": {
+    "emptyTitle": "No products yet",
+    "emptyBody": "The products you sell will be here, with their variations, pictures and stock.",
+    "pageTitle": "Product"
+  },
+  "settings": {
+    "currency": "Currency",
+    "units": "Units",
+    "categories": "Categories",
+    "locations": "Locations",
+    "reasons": "Adjustment reasons"
+  }
+}

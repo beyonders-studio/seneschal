@@ -1,9 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Settings } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { HoardPage } from "@/components/HoardPage";
-import { StatusMessage } from "@/ui/status-message";
+import { CategoriesSection } from "@/features/settings/CategoriesSection";
+import { CurrencySection } from "@/features/settings/CurrencySection";
+import { LocationsSection } from "@/features/settings/LocationsSection";
+import { ReasonsSection } from "@/features/settings/ReasonsSection";
+import { UnitsSection } from "@/features/settings/UnitsSection";
 
 /** Settings, opened at community level, which Initiative opens only to the
  *  community's admins. */
@@ -13,11 +16,13 @@ function SettingsPage() {
   const { t } = useTranslation();
   return (
     <HoardPage title={t("settings.title")}>
-      <StatusMessage
-        icon={<Settings />}
-        title={t("settings.emptyTitle")}
-        description={t("settings.emptyBody")}
-      />
+      <div className="flex flex-col gap-8">
+        <CurrencySection />
+        <UnitsSection />
+        <CategoriesSection />
+        <LocationsSection />
+        <ReasonsSection />
+      </div>
     </HoardPage>
   );
 }
