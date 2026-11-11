@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# The fast checks CI runs, runnable on your machine. CI calls this same script,
+# and the pre-push hook runs it, so a failure here is the failure CI reports.
+#
+# Usage:
+#   scripts/ci/check              # the checks for what this branch changed
+#   scripts/ci/check all          # every check
+#   scripts/ci/check <name>...    # named checks, or the groups backend / frontend
+#
+# Checks:
+#   ruff        Python lint
+#   format      Python formatting
+#   ty          Python type check
+#   migrations  no merged migration edited; one Alembic head per app
+#   biome       TypeScript lint and formatting (pnpm lint)
+#   tsc         TypeScript type check (pnpm typecheck)
+#   kit         packages/ui is the copy of the Initiative revision it is stamped
+#               with (pnpm check:kit)
+#   codegen     each app's generated API client is what its frontend's
+#               generate:api makes of its backend's OpenAPI document; run it
+#               to regenerate them
+#
+# A check whose files are not in the tree is skipped, and the summary says so.
+#
+# BASE_REF is what "changed" and "merged migration" compare against: origin/dev
+# by default, the pull request's base in CI.
+#
+# Needs the Python workspace synced (uv sync) and the pnpm workspace installed
+# (pnpm install). No database, no server, no tests.
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$ROOT"
+
+BASE_REF="${BASE_REF:-origin/dev}"
+FAILED=()
+SKIPPED=()
+
+say() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+# In GitHub Actions, also an annotation on the run.
+error() {
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then echo "::error::$*"; else echo "$*"; fi
+}
+
+# In the synced workspace, as it stands: a check never installs anything.
+uv_run() { uv run --no-sync "$@"; }
+
+# The apps whose folder holds every path named.
+apps_with() {
+  local dir path
+  for dir in apps/*/; do
+    for path in "$@"; do
+      [[ -e "$dir$path" ]] || continue 2
+    done
+    basename "$dir"
+  done
+}
+
+has_python() {
+  [[ -f packages/core/pyproject.toml || -n "$(apps_with backend/pyproject.toml)" ]]
+}
+
+# Whether the root package.json has the script named.
+has_script() {
+  [[ -f package.json ]] \
+    && node -e 'process.exit(require("./package.json").scripts?.[process.argv[1]] ? 0 : 1)' "$1"
+}
+
+# Why a check has nothing to run on yet; empty when it has.
+absent() {
+  case "$1" in
+    ruff | format | ty) has_python || echo "no Python project" ;;
+    migrations) [[ -n "$(apps_with backend/alembic.ini)" ]] || echo "no app has backend/alembic.ini" ;;
+    biome) has_script lint || echo "package.json has no lint script" ;;
+    tsc) has_script typecheck || echo "package.json has no typecheck script" ;;
+    kit) has_script check:kit || echo "package.json has no check:kit script" ;;
+    codegen)
+      [[ -n "$(apps_with backend/scripts/export_openapi.py frontend/orval.config.ts)" ]] \
+        || echo "no app has both backend/scripts/export_openapi.py and frontend/orval.config.ts"
+      ;;
+  esac
+}
+
+check_ruff() { uv_run ruff check; }
+check_format() { uv_run ruff format --check; }
+check_ty() { uv_run ty check; }
+check_biome() { pnpm lint; }
+check_tsc() { pnpm typecheck; }
+check_kit() { pnpm check:kit; }
+
+check_migrations() {
+  local app found versions head edited
+  if ! git rev-parse --verify --quiet "$BASE_REF^{commit}" >/dev/null; then
+    error "Cannot compare against $BASE_REF: it does not exist here. Run 'git fetch origin dev', or set BASE_REF."
+    return 1
+  fi
+  for app in $(apps_with backend/alembic.ini); do
+    # The revisions' folder, from the backend's; and the head, which
+    # get_current_head() refuses to name when the revisions have more than one.
+    found=$(cd "apps/$app/backend" && uv_run python -c "
+import os
+from alembic.config import Config
+from alembic.script import ScriptDirectory
+script = ScriptDirectory.from_config(Config('alembic.ini'))
+print(os.path.relpath(script.versions))
+print(script.get_current_head())
+")
+    {
+      read -r versions
+      read -r head
+    } <<<"$found"
+    echo "$app: one Alembic head, $head."
+    # A revision already on the base branch is fixed: a branch that modifies,
+    # renames or deletes one fails. --no-renames reports a rename as the old
+    # path deleted, so the merged name is the one reported.
+    edited=$(git diff --name-only --no-renames --diff-filter=MDT "$BASE_REF...HEAD" -- "apps/$app/backend/$versions")
+    if [[ -n "$edited" ]]; then
+      error "$app: edited, renamed or removed a merged migration: $(tr '\n' ' ' <<<"$edited")"
+      echo "Add a new revision instead."
+      return 1
+    fi
+    echo "$app: no merged migration edited."
+  done
+}
+
+check_codegen() {
+  local app generated drifted=0
+  for app in $(apps_with backend/scripts/export_openapi.py frontend/orval.config.ts); do
+    generated="apps/$app/frontend/src/api/generated"
+    # Regenerating writes over these files, so they must hold nothing that is
+    # not committed yet. (CI always starts from a clean checkout.)
+    if [[ -n "$(git status --porcelain -- "$generated")" ]]; then
+      git status --short -- "$generated"
+      error "$app: the generated API client has uncommitted changes, which regenerating would overwrite."
+      echo "Commit them (or discard them), then run the check again."
+      return 1
+    fi
+    # The frontend's generate:api runs Orval on its openapi.json (gitignored).
+    (cd "apps/$app/backend" && uv_run python scripts/export_openapi.py "$ROOT/apps/$app/frontend/openapi.json")
+    (cd "apps/$app/frontend" && pnpm run generate:api)
+    if [[ -n "$(git status --porcelain -- "$generated")" ]]; then
+      git status --short -- "$generated"
+      if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+        git --no-pager diff HEAD -- "$generated"
+      else
+        git --no-pager diff --stat HEAD -- "$generated"
+      fi
+      error "$app: regenerated from the backend, and it differs from what is committed."
+      drifted=1
+    else
+      echo "$app: the generated API client is up to date."
+    fi
+  done
+  if ((drifted)); then
+    echo "Run scripts/ci/check codegen locally: it regenerates them. Review and commit the result."
+    return 1
+  fi
+}
+
+# What this branch changed against BASE_REF, committed or not.
+changed_paths() {
+  {
+    git diff --name-only "$BASE_REF...HEAD" 2>/dev/null || echo "(no base)"
+    git diff --name-only HEAD
+    git ls-files --others --exclude-standard
+  } | sort -u
+}
+
+checks_for_changes() {
+  local changed
+  changed=$(changed_paths)
+  # No base to compare with, or a change to the checks themselves: run them all.
+  if grep -qx "(no base)" <<<"$changed" \
+    || grep -qE '^(scripts/ci/|\.github/workflows/ci\.yml$|\.husky/)' <<<"$changed"; then
+    echo "all"
+    return
+  fi
+  if grep -qE '^(apps/[^/]+/backend/|packages/core/|pyproject\.toml$|uv\.lock$)|\.py$' <<<"$changed"; then
+    echo "ruff format ty"
+  fi
+  if grep -qE '^apps/[^/]+/backend/' <<<"$changed"; then
+    echo "migrations"
+  fi
+  if grep -qE '^(apps/[^/]+/frontend/|packages/ui/|package\.json$|pnpm-(lock|workspace)\.yaml$|biome\.jsonc?$|tsconfig[^/]*\.json$)' <<<"$changed"; then
+    echo "biome tsc"
+  fi
+  if grep -qE '^(packages/ui/|apps/[^/]+/frontend/package\.json$|package\.json$|pnpm-lock\.yaml$)' <<<"$changed"; then
+    echo "kit"
+  fi
+  if grep -qE '^(apps/[^/]+/backend/|packages/core/|apps/[^/]+/frontend/(orval\.config\.ts$|package\.json$|src/api/)|uv\.lock$|pnpm-lock\.yaml$|biome\.jsonc?$)' <<<"$changed"; then
+    echo "codegen"
+  fi
+}
+
+expand() {
+  case "$1" in
+    all) echo "ruff format ty migrations biome tsc kit codegen" ;;
+    backend) echo "ruff format ty migrations" ;;
+    frontend) echo "biome tsc kit" ;;
+    ruff | format | ty | migrations | biome | tsc | kit | codegen) echo "$1" ;;
+    *)
+      echo "Unknown check: $1 (see scripts/ci/check --help)" >&2
+      exit 2
+      ;;
+  esac
+}
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+fi
+
+if [[ $# -eq 0 ]]; then
+  # shellcheck disable=SC2046 # one check name per word
+  set -- $(checks_for_changes)
+  if [[ $# -eq 0 ]]; then
+    echo "Nothing to check: no Python or TypeScript changes against $BASE_REF."
+    exit 0
+  fi
+fi
+
+CHECKS=()
+for arg in "$@"; do
+  # An assignment, so an unknown name stops the script here.
+  names=$(expand "$arg")
+  for name in $names; do
+    [[ " ${CHECKS[*]-} " == *" $name "* ]] || CHECKS+=("$name")
+  done
+done
+
+RAN=()
+for name in "${CHECKS[@]}"; do
+  say "$name"
+  reason=$(absent "$name")
+  if [[ -n "$reason" ]]; then
+    echo "Skipped: $reason."
+    SKIPPED+=("$name")
+    continue
+  fi
+  RAN+=("$name")
+  # A function called as `f || …` runs with -e off, so a failed step would not
+  # stop its check. The subshell keeps -e on inside it.
+  set +e
+  (
+    set -e
+    "check_$name"
+  )
+  status=$?
+  set -e
+  [[ $status -eq 0 ]] || FAILED+=("$name")
+done
+
+echo
+[[ ${#SKIPPED[@]} -eq 0 ]] || echo "Skipped, nothing to check yet: ${SKIPPED[*]}"
+if [[ ${#FAILED[@]} -gt 0 ]]; then
+  echo "Failed: ${FAILED[*]}"
+  exit 1
+fi
+if [[ ${#RAN[@]} -gt 0 ]]; then
+  echo "Passed: ${RAN[*]}"
+fi
