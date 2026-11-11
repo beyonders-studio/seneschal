@@ -53,10 +53,6 @@ describe("PurchasePage", () => {
         "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
         "GET /api/v1/contacts": { status: 200, data: [] },
         "GET /api/v1/members": { status: 200, data: [] },
-        "GET /api/v1/adjustments/options": {
-          status: 200,
-          data: { items: [], locations: [], reasons: [], categories: [] },
-        },
       }
     );
 

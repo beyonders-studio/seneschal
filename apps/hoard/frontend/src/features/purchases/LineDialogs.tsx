@@ -153,7 +153,8 @@ function LineForm({
         materials
         label={t("purchases.lines.material")}
         value={material}
-        onChange={(picked) => setMaterial(picked.id)}
+        chosen={line?.material.name}
+        onChange={setMaterial}
       />
       <div className="grid grid-cols-pair gap-4">
         <Field label={t("purchases.lines.purchaseQuantity")}>

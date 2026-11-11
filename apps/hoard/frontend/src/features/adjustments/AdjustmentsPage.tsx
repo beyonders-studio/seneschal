@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpDown, Plus, X } from "lucide-react";
+import { ArrowUpDown, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -105,26 +105,15 @@ export function AdjustmentsPage() {
             </SelectContent>
           </Select>
         </Field>
-        <div className="flex items-end gap-1">
-          <ItemField
-            label={t("adjustments.item")}
-            value={itemId}
-            onChange={(picked) => {
-              setItemId(picked.id);
-              setPage(1);
-            }}
-          />
-          {itemId !== null && (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={t("adjustments.allItems")}
-              onClick={() => setItemId(null)}
-            >
-              <X aria-hidden />
-            </Button>
-          )}
-        </div>
+        <ItemField
+          label={t("adjustments.item")}
+          value={itemId}
+          onChange={(picked) => {
+            setItemId(picked);
+            setPage(1);
+          }}
+          clearLabel={t("adjustments.allItems")}
+        />
         <Button className="ml-auto" onClick={() => setAdding(true)} disabled={read_only}>
           <Plus aria-hidden />
           {t("adjustments.add")}

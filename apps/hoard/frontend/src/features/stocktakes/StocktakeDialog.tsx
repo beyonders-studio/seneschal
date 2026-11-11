@@ -10,7 +10,8 @@ import {
 } from "@/api/generated/stocktakes/stocktakes";
 import { toast } from "@/components/Toaster";
 import { LocationField } from "@/features/adjustments/fields";
-import { today, useMovementLabels } from "@/features/adjustments/labels";
+import { today } from "@/features/adjustments/labels";
+import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
 import {
@@ -64,7 +65,7 @@ export function StocktakeDialog({
 function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => void }) {
   const { t } = useTranslation("movements");
   const queries = useQueryClient();
-  const { options } = useMovementLabels();
+  const { categoriesOf } = useSettingsNames();
   const [kind, setKind] = useState<CategoryKind>(CategoryKind.material);
   const [location, setLocation] = useState<number | null>(null);
   const [category, setCategory] = useState<number | null>(null);
@@ -128,13 +129,11 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value={ALL_CATEGORIES}>{t("stocktakes.allCategories")}</SelectItem>
-                {(options?.categories ?? [])
-                  .filter((named) => named.kind === kind)
-                  .map((named) => (
-                    <SelectItem key={named.id} value={String(named.id)}>
-                      {named.name}
-                    </SelectItem>
-                  ))}
+                {categoriesOf(kind).map((named) => (
+                  <SelectItem key={named.id} value={String(named.id)}>
+                    {named.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>

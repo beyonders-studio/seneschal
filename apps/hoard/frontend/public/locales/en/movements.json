@@ -3,6 +3,7 @@
     "variation": "{{name}} ({{attributes}})",
     "choose": "Choose an item",
     "none": "No item has that name.",
+    "loadFailed": "The product's variations couldn't be read.",
     "kinds": {
       "material": "Material",
       "variation": "Product"

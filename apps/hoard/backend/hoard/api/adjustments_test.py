@@ -87,7 +87,3 @@ async def test_a_member_without_costs_adjusts_but_sees_and_types_no_cost(
         f"/api/v1/adjustments/{made.json()['id']}", json={"unit_cost": "1"}
     )
     assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
-
-    options = (await client.get("/api/v1/adjustments/options")).json()
-    assert [item["name"] for item in options["items"]] == ["Flour"]
-    assert [location["main"] for location in options["locations"]] == [True]

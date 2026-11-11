@@ -6,9 +6,6 @@ deleting a manual or starting adjustment re-derives its item's cost
 (``hoard.costing``). A starting adjustment's unit cost is typed in; every other
 one's is derived. Without :data:`~hoard.api.deps.SeesCostsDep` no unit cost is
 sent and none is taken.
-
-This area also answers what a movement may name: the organization's items,
-locations, reasons and categories (:func:`read_adjustment_options`).
 """
 
 from __future__ import annotations
@@ -31,8 +28,6 @@ from hoard.records import (
     Adjustment,
     AdjustmentKind,
     AdjustmentReason,
-    Category,
-    CategoryKind,
     ItemKind,
     Location,
     Material,
@@ -339,90 +334,3 @@ async def delete_adjustment(db: WriteSessionDep, adjustment_id: int) -> None:
     await db.delete(adjustment)
     await costing.rederive(db, adjustment.item_id)
     await db.commit()
-
-
-class AdjustmentOptionItem(AdjustmentItem):
-    #: Whether a material carries stock; every variation does.
-    inventoriable: bool
-    #: Tracking units in one purchase unit, for a material.
-    purchase_conversion: Decimal | None
-
-
-class AdjustmentLocation(BaseModel):
-    id: int
-    #: None for the main location until someone names it.
-    name: str | None
-    main: bool
-
-
-class AdjustmentReasonOption(BaseModel):
-    id: int
-    name: str
-
-
-class AdjustmentCategory(BaseModel):
-    id: int
-    kind: CategoryKind
-    name: str
-
-
-class AdjustmentOptions(BaseModel):
-    """What a purchase, an adjustment or a stocktake may name."""
-
-    items: list[AdjustmentOptionItem]
-    locations: list[AdjustmentLocation]
-    reasons: list[AdjustmentReasonOption]
-    categories: list[AdjustmentCategory]
-
-
-@router.get("/options")
-async def read_adjustment_options(db: OrganizationSessionDep) -> AdjustmentOptions:
-    """The items, locations, reasons and categories a movement may name."""
-    materials = await db.exec(select(Material).order_by(col(Material.name), col(Material.id)))
-    variations = await db.exec(
-        select(Variation, Product.name)
-        .join(Product, col(Product.id) == col(Variation.product_id))
-        .order_by(col(Product.name), col(Variation.id))
-    )
-    locations = await db.exec(
-        select(Location).order_by(col(Location.main).desc(), col(Location.name))
-    )
-    reasons = await db.exec(select(AdjustmentReason).order_by(col(AdjustmentReason.name)))
-    categories = await db.exec(select(Category).order_by(col(Category.name)))
-    return AdjustmentOptions(
-        items=[
-            *(
-                AdjustmentOptionItem(
-                    id=material.id,
-                    kind=ItemKind.MATERIAL,
-                    name=material.name,
-                    attributes={},
-                    inventoriable=material.inventoriable,
-                    purchase_conversion=material.purchase_conversion,
-                )
-                for material in materials.all()
-            ),
-            *(
-                AdjustmentOptionItem(
-                    id=variation.id,
-                    kind=ItemKind.VARIATION,
-                    name=name,
-                    attributes=variation.attributes,
-                    inventoriable=True,
-                    purchase_conversion=None,
-                )
-                for variation, name in variations.all()
-            ),
-        ],
-        locations=[
-            AdjustmentLocation(id=location.id, name=location.name, main=location.main)
-            for location in locations.all()
-        ],
-        reasons=[
-            AdjustmentReasonOption(id=reason.id, name=reason.name) for reason in reasons.all()
-        ],
-        categories=[
-            AdjustmentCategory(id=category.id, kind=category.kind, name=category.name)
-            for category in categories.all()
-        ],
-    )

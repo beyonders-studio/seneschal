@@ -43,10 +43,6 @@ describe("StocktakePage", () => {
         ),
       },
       "GET /api/v1/members": { status: 200, data: [] },
-      "GET /api/v1/adjustments/options": {
-        status: 200,
-        data: { items: [], locations: [], reasons: [], categories: [] },
-      },
     });
 
     await screen.findByText(/0 of 1 counted/);

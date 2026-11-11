@@ -8,9 +8,12 @@ import {
   useUpdateAdjustment,
 } from "@/api/generated/adjustments/adjustments";
 import type { AdjustmentRead } from "@/api/generated/hoard.schemas";
+import { useListSettingsReasons } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
 import { ItemField, LocationField } from "@/features/adjustments/fields";
-import { today, useMovementLabels } from "@/features/adjustments/labels";
+import { today } from "@/features/adjustments/labels";
+import { IdSelect } from "@/features/items/IdSelect";
+import { useReasonName } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
@@ -24,11 +27,7 @@ import {
 } from "@/ui/dialog";
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Textarea } from "@/ui/textarea";
-
-/** The reason select's value for no reason. */
-const NO_REASON = "none";
 
 /**
  * Adds a change to stock by hand, or changes `adjustment`, a manual or
@@ -69,7 +68,8 @@ function AdjustmentForm({
   const { t } = useTranslation("movements");
   const queries = useQueryClient();
   const seesCosts = useSeesCosts();
-  const { options } = useMovementLabels();
+  const reasons = useListSettingsReasons().data ?? [];
+  const reasonName = useReasonName();
   const [item, setItem] = useState(adjustment?.item.id ?? null);
   const [location, setLocation] = useState(adjustment?.location_id ?? null);
   const [datedOn, setDatedOn] = useState(adjustment?.dated_on ?? today());
@@ -109,13 +109,7 @@ function AdjustmentForm({
   return (
     <form onSubmit={submit} className="contents">
       <DialogBody className="space-y-4">
-        {!adjustment && (
-          <ItemField
-            label={t("adjustments.item")}
-            value={item}
-            onChange={(picked) => setItem(picked.id)}
-          />
-        )}
+        {!adjustment && <ItemField label={t("adjustments.item")} value={item} onChange={setItem} />}
         <div className="grid grid-cols-pair gap-4">
           <Field label={t("adjustments.change")} hint={t("adjustments.changeHint")}>
             <Input
@@ -145,22 +139,12 @@ function AdjustmentForm({
         )}
         <LocationField value={location} onChange={setLocation} />
         <Field label={t("adjustments.reason")}>
-          <Select
-            value={reason === null ? NO_REASON : String(reason)}
-            onValueChange={(next) => setReason(next === NO_REASON ? null : Number(next))}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_REASON}>{t("hoard:common.none")}</SelectItem>
-              {(options?.reasons ?? []).map((named) => (
-                <SelectItem key={named.id} value={String(named.id)}>
-                  {named.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <IdSelect
+            value={reason}
+            options={reasons.map((named) => ({ id: named.id, name: reasonName(named) }))}
+            onChange={setReason}
+            none={t("hoard:common.none")}
+          />
         </Field>
         <Field label={t("hoard:common.notes")}>
           <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
