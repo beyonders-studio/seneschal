@@ -1,5 +1,6 @@
-"""What an app's migrations call to make the registry, to isolate a table and
-to reference one organization row from another.
+"""What an app's migrations call to make the registry, to isolate a table, to
+stamp its records with who made and changed them, and to reference one
+organization row from another.
 
 Migrations run as the owner login. The serving login's name reaches them from
 the migration environment as the context option ``serving_login`` (each app's
@@ -64,6 +65,23 @@ def isolate(table: str) -> None:
         f"USING ({POLICY_CONDITION}) WITH CHECK ({POLICY_CONDITION})"
     )
     op.execute(f"GRANT {SERVING_PRIVILEGES} ON {quoted} TO {quote(serving_login())}")
+
+
+def stamp(table: str) -> None:
+    """Make ``table`` say who made each record and when, and who last changed
+    it and when: a member's pairwise reference, or null for the app itself.
+    The model is :class:`~seneschal_core.models.Stamped`."""
+    for action in ("created", "updated"):
+        op.add_column(
+            table,
+            sa.Column(
+                f"{action}_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
+        op.add_column(table, sa.Column(f"{action}_by", sa.Text(), nullable=True))
 
 
 def referable(table: str) -> None:

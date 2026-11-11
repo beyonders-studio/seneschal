@@ -1,6 +1,7 @@
 """The model side of an organization's tables, as
 :mod:`~seneschal_core.migrations` makes them: the ``organization_id`` each
-carries, an identity key, and references kept within the organization.
+carries, an identity key, references kept within the organization, and who
+made and last changed a record, and when.
 
 Models declare what queries name and the order rows are written in; the
 revisions make the tables.
@@ -8,14 +9,24 @@ revisions make the tables.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import BigInteger, Column, ForeignKeyConstraint, Identity, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    DateTime,
+    ForeignKeyConstraint,
+    Identity,
+    UniqueConstraint,
+    event,
+)
 from sqlalchemy import Enum as SqlEnum
+from sqlalchemy.orm import Session
 from sqlmodel import Field, SQLModel
 
-from seneschal_core.db import REGISTRY_TABLE
+from seneschal_core.db import ACTOR_KEY, REGISTRY_TABLE, OrganizationSession
 
 
 class OrganizationRow(SQLModel):
@@ -29,6 +40,34 @@ class OrganizationRow(SQLModel):
         ondelete="CASCADE",
         index=True,
     )
+
+
+class Stamped(SQLModel):
+    """A record that says who made it and when, and who last changed it and
+    when: the columns :func:`~seneschal_core.migrations.stamp` adds.
+
+    "Who" is a member's pairwise reference, never a name, so a member erased
+    leaves what they did; None is the app itself. A write session fills them
+    in as it writes a record, from its actor."""
+
+    created_at: datetime = Field(default=None, sa_type=DateTime(timezone=True))
+    created_by: str | None = None
+    updated_at: datetime = Field(default=None, sa_type=DateTime(timezone=True))
+    updated_by: str | None = None
+
+
+@event.listens_for(OrganizationSession.sync_session_class, "before_flush")
+def _stamp(session: Session, _context: Any, _instances: Any) -> None:
+    if ACTOR_KEY not in session.info:
+        return
+    actor, now = session.info[ACTOR_KEY], datetime.now(UTC)
+    for row in session.new:
+        if isinstance(row, Stamped):
+            row.created_at = row.updated_at = now
+            row.created_by = row.updated_by = actor
+    for row in session.dirty:
+        if isinstance(row, Stamped) and session.is_modified(row):
+            row.updated_at, row.updated_by = now, actor
 
 
 def identity() -> Any:

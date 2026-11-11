@@ -13,7 +13,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 from seneschal_core.ledger import drop_balance, keep_balance
-from seneschal_core.migrations import isolate, referable, reference
+from seneschal_core.migrations import isolate, referable, reference, stamp
 
 revision: str = "0002"
 down_revision: str | None = "0001"
@@ -83,6 +83,11 @@ REFERENCES: dict[str, tuple[bool, list[tuple[str, str, str | None]]]] = {
         ],
     ),
 }
+
+
+#: The tables that hold only what is derived from records, and say nobody's
+#: name: every other table is a record, which says who made and changed it.
+DERIVED = {"items", "stock_levels"}
 
 
 def _id() -> sa.Column:
@@ -257,6 +262,8 @@ def upgrade() -> None:
     for table, (referenced, references) in REFERENCES.items():
         op.create_table(table, *tables[table])
         isolate(table)
+        if table not in DERIVED:
+            stamp(table)
         if referenced:
             referable(table)
         for column, parent, ondelete in references:

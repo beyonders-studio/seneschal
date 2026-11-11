@@ -48,6 +48,10 @@ def community_ref() -> str:
     return f"community-{secrets.token_hex(6)}"
 
 
+#: The member every test's write session writes for.
+MEMBER = "member-ref"
+
+
 @pytest.fixture
 async def organization_id(serving_database: Database, community_ref: str) -> int:
     """An organization of the test's own."""
@@ -61,8 +65,9 @@ async def organization_id(serving_database: Database, community_ref: str) -> int
 
 @pytest.fixture
 async def db(serving_database: Database, organization_id: int) -> AsyncIterator[WriteSession]:
-    """A write session for the test's organization, as the serving login."""
-    async with serving_database.write_session(organization_id) as session:
+    """A write session for the test's organization, as the serving login,
+    writing for :data:`MEMBER`."""
+    async with serving_database.write_session(organization_id, actor=MEMBER) as session:
         yield session
 
 

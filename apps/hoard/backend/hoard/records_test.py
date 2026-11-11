@@ -34,7 +34,7 @@ async def test_an_organization_reaches_and_references_none_of_anothers_materials
     await db.commit()
     other = await _another_organization(serving_database, community_ref)
 
-    async with serving_database.write_session(other) as theirs:
+    async with serving_database.write_session(other, actor=None) as theirs:
         assert (await theirs.exec(select(Material))).all() == []
         with pytest.raises(DBAPIError, match="foreign key"):
             await add_material(theirs, Material(name="Planted", tracking_unit_id=unit.id))
@@ -44,6 +44,28 @@ async def test_an_organization_reaches_and_references_none_of_anothers_materials
                 text("INSERT INTO units (organization_id, name) VALUES (:org, 'stray')"),
                 {"org": db.organization_id},
             )
+
+
+async def test_records_say_who_made_and_last_changed_them(
+    serving_database: Database, db: WriteSession, main, material
+):
+    member = db.actor
+    flour = await material("Flour")
+    await db.commit()
+    assert member and (flour.created_by, flour.updated_by) == (member, member)
+    assert flour.created_at == flour.updated_at
+    # The main location is Hoard's own.
+    assert main.created_by is None
+
+    async with serving_database.write_session(db.organization_id, actor="another-ref") as theirs:
+        theirs_flour = await theirs.get_one(Material, flour.id)
+        theirs_flour.name = "Flour"
+        await theirs.flush()
+        assert theirs_flour.updated_by == member
+        theirs_flour.name = "Rye flour"
+        await theirs.commit()
+        assert (theirs_flour.created_by, theirs_flour.updated_by) == (member, "another-ref")
+        assert theirs_flour.updated_at > theirs_flour.created_at
 
 
 async def test_erasing_an_organization_takes_its_stock_with_it(

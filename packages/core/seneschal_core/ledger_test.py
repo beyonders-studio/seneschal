@@ -45,7 +45,7 @@ async def _balances(db, widget_id: int) -> tuple[Decimal, dict[str, Decimal]]:
 
 async def test_entries_keep_their_balances_through_every_change(serving_database: Database):
     organization_id = await _organization(serving_database)
-    async with serving_database.write_session(organization_id) as db:
+    async with serving_database.write_session(organization_id, actor=None) as db:
         widget_id = (
             await db.execute(
                 text(

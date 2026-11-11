@@ -21,7 +21,9 @@
   variances become adjustments.
 
 Quantities, costs and prices are exact decimals to six places. A supplier is an
-Initiative contact, named by its id.
+Initiative contact, named by its id. Every record says who made it and when,
+and who last changed it and when; items and stock levels, which only hold what
+is derived from records, do not.
 """
 
 from __future__ import annotations
@@ -35,7 +37,14 @@ from sqlalchemy import BigInteger, CheckConstraint, Column, Index, UniqueConstra
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field
 
-from seneschal_core.models import OrganizationRow, enum_column, identity, referable, reference
+from seneschal_core.models import (
+    OrganizationRow,
+    Stamped,
+    enum_column,
+    identity,
+    referable,
+    reference,
+)
 
 #: The places every quantity, cost and price is kept to.
 PLACES = Decimal("0.000001")
@@ -79,7 +88,7 @@ class AdjustmentKind(StrEnum):
     MANUAL = "manual"
 
 
-class Unit(OrganizationRow, table=True):
+class Unit(OrganizationRow, Stamped, table=True):
     """A measurement unit."""
 
     __tablename__ = "units"
@@ -92,7 +101,7 @@ class Unit(OrganizationRow, table=True):
     name: str
 
 
-class Category(OrganizationRow, table=True):
+class Category(OrganizationRow, Stamped, table=True):
     """A category, typed by the kind of record it sorts."""
 
     __tablename__ = "categories"
@@ -106,7 +115,7 @@ class Category(OrganizationRow, table=True):
     name: str
 
 
-class Location(OrganizationRow, table=True):
+class Location(OrganizationRow, Stamped, table=True):
     """A place stock sits. ``main`` marks the one every change defaults to,
     which has no name until someone gives it one: pages call it by the
     translated word for the main location."""
@@ -141,7 +150,7 @@ class Item(OrganizationRow, table=True):
     average_cost: Decimal = amount()
 
 
-class Material(OrganizationRow, table=True):
+class Material(OrganizationRow, Stamped, table=True):
     """Bought, never made. A material that is not inventoriable, such as a
     tool, carries no stock."""
 
@@ -174,7 +183,7 @@ class Material(OrganizationRow, table=True):
     supplier_code: str | None = None
 
 
-class Product(OrganizationRow, table=True):
+class Product(OrganizationRow, Stamped, table=True):
     """Sold, through its variations."""
 
     __tablename__ = "products"
@@ -194,7 +203,7 @@ class Product(OrganizationRow, table=True):
     low_stock_limit: Decimal | None = amount(None)
 
 
-class Variation(OrganizationRow, table=True):
+class Variation(OrganizationRow, Stamped, table=True):
     """One form of a product, with its own stock and price. A simple product's
     one variation is its default, with no attributes."""
 
@@ -225,7 +234,7 @@ class Variation(OrganizationRow, table=True):
     is_default: bool = False
 
 
-class AdjustmentReason(OrganizationRow, table=True):
+class AdjustmentReason(OrganizationRow, Stamped, table=True):
     """Why stock was adjusted by hand, as people name it."""
 
     __tablename__ = "adjustment_reasons"
@@ -238,7 +247,7 @@ class AdjustmentReason(OrganizationRow, table=True):
     name: str
 
 
-class Purchase(OrganizationRow, table=True):
+class Purchase(OrganizationRow, Stamped, table=True):
     """Materials bought from a supplier, received at a location. Its discount
     and shipping are spread over its lines by value; its tax is not a cost."""
 
@@ -264,7 +273,7 @@ class Purchase(OrganizationRow, table=True):
     tax: Decimal = amount()
 
 
-class PurchaseLine(OrganizationRow, table=True):
+class PurchaseLine(OrganizationRow, Stamped, table=True):
     """A material bought: so many purchase units at a unit cost each, which
     are so many tracking units. Receiving it makes its lot and its purchase
     adjustment."""
@@ -291,7 +300,7 @@ class PurchaseLine(OrganizationRow, table=True):
     received: bool = False
 
 
-class Lot(OrganizationRow, table=True):
+class Lot(OrganizationRow, Stamped, table=True):
     """A lot of an item at a location, with its running balance."""
 
     __tablename__ = "lots"
@@ -335,7 +344,7 @@ class StockLevel(OrganizationRow, table=True):
     quantity: Decimal = amount()
 
 
-class Stocktake(OrganizationRow, table=True):
+class Stocktake(OrganizationRow, Stamped, table=True):
     """A count of materials or products at a location: all of them, or a
     random sample, of one category or every one."""
 
@@ -357,7 +366,7 @@ class Stocktake(OrganizationRow, table=True):
     notes: str | None = None
 
 
-class StocktakeRow(OrganizationRow, table=True):
+class StocktakeRow(OrganizationRow, Stamped, table=True):
     """One item to count. Confirming it records what was on hand and what was
     counted; their difference is its variance."""
 
@@ -382,7 +391,7 @@ class StocktakeRow(OrganizationRow, table=True):
     counted: Decimal | None = amount(None)
 
 
-class Adjustment(OrganizationRow, table=True):
+class Adjustment(OrganizationRow, Stamped, table=True):
     """A change to an item's stock at a location, and to a lot's balance when
     it names one. ``unit_cost`` is what one unit cost at the time: typed in for
     a starting adjustment, the landed cost for a purchase, and otherwise the
