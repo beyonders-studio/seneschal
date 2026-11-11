@@ -45,7 +45,7 @@ describe("Hoard's pages", () => {
 
   it.each([
     ["/production", "Production", "No production runs yet"],
-    ["/reports", "Reports", "No reports yet"],
+    ["/reports", "Reports", "Stock to reorder"],
   ])("%s opens its page", async (path, title, empty) => {
     await openSignedIn(path);
     await screen.findByRole("heading", { level: 1, name: title });

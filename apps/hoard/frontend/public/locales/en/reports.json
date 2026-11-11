@@ -1,4 +1,44 @@
 {
-  "emptyTitle": "No reports yet",
-  "emptyBody": "Reports on your stock will be here: what to reorder and what your stock is worth."
+  "loadError": "Try again in a moment.",
+  "reorder": {
+    "title": "Stock to reorder",
+    "description": "Materials and products at or below their low-stock limit, counting stock at every location together.",
+    "empty": "Nothing to reorder: everything is above its low-stock limit.",
+    "kind": "Kind",
+    "kinds": {
+      "material": "Material",
+      "product": "Product"
+    }
+  },
+  "valuation": {
+    "title": "Stock value",
+    "description": "What the stock on hand is worth at each item's average cost.",
+    "total": "Total value",
+    "empty": "Nothing is in stock yet.",
+    "averageCost": "Average cost",
+    "value": "Value"
+  },
+  "export": {
+    "title": "Export",
+    "description": "Download every record of a kind: CSV for a spreadsheet, JSON for another program. Costs and prices are included only if you can see them.",
+    "download": "Download {{kind}} as {{format}}",
+    "kinds": {
+      "materials": "Materials",
+      "products": "Products",
+      "variations": "Variations",
+      "purchases": "Purchases",
+      "purchase_lines": "Purchase lines",
+      "lots": "Lots",
+      "adjustments": "Adjustments",
+      "stocktakes": "Stocktakes",
+      "stocktake_rows": "Stocktake counts"
+    },
+    "formats": {
+      "csv": "CSV",
+      "json": "JSON"
+    }
+  },
+  "errors": {
+    "COSTS_ONLY": "Only members who can see costs can see what stock is worth."
+  }
 }
