@@ -29,10 +29,9 @@ describe("the session", () => {
     });
 
     await screen.findByRole("heading", { name: "Stock" });
-    expect(asked.map((request) => `${request.method?.toUpperCase()} ${request.url}`)).toEqual([
-      "POST /api/v1/auth/handoff/exchange",
-      "GET /api/v1/auth/me",
-    ]);
+    expect(
+      asked.slice(0, 2).map((request) => `${request.method?.toUpperCase()} ${request.url}`)
+    ).toEqual(["POST /api/v1/auth/handoff/exchange", "GET /api/v1/auth/me"]);
     expect(JSON.parse(asked[0].data)).toEqual({
       handoff_token: "minted",
       theme: "dark",

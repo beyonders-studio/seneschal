@@ -2,18 +2,134 @@
   "materials": {
     "emptyTitle": "No materials yet",
     "emptyBody": "The materials you buy will be here: how much you hold of each, where it's kept and when to order more.",
-    "pageTitle": "Material"
+    "add": "Add material",
+    "edit": "Edit material",
+    "trackingUnit": "Counted in",
+    "purchaseUnit": "Bought in",
+    "sameUnit": "The unit it's counted in",
+    "conversion": "How many it holds",
+    "conversionHint": "How many of the unit it's counted in make one of the unit it's bought in.",
+    "purchaseUnitIs": "{{unit}} of {{conversion}} {{trackingUnit}}",
+    "noUnits": "Add the units you count in under Settings first.",
+    "supplier": "Preferred supplier",
+    "supplierCode": "Supplier's code",
+    "inventoriable": "Keeps stock",
+    "inventoriableHint": "Turn this off for something you buy but don't count, such as a tool.",
+    "notInventoriable": "Not stocked",
+    "saveFailed": "Couldn't save the material.",
+    "loadFailed": "Couldn't load the material."
   },
   "products": {
     "emptyTitle": "No products yet",
     "emptyBody": "The products you sell will be here, with their variations, pictures and stock.",
-    "pageTitle": "Product"
+    "add": "Add product",
+    "edit": "Edit product",
+    "status": "Status",
+    "statuses": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "defaultPrice": "Default price",
+    "usesDefaultPrice": "Default",
+    "priceHint": "Leave it blank to sell it at the product's default price.",
+    "images": "Pictures",
+    "noImages": "No pictures yet.",
+    "imagePrompt": "Drop a GIF, JPEG, PNG or WebP picture of up to 5 MB here.",
+    "imageOf": "{{name}}, picture {{number}}",
+    "removeImage": "Delete picture {{number}}",
+    "imageFailed": "Couldn't change the pictures.",
+    "variations": "Variations",
+    "variation": "Variation",
+    "defaultVariation": "Default",
+    "addVariation": "Add variation",
+    "editVariation": "Edit variation",
+    "attributes": "Attributes",
+    "attribute": "Attribute",
+    "attributeHint": "Size",
+    "attributeValue": "Value",
+    "attributeValueHint": "Large",
+    "addAttribute": "Add attribute",
+    "removeAttribute": "Remove attribute",
+    "saveFailed": "Couldn't save the product.",
+    "loadFailed": "Couldn't load the product."
   },
   "settings": {
-    "currency": "Currency",
-    "units": "Units",
-    "categories": "Categories",
-    "locations": "Locations",
-    "reasons": "Adjustment reasons"
+    "rename": "Rename",
+    "removeTitle": "Delete {{name}}?",
+    "saveFailed": "Couldn't save that.",
+    "removeFailed": "Couldn't delete that.",
+    "currency": {
+      "title": "Currency",
+      "description": "Every cost and price in Hoard is in this currency.",
+      "code": "Currency code",
+      "codeHint": "Three letters, such as USD or EUR.",
+      "saved": "Currency saved."
+    },
+    "units": {
+      "title": "Units",
+      "add": "Add unit",
+      "empty": "No units yet. Add the ones you count and buy in, such as g, kg or box.",
+      "name": "Unit"
+    },
+    "categories": {
+      "title": "Categories",
+      "material": "Material categories",
+      "product": "Product categories",
+      "materials": {
+        "add": "Add material category",
+        "empty": "No material categories yet.",
+        "name": "Category"
+      },
+      "products": {
+        "add": "Add product category",
+        "empty": "No product categories yet.",
+        "name": "Category"
+      }
+    },
+    "locations": {
+      "title": "Locations",
+      "add": "Add location",
+      "empty": "No locations yet.",
+      "name": "Location"
+    },
+    "reasons": {
+      "title": "Adjustment reasons",
+      "add": "Add reason",
+      "empty": "No reasons yet.",
+      "name": "Reason",
+      "defaults": {
+        "correction": "Correction",
+        "damaged": "Damaged",
+        "expired": "Expired",
+        "lost": "Lost",
+        "personal_use": "Personal use"
+      }
+    }
+  },
+  "errors": {
+    "NAME_TAKEN": "That name is already used.",
+    "NAME_REQUIRED": "Give it a name.",
+    "IN_USE": "Records still use it, so it can't be deleted.",
+    "MAIN_LOCATION": "The main location can't be deleted.",
+    "UNIT_UNKNOWN": "Pick one of your units.",
+    "CATEGORY_UNKNOWN": "Pick one of your categories.",
+    "LAST_VARIATION": "A product keeps at least one variation.",
+    "IMAGE_TYPE": "Add a GIF, JPEG, PNG or WebP picture.",
+    "IMAGE_TOO_LARGE": "That picture is larger than 5 MB."
+  },
+  "items": {
+    "stock": "Stock by location",
+    "lots": "Lots",
+    "noStock": "Nothing on hand at any location yet.",
+    "noLots": "No lots yet.",
+    "lot": "Lot",
+    "expires": "Expires",
+    "balance": "Left",
+    "averageCost": "Average cost",
+    "low": "Low stock",
+    "noMatch": "Nothing matches that search.",
+    "removeTitle": "Delete {{name}}?",
+    "removeBody": "Its stock, lots and adjustments go with it.",
+    "removeFailed": "Couldn't delete it."
   }
 }
