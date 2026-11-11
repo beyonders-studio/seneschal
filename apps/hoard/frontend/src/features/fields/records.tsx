@@ -18,7 +18,7 @@ import {
   saveLayout,
   useReadLayouts,
 } from "@/api/generated/layouts/layouts";
-import { listMemberNames } from "@/api/generated/members/members";
+import { listMemberNames, searchMemberNames } from "@/api/generated/members/members";
 import {
   addPropertyOption,
   createProperty,
@@ -133,7 +133,7 @@ const initials = (name: string) =>
     .join("") || "?";
 
 /** What Hoard's property editors read and change: a kind's properties, made
- *  by an admin, and the members a person-valued property names. */
+ *  by an admin, and the members a person-valued property may name. */
 export function usePropertyEnv(kind: RecordKind): PropertyEnv<HoardPropertyRead> {
   const { t } = useTranslation(["fields", "connection"]);
   const admin = useIsAdmin();
@@ -166,10 +166,15 @@ export function usePropertyEnv(kind: RecordKind): PropertyEnv<HoardPropertyRead>
         await refresh();
         return option;
       },
-      // Hoard knows members only by the references its records keep.
+      // Hoard knows members by the references its records keep, and finds
+      // them among the community's by their handle.
       searchMembers: async (_scope, query): Promise<Member<MemberId>[]> => {
-        if (!("ids" in query) || query.ids.length === 0) return [];
-        const named = await listMemberNames({ member_ref: query.ids.map(String) });
+        const named =
+          "search" in query
+            ? await searchMemberNames({ search: query.search })
+            : query.ids.length
+              ? await listMemberNames({ member_ref: query.ids.map(String) })
+              : [];
         return named.map(({ member_ref, name }) => {
           const shown = name ?? t("connection:members.former");
           return { id: member_ref, name: shown, initials: initials(shown) };

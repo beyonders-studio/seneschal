@@ -1373,6 +1373,11 @@ export type ListMemberNamesParams = {
   member_ref: string[];
 };
 
+export type SearchMemberNamesParams = {
+  /** @maxLength 100 */
+  search?: string;
+};
+
 export type ListPropertiesParams = {
   kind: RecordKind;
 };

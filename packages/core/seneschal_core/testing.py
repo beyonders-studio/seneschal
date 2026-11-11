@@ -18,8 +18,8 @@ and tests check access as the serving login (``serving_database``).
 platform and one for billing, publishes the first as Initiative does, and signs
 handoffs, context tokens and statements with them. It holds the app's own key
 too, issues installation tokens for assertions signed with it, and answers the
-community's routes of its plug-in API: member lookups from :attr:`people`, and
-whatever a test adds to :attr:`routes`.
+community's routes of its plug-in API: member lookups and searches from
+:attr:`people`, and whatever a test adds to :attr:`routes`.
 """
 
 from __future__ import annotations
@@ -270,8 +270,15 @@ class InitiativeStandIn:
         )
 
     def _search_people(self, request: httpx2.Request) -> httpx2.Response:
+        """The members ``user_id`` names, or those whose handle holds
+        ``search``; every member for neither."""
         named = request.url.params.get_list("user_id")
-        items = [{"id": ref, **self.people[ref]} for ref in named if ref in self.people]
+        search = request.url.params.get("search", "").casefold()
+        items = [
+            {"id": ref, **person}
+            for ref, person in self.people.items()
+            if (not named or ref in named) and search in person.get("username", "").casefold()
+        ]
         return httpx2.Response(
             200,
             json={

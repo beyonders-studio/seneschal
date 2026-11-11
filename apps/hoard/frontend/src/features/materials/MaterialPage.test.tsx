@@ -111,4 +111,21 @@ describe("MaterialPage", () => {
 
     await screen.findByRole("dialog", { name: "Lay out materials" });
   });
+
+  it("finds a member for a person-valued property among the community's", async () => {
+    const owner = { ...ORIGIN, property_id: 10, name: "Buyer", type: "user_reference" as const };
+    await openSignedIn("/stock/materials/5", signedIn(), {
+      ...opened,
+      "GET /api/v1/materials/5": {
+        status: 200,
+        data: { ...OOLONG, properties: [{ ...owner, value: "member-ref" }] },
+      },
+      "GET /api/v1/members/search": { status: 200, data: [{ member_ref: "ref-bo", name: "Bo" }] },
+    });
+
+    const buyer = await screen.findByRole("group", { name: "Buyer" });
+    fireEvent.click(within(buyer).getByRole("combobox"));
+
+    await screen.findByRole("option", { name: /Bo/ });
+  });
 });

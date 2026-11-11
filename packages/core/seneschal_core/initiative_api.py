@@ -55,6 +55,8 @@ ASSERTION_LIFETIME_SECONDS = 60
 TOKEN_EXPIRY_SKEW_SECONDS = 30
 #: The most member references one lookup names.
 PEOPLE_PER_LOOKUP = 100
+#: The most members one search answers with.
+PEOPLE_PER_SEARCH = 20
 _TIMEOUT_SECONDS = 10.0
 
 
@@ -162,11 +164,22 @@ class InitiativeApi:
                 "/users/search",
                 params={"user_id": batch, "page_size": PEOPLE_PER_LOOKUP},
             )
-            for item in page.get("items", []) if isinstance(page, dict) else []:
-                person = _person(item)
-                if person is not None and person.member_ref in batch:
+            for person in _people(page):
+                if person.member_ref in batch:
                     found[person.member_ref] = person
         return found
+
+    async def search_people(self, community_ref: str, search: str) -> list[Person]:
+        """The members whose handle matches ``search``, closest first, or the
+        community's first members for no ``search``: at most
+        :data:`PEOPLE_PER_SEARCH`."""
+        page = await self.call(
+            community_ref,
+            "GET",
+            "/users/search",
+            params={"search": search, "page_size": PEOPLE_PER_SEARCH},
+        )
+        return _people(page)
 
     async def _send(
         self,
@@ -254,6 +267,12 @@ def _json(response: httpx2.Response) -> Any:
         return response.json()
     except ValueError:
         return None
+
+
+def _people(page: object) -> list[Person]:
+    """The members a page of Initiative's member search names."""
+    items = page.get("items", []) if isinstance(page, dict) else []
+    return [person for item in items if (person := _person(item)) is not None]
 
 
 def _person(item: object) -> Person | None:
