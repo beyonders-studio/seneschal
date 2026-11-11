@@ -28,6 +28,21 @@
     "byline": "Who made the record and last changed it, and when."
   },
   "lot": "Lot {{number}}",
+  "settings": {
+    "help": "What each kind of record holds beside its own fields. Add a property on a record's page.",
+    "kinds": {
+      "material": "Materials",
+      "product": "Products",
+      "lot": "Lots"
+    },
+    "empty": "None yet.",
+    "rename": "Rename",
+    "options": "Options",
+    "optionsTitle": "Options of {{name}}",
+    "removeTitle": "Delete {{name}}?",
+    "removeBody": "Every record's value of it goes with it.",
+    "removeFailed": "That property wasn't deleted."
+  },
   "errors": {
     "NAME_TAKEN": "Another property already has that name.",
     "PROPERTY_INVALID": "A choice needs its options, and money its currency.",

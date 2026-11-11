@@ -554,7 +554,7 @@ function Editor<R extends HoardRecord, I extends R>({
       layouts={set}
       save={save}
       initialKind={item ? of.kind : "table"}
-      metadataHref="/settings"
+      metadataHref="/settings#settings-properties"
       onClose={onClose}
     />
   );

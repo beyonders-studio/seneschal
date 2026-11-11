@@ -147,7 +147,7 @@ export function NamedList<T extends Named>({
 }
 
 /** The one field a named setting has, in its dialog. */
-function NameForm({
+export function NameForm({
   title,
   label,
   initial,
