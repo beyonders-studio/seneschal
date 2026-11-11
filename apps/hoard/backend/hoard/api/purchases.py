@@ -125,12 +125,15 @@ def _total(purchase: Purchase, value: Decimal) -> Decimal:
 
 
 async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -> PurchaseRead:
+    """``purchase`` as the database holds it, with its lines and their lots."""
+    await db.refresh(purchase)
     lines = list(
         (
             await db.exec(
                 select(PurchaseLine)
                 .where(PurchaseLine.purchase_id == purchase.id)
                 .order_by(col(PurchaseLine.id))
+                .execution_options(populate_existing=True)
             )
         ).all()
     )

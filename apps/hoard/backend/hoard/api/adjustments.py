@@ -187,7 +187,11 @@ async def _read(db: OrganizationSession, rows: list[Any], sees_costs: bool) -> l
 async def _read_one(
     db: OrganizationSession, adjustment_id: int, sees_costs: bool
 ) -> AdjustmentRead:
-    rows = await db.exec(_adjustments().where(Adjustment.id == adjustment_id))
+    rows = await db.exec(
+        _adjustments()
+        .where(Adjustment.id == adjustment_id)
+        .execution_options(populate_existing=True)
+    )
     return (await _read(db, list(rows.all()), sees_costs))[0]
 
 
