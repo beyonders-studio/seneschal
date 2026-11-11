@@ -11,7 +11,8 @@ path, query, body or header.
   was erased, or 403 when its community reaches nothing.
 * :data:`OrganizationSessionDep`: a database session for that organization.
 * :data:`WriteSessionDep`: the same, for a change, or 403 while the
-  organization is read-only. Every write an app makes goes through it.
+  organization is read-only. Every write an app makes goes through it, and a
+  service that writes takes its type, :class:`~seneschal_core.db.WriteSession`.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
 from seneschal_core import organizations
-from seneschal_core.db import Database, OrganizationSession, verify_serving_login
+from seneschal_core.db import Database, OrganizationSession, WriteSession, verify_serving_login
 from seneschal_core.initiative import Initiative
 from seneschal_core.organizations import Organization
 from seneschal_core.sessions import SessionClaims, SessionRefused, Sessions
@@ -119,11 +120,11 @@ OrganizationSessionDep = Annotated[OrganizationSession, Depends(_organization_se
 
 async def _write_session(
     plugin: PluginDep, organization: OrganizationDep
-) -> AsyncIterator[OrganizationSession]:
+) -> AsyncIterator[WriteSession]:
     if organization.read_only:
         raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.READ_ONLY)
-    async with plugin.database.organization_session(organization.id) as db:
+    async with plugin.database.write_session(organization.id) as db:
         yield db
 
 
-WriteSessionDep = Annotated[OrganizationSession, Depends(_write_session)]
+WriteSessionDep = Annotated[WriteSession, Depends(_write_session)]

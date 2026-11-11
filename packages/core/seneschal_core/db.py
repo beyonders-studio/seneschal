@@ -64,6 +64,20 @@ class OrganizationSession(AsyncSession):
 
     sync_session_class = _OrganizationSyncSession
 
+    @property
+    def organization_id(self) -> int | None:
+        """The organization the session was opened for, or None."""
+        return self.info.get(_ORGANIZATION_KEY)
+
+
+class WriteSession(OrganizationSession):
+    """A session for one organization, opened for a change once the
+    organization may change. Whatever writes an organization's rows takes one."""
+
+    @property
+    def organization_id(self) -> int:
+        return self.info[_ORGANIZATION_KEY]
+
 
 def create_async_engine(url: str, **kwargs: Any) -> AsyncEngine:
     """An asyncpg engine for the Postgres database ``url`` names, whatever its driver."""
@@ -78,6 +92,9 @@ class Database:
         self._sessions = async_sessionmaker(
             self.engine, class_=OrganizationSession, expire_on_commit=False, autoflush=False
         )
+        self._write_sessions = async_sessionmaker(
+            self.engine, class_=WriteSession, expire_on_commit=False, autoflush=False
+        )
 
     def session(self) -> OrganizationSession:
         """A session for no organization: it reads the registry and calls the
@@ -87,6 +104,11 @@ class Database:
     def organization_session(self, organization_id: int) -> OrganizationSession:
         """A session for one organization, whose rows alone it reaches."""
         return self._sessions(info={_ORGANIZATION_KEY: int(organization_id)})
+
+    def write_session(self, organization_id: int) -> WriteSession:
+        """A session for one organization, for a change. Only the write
+        dependency opens one for a request, once the organization may change."""
+        return self._write_sessions(info={_ORGANIZATION_KEY: int(organization_id)})
 
     async def dispose(self) -> None:
         await self.engine.dispose()

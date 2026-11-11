@@ -1,4 +1,5 @@
-"""What an app's migrations call to make the registry and to isolate a table.
+"""What an app's migrations call to make the registry, to isolate a table and
+to reference one organization row from another.
 
 Migrations run as the owner login. The serving login's name reaches them from
 the migration environment as the context option ``serving_login`` (each app's
@@ -30,7 +31,8 @@ def serving_login() -> str:
     return op.get_context().opts["serving_login"]
 
 
-def _quote(name: str) -> str:
+def quote(name: str) -> str:
+    """``name`` as an identifier in SQL."""
     return op.get_bind().dialect.identifier_preparer.quote(name)
 
 
@@ -54,14 +56,35 @@ def isolate(table: str) -> None:
         ),
     )
     op.create_index(f"ix_{table}_organization_id", table, ["organization_id"])
-    quoted = _quote(table)
+    quoted = quote(table)
     op.execute(f"ALTER TABLE {quoted} ENABLE ROW LEVEL SECURITY")
     op.execute(f"ALTER TABLE {quoted} FORCE ROW LEVEL SECURITY")
     op.execute(
         f"CREATE POLICY {POLICY_NAME} ON {quoted} "
         f"USING ({POLICY_CONDITION}) WITH CHECK ({POLICY_CONDITION})"
     )
-    op.execute(f"GRANT {SERVING_PRIVILEGES} ON {quoted} TO {_quote(serving_login())}")
+    op.execute(f"GRANT {SERVING_PRIVILEGES} ON {quoted} TO {quote(serving_login())}")
+
+
+def referable(table: str) -> None:
+    """Let other organization tables reference ``table``'s rows through
+    :func:`reference`: a unique key on its organization and ``id``. Call it
+    after :func:`isolate`."""
+    op.create_unique_constraint(f"uq_{table}_organization_id_id", table, ["organization_id", "id"])
+
+
+def reference(table: str, column: str, parent: str, *, ondelete: str | None = None) -> None:
+    """``table.column`` references a row of ``parent`` (made :func:`referable`)
+    in the same organization: the foreign key holds ``organization_id`` beside
+    ``column``. A null ``column`` references nothing."""
+    op.create_foreign_key(
+        f"fk_{table}_{column}",
+        table,
+        parent,
+        ["organization_id", column],
+        ["organization_id", "id"],
+        ondelete=ondelete,
+    )
 
 
 def create_registry() -> None:
@@ -102,7 +125,7 @@ def create_registry() -> None:
         ),
         sa.CheckConstraint("statement_version >= 1", name="ck_organizations_statement_version"),
     )
-    serving = _quote(serving_login())
+    serving = quote(serving_login())
     op.execute(f"GRANT SELECT ON {REGISTRY_TABLE} TO {serving}")
 
     definer = f"SECURITY DEFINER SET search_path = {_DEFINER_SEARCH_PATH}"
