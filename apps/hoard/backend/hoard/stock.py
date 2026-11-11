@@ -13,14 +13,15 @@ from __future__ import annotations
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import func, text
+from sqlalchemy import delete, func, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import costing
 from hoard.records import (
     Adjustment,
+    AdjustmentReason,
     Item,
     ItemKind,
     Location,
@@ -30,6 +31,9 @@ from hoard.records import (
     Variation,
 )
 from seneschal_core.db import WriteSession
+
+#: The reasons an organization starts with, which people rename or remove.
+DEFAULT_REASONS = ("Correction", "Damaged", "Expired", "Lost", "Personal use")
 
 
 class StockError(StrEnum):
@@ -53,6 +57,15 @@ async def main_location(db: WriteSession) -> Location:
         .on_conflict_do_nothing(index_elements=["organization_id"], index_where=text("main"))
     )
     return (await db.exec(select(Location).where(Location.main))).one()
+
+
+async def add_default_reasons(db: WriteSession) -> None:
+    """Give the organization :data:`DEFAULT_REASONS`, keeping any it has."""
+    await db.execute(
+        insert(AdjustmentReason)
+        .values([{"organization_id": db.organization_id, "name": name} for name in DEFAULT_REASONS])
+        .on_conflict_do_nothing()
+    )
 
 
 async def _item(db: WriteSession, kind: ItemKind) -> int:
@@ -87,6 +100,20 @@ async def add_product(db: WriteSession, product: Product) -> tuple[Product, Vari
     await db.flush()
     variation = await add_variation(db, Variation(product_id=product.id, is_default=True))
     return product, variation
+
+
+async def remove_item(db: WriteSession, item_id: int) -> None:
+    """Remove a material or variation with its lots, stock and adjustments.
+    One a purchase bought is kept: removing it raises the database's
+    ``IntegrityError``."""
+    await db.execute(delete(Item).where(col(Item.id) == item_id))
+
+
+async def remove_product(db: WriteSession, product: Product) -> None:
+    """Remove ``product`` with its variations, as :func:`remove_item` does each."""
+    variations = select(Variation.id).where(Variation.product_id == product.id)
+    await db.execute(delete(Item).where(col(Item.id).in_(variations)))
+    await db.delete(product)
 
 
 async def adjust(db: WriteSession, adjustment: Adjustment) -> Adjustment:
