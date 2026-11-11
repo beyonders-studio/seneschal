@@ -163,12 +163,14 @@ async def app(
     plugin = Plugin(
         database=serving_database,
         initiative=initiative_stand_in.initiative(),
+        api=initiative_stand_in.api(),
         sessions=Sessions(
             app="hoard", private_key_pem=settings.session_private_key_pem, cookie_secure=False
         ),
     )
     yield create_app(settings, plugin)
     await plugin.initiative.aclose()
+    await plugin.api.aclose()
 
 
 @pytest.fixture

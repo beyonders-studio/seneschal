@@ -103,10 +103,12 @@ async def plugin(
     plugin = Plugin(
         database=serving_database,
         initiative=initiative_stand_in.initiative(),
+        api=initiative_stand_in.api(),
         sessions=Sessions(app="core", private_key_pem=new_key_pem(), cookie_secure=False),
     )
     yield plugin
     await plugin.initiative.aclose()
+    await plugin.api.aclose()
 
 
 @pytest.fixture

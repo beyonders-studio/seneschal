@@ -16,6 +16,7 @@ from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
+from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.platform import ORGANIZATION_HOOKS, platform_router
 from seneschal_core.sessions import Sessions
 
@@ -31,6 +32,11 @@ def plugin_for(settings: Settings) -> Plugin:
             public_id=plugin_manifest.PUBLIC_ID,
             listing_uid=plugin_manifest.UID,
             statement_key_pem=settings.entitlement_issuer_key_pem,
+        ),
+        api=InitiativeApi(
+            api_url=settings.initiative_api_url,
+            public_id=plugin_manifest.PUBLIC_ID,
+            key_pem=settings.plugin_private_key_pem,
         ),
         sessions=Sessions(
             app="hoard",
