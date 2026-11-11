@@ -1,0 +1,24 @@
+# Postgres for development and tests. One project name, so every checkout of
+# this repository shares the one database server on port 5236.
+name: seneschal
+
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5236:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # Each app's development database and its two logins, made on first start.
+      - ./apps/hoard/backend/scripts/dev-database.sql:/docker-entrypoint-initdb.d/hoard.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  db-data:

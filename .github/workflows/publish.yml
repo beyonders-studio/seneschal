@@ -1,0 +1,148 @@
+name: Publish images
+
+# Pushes each app's image to ghcr.io/<owner>/<app>, then scans the image pushed
+# with Trivy.
+#
+#   push to dev          every app's image, as :dev and :sha-<short commit>
+#   tag <app>-v<x.y.z>   that app's image, as :<x.y.z>; the version must be the
+#                        one apps/<app>/VERSION holds
+on:
+  push:
+    branches: [dev]
+    # One pattern per app with an image.
+    tags:
+      - "hoard-v*"
+
+permissions: {}
+
+# :dev only ever means the newest dev, so a newer push to dev replaces a build
+# still running. A version's build is never cancelled.
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/dev' }}
+
+jobs:
+  apps:
+    name: Which images
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: List the apps to build
+        id: apps
+        env:
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [[ "$REF" == refs/tags/* ]]; then
+            if [[ ! "$REF_NAME" =~ ^([a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::$REF_NAME is not <app>-v<major>.<minor>.<patch>."
+              exit 1
+            fi
+            app="${BASH_REMATCH[1]}"
+            version="${BASH_REMATCH[2]}"
+            if [[ ! -f "apps/$app/Dockerfile" ]]; then
+              echo "::error::$REF_NAME names $app, which has no apps/$app/Dockerfile."
+              exit 1
+            fi
+            if [[ "$(cat "apps/$app/VERSION")" != "$version" ]]; then
+              echo "::error::$REF_NAME says $version; apps/$app/VERSION says $(cat "apps/$app/VERSION")."
+              exit 1
+            fi
+            apps=$(jq -cn --arg app "$app" '[$app]')
+          else
+            apps=$(for file in apps/*/Dockerfile; do basename "$(dirname "$file")"; done | jq -cnR '[inputs]')
+          fi
+          echo "apps=$apps" >> "$GITHUB_OUTPUT"
+          echo "Building: $apps"
+
+  image:
+    name: Image (${{ matrix.app }})
+    needs: apps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.apps.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Name the image and its tags
+        id: name
+        env:
+          APP: ${{ matrix.app }}
+          OWNER: ${{ github.repository_owner }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
+        run: |
+          image="ghcr.io/${OWNER,,}/$APP"
+          if [[ "$REF" == refs/tags/* ]]; then
+            version="${REF_NAME#"$APP"-v}"
+            tags="$image:$version"
+          else
+            # The version a dev image is on its way to, and the commit it is.
+            version="$(cat "apps/$APP/VERSION")-dev.${SHA::7}"
+            tags="$image:dev"$'\n'"$image:sha-${SHA::7}"
+          fi
+          {
+            echo "image=$image"
+            echo "version=$version"
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: apps/${{ matrix.app }}/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.name.outputs.tags }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.name.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # The runtime stage takes Debian's security updates, so it is built
+          # afresh every time rather than from the cache; the stages before it
+          # still come from the cache.
+          no-cache-filters: runtime
+          cache-from: type=gha,scope=image-${{ matrix.app }}
+          cache-to: type=gha,scope=image-${{ matrix.app }},mode=max
+
+      # The image just pushed, by digest: its OS packages and everything in its
+      # layers. Fails on HIGH and CRITICAL findings that have a fix.
+      - name: Scan the image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"

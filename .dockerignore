@@ -1,0 +1,34 @@
+# What an image build may read. Each Dockerfile copies the paths it needs; this
+# keeps host installs, build output, secrets and tests out of all of them.
+
+# The repository and its tooling
+.git/
+.github/
+.husky/
+history/
+scripts/
+
+# Host installs and build output: the image installs and builds its own
+**/node_modules/
+**/dist/
+**/.venv/
+**/__pycache__/
+**/*.py[cod]
+**/*.tsbuildinfo
+**/.pytest_cache/
+**/.ruff_cache/
+**/.coverage*
+**/htmlcov/
+**/coverage/
+apps/*/frontend/openapi.json
+
+# A local .env never reaches an image layer
+**/.env
+**/.env.*
+
+# Python tests and the backend's developer scripts run from a checkout, never
+# in an image
+**/*_test.py
+**/conftest.py
+packages/core/seneschal_core/testing.py
+apps/*/backend/scripts/

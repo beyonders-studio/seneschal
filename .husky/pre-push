@@ -1,0 +1,3 @@
+# The checks CI runs, for what this branch changed (no tests, no database).
+# Skip once with `git push --no-verify`.
+scripts/ci/check
