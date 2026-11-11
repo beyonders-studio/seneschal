@@ -6,7 +6,7 @@
   },
   "readOnly": {
     "title": "Hoard is read-only",
-    "body": "You can read and export everything here, but nothing can be changed."
+    "body": "Hoard's records are kept as they are. You can read and export them."
   },
   "stock": {
     "title": "Stock",

@@ -8,12 +8,14 @@ import { createAppRouter } from "@/router";
 
 /** Who `/auth/me` says is signed in: a member opening Hoard in an initiative. */
 export const signedIn = (overrides: Partial<Me> = {}): Me => ({
-  subject: "member-ref",
+  member_ref: "member-ref",
   community_ref: "community-ref",
   initiative_id: 7,
-  surface_id: "stock",
-  community_admin: false,
+  page: "stock",
+  admin: false,
   permissions: ["use"],
+  theme: "light",
+  locale: "en",
   read_only: false,
   plan: "standard",
   ...overrides,

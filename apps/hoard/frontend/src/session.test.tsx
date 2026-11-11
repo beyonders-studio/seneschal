@@ -33,7 +33,11 @@ describe("the session", () => {
       "POST /api/v1/auth/handoff/exchange",
       "GET /api/v1/auth/me",
     ]);
-    expect(JSON.parse(asked[0].data)).toEqual({ handoff_token: "minted" });
+    expect(JSON.parse(asked[0].data)).toEqual({
+      handoff_token: "minted",
+      theme: "dark",
+      locale: "de",
+    });
 
     // The reader's language, appearance and clock, from the handoff.
     const root = document.documentElement;

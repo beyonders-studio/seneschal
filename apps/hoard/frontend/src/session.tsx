@@ -4,7 +4,7 @@ import { createContext, type ReactNode, useContext, useEffect, useState } from "
 import { useTranslation } from "react-i18next";
 
 import { exchangeHandoff, readMe } from "@/api/generated/auth/auth";
-import type { Me } from "@/api/generated/hoard.schemas";
+import type { HandoffExchange, Me } from "@/api/generated/hoard.schemas";
 import i18n from "@/i18n";
 import {
   awaitHandoff,
@@ -24,10 +24,10 @@ import { StatusMessage } from "@/ui/status-message";
  */
 const RETRY_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 16_000];
 
-const exchange = async (handoff_token: string): Promise<void> => {
+const exchange = async (request: HandoffExchange): Promise<void> => {
   for (const delay of [...RETRY_DELAYS_MS, null]) {
     try {
-      await exchangeHandoff({ handoff_token });
+      await exchangeHandoff(request);
       return;
     } catch (error) {
       if (delay === null || (axios.isAxiosError(error) && error.response)) throw error;
@@ -72,7 +72,8 @@ export function SessionGate({ children }: { children: ReactNode }) {
         void i18n.changeLanguage(handoff.locale);
         if (handoff.theme) applyHostTheme(handoff.theme, handoff.theme_colors);
         setClock(handoff.clock);
-        await exchange(handoff.handoff_token);
+        const { handoff_token, theme, locale } = handoff;
+        await exchange({ handoff_token, theme, locale });
         const me = await readMe();
         if (!cancelled) setState({ status: "ready", me });
       } catch {
