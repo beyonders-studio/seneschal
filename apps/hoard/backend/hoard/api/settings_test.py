@@ -5,8 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlmodel import select
 
-from hoard.records import AdjustmentReason, OrganizationSettings, Unit
-from hoard.stock import DEFAULT_REASONS
+from hoard.records import AdjustmentReason, DefaultReason, OrganizationSettings, Unit
 from seneschal_core.db import WriteSession
 
 
@@ -48,10 +47,19 @@ async def test_an_organization_starts_with_its_main_location_and_reasons_made_by
     locations = (await client.get("/api/v1/settings/locations")).json()
     assert [(location["name"], location["main"]) for location in locations] == [(None, True)]
     reasons = (await client.get("/api/v1/settings/reasons")).json()
-    assert [reason["name"] for reason in reasons] == sorted(DEFAULT_REASONS)
+    assert [(reason["key"], reason["name"]) for reason in reasons] == [
+        (key, None) for key in DefaultReason
+    ]
 
     made = (await db.exec(select(AdjustmentReason))).all()
     assert {reason.created_by for reason in made} == {None}
+
+    await sign_in(client, admin=True)
+    lost = reasons[3]
+    renamed = await client.patch(f"/api/v1/settings/reasons/{lost['id']}", json={"name": "Gone"})
+    assert renamed.json() == {"id": lost["id"], "key": "lost", "name": "Gone"}
+    reasons = (await client.get("/api/v1/settings/reasons")).json()
+    assert [reason["name"] for reason in reasons[:2]] == ["Gone", None]
 
 
 async def test_names_stay_unique_and_what_records_name_stays(

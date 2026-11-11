@@ -22,6 +22,7 @@ from hoard import costing
 from hoard.records import (
     Adjustment,
     AdjustmentReason,
+    DefaultReason,
     Item,
     ItemKind,
     Location,
@@ -31,9 +32,6 @@ from hoard.records import (
     Variation,
 )
 from seneschal_core.db import WriteSession
-
-#: The reasons an organization starts with, which people rename or remove.
-DEFAULT_REASONS = ("Correction", "Damaged", "Expired", "Lost", "Personal use")
 
 
 class StockError(StrEnum):
@@ -60,10 +58,10 @@ async def main_location(db: WriteSession) -> Location:
 
 
 async def add_default_reasons(db: WriteSession) -> None:
-    """Give the organization :data:`DEFAULT_REASONS`, keeping any it has."""
+    """Give the organization the :class:`DefaultReason` reasons, keeping any it has."""
     await db.execute(
         insert(AdjustmentReason)
-        .values([{"organization_id": db.organization_id, "name": name} for name in DEFAULT_REASONS])
+        .values([{"organization_id": db.organization_id, "key": key} for key in DefaultReason])
         .on_conflict_do_nothing()
     )
 

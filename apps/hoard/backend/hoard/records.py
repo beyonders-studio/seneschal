@@ -251,17 +251,33 @@ class Variation(OrganizationRow, Stamped, table=True):
     is_default: bool = False
 
 
+class DefaultReason(StrEnum):
+    """The adjustment reasons an organization starts with, which people rename
+    or remove."""
+
+    CORRECTION = "correction"
+    DAMAGED = "damaged"
+    EXPIRED = "expired"
+    LOST = "lost"
+    PERSONAL_USE = "personal_use"
+
+
 class AdjustmentReason(OrganizationRow, Stamped, table=True):
-    """Why stock was adjusted by hand, as people name it."""
+    """Why stock was adjusted by hand. A default reason carries its ``key`` and
+    has no name until someone gives it one: pages call it by the translated
+    words for its key."""
 
     __tablename__ = "adjustment_reasons"
     __table_args__ = (
         referable("adjustment_reasons"),
         UniqueConstraint("organization_id", "name", name="uq_adjustment_reasons_name"),
+        UniqueConstraint("organization_id", "key", name="uq_adjustment_reasons_key"),
+        CheckConstraint("name IS NOT NULL OR key IS NOT NULL", name="ck_adjustment_reasons_name"),
     )
 
     id: int = identity()
-    name: str
+    key: str | None = None
+    name: str | None = None
 
 
 class Purchase(OrganizationRow, Stamped, table=True):

@@ -27,6 +27,7 @@ from hoard.records import (
     AdjustmentReason,
     Category,
     CategoryKind,
+    DefaultReason,
     Location,
     OrganizationSettings,
     Unit,
@@ -125,7 +126,11 @@ class SettingsLocationUpdate(BaseModel):
 
 class SettingsReasonRead(BaseModel):
     id: int
-    name: str
+    #: Set on a default reason: until someone names it, pages call it by the
+    #: words for its key.
+    key: DefaultReason | None
+    #: Null for a default reason until someone names it.
+    name: str | None
 
 
 class SettingsReasonWrite(BaseModel):
@@ -340,7 +345,8 @@ async def delete_settings_location(location_id: int, _admin: AdminDep, db: Write
 
 
 async def _reasons(db: AsyncSession) -> list[SettingsReasonRead]:
-    reasons = await db.exec(select(AdjustmentReason).order_by(col(AdjustmentReason.name)))
+    query = select(AdjustmentReason).order_by(col(AdjustmentReason.name), col(AdjustmentReason.id))
+    reasons = await db.exec(query)
     return [SettingsReasonRead.model_validate(reason, from_attributes=True) for reason in reasons]
 
 
@@ -348,8 +354,9 @@ async def _reasons(db: AsyncSession) -> list[SettingsReasonRead]:
 async def list_settings_reasons(
     db: OrganizationSessionDep, organization: OrganizationDep, plugin: PluginDep
 ) -> list[SettingsReasonRead]:
-    """Why stock is adjusted by hand, by name. An organization that has none
-    yet starts with the default reasons."""
+    """Why stock is adjusted by hand: those named, by name, then the default
+    reasons nobody has named. An organization that has none yet starts with
+    the default reasons."""
     reasons = await _reasons(db)
     if not reasons and await _made_by_hoard(organization, plugin, stock.add_default_reasons):
         reasons = await _reasons(db)
