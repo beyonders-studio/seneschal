@@ -1,3 +1,52 @@
 # The uv workspace: every app's backend and the packages they share.
 [tool.uv.workspace]
 members = ["packages/core", "apps/*/backend"]
+
+[dependency-groups]
+# Tests, lint and format (ruff) and type checks (ty). uv.lock pins the exact
+# versions; CI installs with `uv sync --locked`.
+dev = [
+  "pytest>=9.0.3",
+  "pytest-asyncio>=1.3.0",
+  "ruff>=0.16.3",
+  "ty>=0.0.71",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["apps/*/frontend", "packages/ui"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+  "E501",  # long lines are the formatter's concern
+  "B008",  # FastAPI takes Depends(...) as a default
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hoard", "seneschal_core"]
+
+[tool.ty.environment]
+python-version = "3.12"
+
+[tool.ty.src]
+include = ["packages/core", "apps/hoard/backend"]
+exclude = ["**/*_test.py", "**/conftest.py"]
+
+[tool.ty.rules]
+# SQLModel prefers session.exec(), but raw text() SQL uses execute().
+deprecated = "ignore"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+python_files = ["*_test.py"]
+testpaths = ["packages/core", "apps/hoard/backend"]
+# The database harness every app's tests use: each run's own database and logins.
+addopts = ["-p", "seneschal_core.testing"]
+filterwarnings = [
+  # SQLModel's nudge toward session.exec(); text() SQL takes execute().
+  "ignore:(?s).*You probably want to use:DeprecationWarning",
+]
