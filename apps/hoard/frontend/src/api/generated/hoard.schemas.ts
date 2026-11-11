@@ -5,6 +5,84 @@
  * OpenAPI spec version: 0.0.1
  */
 /**
+ * A change made by hand.
+ */
+export interface AdjustmentCreate {
+  item_id: number;
+  location_id?: number | null;
+  dated_on?: string | null;
+  change: number | string;
+  reason_id?: number | null;
+  notes?: string | null;
+}
+
+export type AdjustmentItemAttributes = { [key: string]: string };
+
+/**
+ * What an item is.
+ */
+export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
+
+export const ItemKind = {
+  material: "material",
+  variation: "variation",
+} as const;
+
+/**
+ * An item, as a movement names it.
+ */
+export interface AdjustmentItem {
+  id: number;
+  kind: ItemKind;
+  name: string;
+  attributes: AdjustmentItemAttributes;
+}
+
+/**
+ * What made a change to stock. A later revision adds a kind to the
+ * ``adjustment_kind`` type, and a member here.
+ */
+export type AdjustmentKind = (typeof AdjustmentKind)[keyof typeof AdjustmentKind];
+
+export const AdjustmentKind = {
+  starting: "starting",
+  purchase: "purchase",
+  stocktake: "stocktake",
+  manual: "manual",
+} as const;
+
+export interface AdjustmentRead {
+  id: number;
+  item: AdjustmentItem;
+  location_id: number;
+  lot_id: number | null;
+  kind: AdjustmentKind;
+  dated_on: string;
+  change: string;
+  unit_cost?: string | null;
+  reason_id: number | null;
+  notes: string | null;
+  purchase_id: number | null;
+  stocktake_id: number | null;
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+/**
+ * A change to a manual or starting adjustment: only what is sent.
+ */
+export interface AdjustmentUpdate {
+  location_id?: number | null;
+  dated_on?: string | null;
+  change?: number | string | null;
+  unit_cost?: number | string | null;
+  reason_id?: number | null;
+  notes?: string | null;
+}
+
+/**
  * The kinds of record a category sorts, and a stocktake counts.
  */
 export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
@@ -13,6 +91,24 @@ export const CategoryKind = {
   material: "material",
   product: "product",
 } as const;
+
+export interface ContactCreate {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name: string;
+  is_organization?: boolean;
+}
+
+/**
+ * A contact, as a supplier picker shows it.
+ */
+export interface ContactRead {
+  id: number;
+  name: string;
+  is_organization: boolean;
+}
 
 /**
  * The adjustment reasons an organization starts with, which people rename
@@ -87,16 +183,6 @@ export interface HandoffExchange {
   theme?: HandoffExchangeTheme;
   locale?: string | null;
 }
-
-/**
- * What an item is.
- */
-export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
-
-export const ItemKind = {
-  material: "material",
-  variation: "variation",
-} as const;
 
 /**
  * A lot of an item at a location, and what is left of it.
@@ -209,6 +295,11 @@ export interface MemberName {
   name: string | null;
 }
 
+export interface PageAdjustmentRead {
+  items: AdjustmentRead[];
+  total: number;
+}
+
 export interface PageMaterialRead {
   items: MaterialRead[];
   total: number;
@@ -233,6 +324,44 @@ export interface ProductRead {
 
 export interface PageProductRead {
   items: ProductRead[];
+  total: number;
+}
+
+export interface PurchaseSummary {
+  id: number;
+  code: string;
+  dated_on: string;
+  supplier_contact_id: number | null;
+  location_id: number;
+  paid: boolean;
+  lines: number;
+  received: number;
+  total?: string | null;
+}
+
+export interface PagePurchaseSummary {
+  items: PurchaseSummary[];
+  total: number;
+}
+
+export interface StocktakeSummary {
+  id: number;
+  kind: CategoryKind;
+  location_id: number;
+  category_id: number | null;
+  sample_size: number | null;
+  dated_on: string;
+  notes: string | null;
+  row_count: number;
+  confirmed_count: number;
+  accuracy: string | null;
+  finished: boolean;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface PageStocktakeSummary {
+  items: StocktakeSummary[];
   total: number;
 }
 
@@ -303,6 +432,100 @@ export interface ProductWrite {
   category_id?: number | null;
   low_stock_limit?: number | string | null;
   default_price?: number | string | null;
+}
+
+export interface PurchaseLineCreate {
+  material_id: number;
+  purchase_quantity: number | string;
+  tracking_quantity?: number | string | null;
+  unit_cost?: number | string | null;
+}
+
+export interface PurchaseCreate {
+  code?: string | null;
+  dated_on?: string | null;
+  supplier_contact_id?: number | null;
+  location_id?: number | null;
+  paid?: boolean;
+  discount?: number | string | null;
+  shipping?: number | string | null;
+  tax?: number | string | null;
+  /** @maxItems 500 */
+  lines?: PurchaseLineCreate[];
+}
+
+/**
+ * The lot a received line made.
+ */
+export interface PurchaseLot {
+  id: number;
+  number: string;
+  expires_on: string | null;
+  notes: string | null;
+}
+
+export interface PurchaseLineRead {
+  id: number;
+  material: AdjustmentItem;
+  purchase_quantity: string;
+  tracking_quantity: string;
+  unit_cost?: string | null;
+  landed_cost?: string | null;
+  received: boolean;
+  lot: PurchaseLot | null;
+}
+
+/**
+ * The lot a line is received into.
+ */
+export interface PurchaseLineReceive {
+  number?: string | null;
+  expires_on?: string | null;
+  notes?: string | null;
+}
+
+/**
+ * A change to a line: only what is sent. A new purchase quantity without a
+ * tracking quantity makes as many tracking units as the material's conversion
+ * says.
+ */
+export interface PurchaseLineUpdate {
+  material_id?: number | null;
+  purchase_quantity?: number | string | null;
+  tracking_quantity?: number | string | null;
+  unit_cost?: number | string | null;
+}
+
+export interface PurchaseRead {
+  id: number;
+  code: string;
+  dated_on: string;
+  supplier_contact_id: number | null;
+  location_id: number;
+  paid: boolean;
+  discount?: string | null;
+  shipping?: string | null;
+  tax?: string | null;
+  total?: string | null;
+  lines: PurchaseLineRead[];
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+/**
+ * A change to a purchase: only what is sent.
+ */
+export interface PurchaseUpdate {
+  code?: string | null;
+  dated_on?: string | null;
+  supplier_contact_id?: number | null;
+  location_id?: number | null;
+  paid?: boolean | null;
+  discount?: number | string | null;
+  shipping?: number | string | null;
+  tax?: number | string | null;
 }
 
 /**
@@ -418,6 +641,44 @@ export interface SettingsUpdate {
   currency: string;
 }
 
+export interface StocktakeCreate {
+  kind: CategoryKind;
+  location_id?: number | null;
+  category_id?: number | null;
+  sample_size?: number | null;
+  dated_on?: string | null;
+  notes?: string | null;
+}
+
+export interface StocktakeRowRead {
+  id: number;
+  item: AdjustmentItem;
+  on_hand: string;
+  expected: string | null;
+  counted: string | null;
+}
+
+export interface StocktakeRead {
+  id: number;
+  kind: CategoryKind;
+  location_id: number;
+  category_id: number | null;
+  sample_size: number | null;
+  dated_on: string;
+  notes: string | null;
+  row_count: number;
+  confirmed_count: number;
+  accuracy: string | null;
+  finished: boolean;
+  created_at: string;
+  created_by: string | null;
+  rows: StocktakeRowRead[];
+}
+
+export interface StocktakeRowConfirm {
+  counted: number | string;
+}
+
 export type Healthz200 = { [key: string]: string };
 
 export type ListSettingsCategoriesParams = {
@@ -437,6 +698,38 @@ export type ListMaterialsParams = {
 
 export type ListProductsParams = {
   q?: string | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListPurchasesParams = {
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListAdjustmentsParams = {
+  item_id?: number | null;
+  kind?: AdjustmentKind | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListStocktakesParams = {
   /** @minimum 0 */
   offset?: number;
   /**

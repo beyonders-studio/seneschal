@@ -8,6 +8,7 @@ import {
   getListMaterialsQueryKey,
   useReadMaterial,
 } from "@/api/generated/materials/materials";
+import { useSupplierNames } from "@/features/contacts/SupplierPicker";
 import { isLow, useQuantity } from "@/features/items/format";
 import { ItemSection, LotsTable, RecordStamps, StockTable } from "@/features/items/Holdings";
 import { ItemFacts, ItemHeader } from "@/features/items/ItemHeader";
@@ -28,6 +29,7 @@ export function MaterialPage({ materialId }: { materialId: number }) {
   const { data: material, error, refetch } = useReadMaterial(materialId);
   const [editing, setEditing] = useState(false);
   const names = useSettingsNames();
+  const supplier = useSupplierNames();
   const quantity = useQuantity();
   const money = useMoney();
   const seesCosts = useSeesCosts();
@@ -82,6 +84,7 @@ export function MaterialPage({ materialId }: { materialId: number }) {
                 trackingUnit: unit,
               }),
           ],
+          [t("materials.supplier"), supplier(material.supplier_contact_id)],
           [t("materials.supplierCode"), material.supplier_code],
           [
             t("items.averageCost"),

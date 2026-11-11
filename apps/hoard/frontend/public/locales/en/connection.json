@@ -3,5 +3,18 @@
     "hoard": "Hoard",
     "former": "Former member",
     "unknown": "A member"
+  },
+  "suppliers": {
+    "label": "Supplier",
+    "choose": "Choose a supplier",
+    "search": "Search contacts",
+    "none": "No contact has that name.",
+    "add": "Add “{{name}}” as a contact",
+    "noContacts": "Your community has no contacts yet. Type a supplier's name to add them, or add your suppliers to the community's contacts in Initiative.",
+    "loadFailed": "The community's contacts couldn't be read.",
+    "addFailed": "The contact couldn't be added."
+  },
+  "errors": {
+    "CONTACT_REFUSED": "Initiative didn't let Hoard add the contact. Open Hoard from an initiative where contacts are on, or add it in Initiative."
   }
 }

@@ -9,6 +9,7 @@ import {
   getReadMaterialQueryKey,
   updateMaterial,
 } from "@/api/generated/materials/materials";
+import { SupplierPicker } from "@/features/contacts/SupplierPicker";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { useSettingsNames } from "@/features/settings/names";
@@ -75,6 +76,7 @@ function MaterialForm({
   const [conversion, setConversion] = useState(material?.purchase_conversion ?? "1");
   const [lowStockLimit, setLowStockLimit] = useState(material?.low_stock_limit ?? "");
   const [inventoriable, setInventoriable] = useState(material?.inventoriable ?? true);
+  const [supplierId, setSupplierId] = useState(material?.supplier_contact_id ?? null);
   const [supplierCode, setSupplierCode] = useState(material?.supplier_code ?? "");
   const save = useMutation({
     mutationFn: (body: MaterialWrite) =>
@@ -98,7 +100,7 @@ function MaterialForm({
       purchase_conversion: purchaseUnitId === null ? "1" : conversion,
       low_stock_limit: orNull(lowStockLimit),
       inventoriable,
-      supplier_contact_id: material?.supplier_contact_id ?? null,
+      supplier_contact_id: supplierId,
       supplier_code: orNull(supplierCode),
     });
   };
@@ -155,6 +157,11 @@ function MaterialForm({
               onChange={(event) => setLowStockLimit(event.target.value)}
             />
           </Field>
+          <SupplierPicker
+            label={t("materials.supplier")}
+            value={supplierId}
+            onChange={setSupplierId}
+          />
           <Field label={t("materials.supplierCode")}>
             <Input value={supplierCode} onChange={(event) => setSupplierCode(event.target.value)} />
           </Field>
