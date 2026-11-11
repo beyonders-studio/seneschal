@@ -1427,8 +1427,9 @@ export const useDeleteSettingsLocation = <TError = ErrorType<void>, TContext = u
   return useMutation(getDeleteSettingsLocationMutationOptions(options), queryClient);
 };
 /**
- * Why stock is adjusted by hand, by name. An organization that has none
- * yet starts with the default reasons.
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
  * @summary List Settings Reasons
  */
 export const listSettingsReasons = (
@@ -1472,8 +1473,9 @@ export type ListSettingsReasonsQueryResult = NonNullable<
 export type ListSettingsReasonsQueryError = ErrorType<void>;
 
 /**
- * Why stock is adjusted by hand, by name. An organization that has none
- * yet starts with the default reasons.
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
  * @summary List Settings Reasons
  */
 export function useListSettingsReasons<
@@ -1497,8 +1499,9 @@ export function useListSettingsReasons<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Why stock is adjusted by hand, by name. An organization that has none
- * yet starts with the default reasons.
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
  * @summary List Settings Reasons
  */
 export function useListSettingsReasons<
@@ -1522,8 +1525,9 @@ export function useListSettingsReasons<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Why stock is adjusted by hand, by name. An organization that has none
- * yet starts with the default reasons.
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
  * @summary List Settings Reasons
  */
 export function useListSettingsReasons<
@@ -1539,8 +1543,9 @@ export function useListSettingsReasons<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Why stock is adjusted by hand, by name. An organization that has none
- * yet starts with the default reasons.
+ * Why stock is adjusted by hand: those named, by name, then the default
+ * reasons nobody has named. An organization that has none yet starts with
+ * the default reasons.
  * @summary List Settings Reasons
  */
 export function useListSettingsReasons<

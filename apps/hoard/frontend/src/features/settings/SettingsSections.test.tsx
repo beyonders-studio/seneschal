@@ -18,7 +18,13 @@ const SETTINGS: Record<string, Answer> = {
       { id: 4, name: "Back room", main: false },
     ],
   },
-  "GET /api/v1/settings/reasons": { status: 200, data: [{ id: 5, name: "Damaged" }] },
+  "GET /api/v1/settings/reasons": {
+    status: 200,
+    data: [
+      { id: 5, key: null, name: "Spilled" },
+      { id: 7, key: "personal_use", name: null },
+    ],
+  },
 };
 
 describe("Settings", () => {
@@ -29,7 +35,8 @@ describe("Settings", () => {
     screen.getByText("Main location");
     screen.getByText("Back room");
     screen.getByText("Tea");
-    screen.getByText("Damaged");
+    screen.getByText("Spilled");
+    screen.getByText("Personal use");
     screen.getByText("Euro (EUR)");
     expect(screen.queryByRole("button", { name: "Add unit" })).toBeNull();
     expect(screen.queryByLabelText("Currency code")).toBeNull();

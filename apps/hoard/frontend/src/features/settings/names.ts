@@ -1,6 +1,10 @@
 import { useTranslation } from "react-i18next";
 
-import type { CategoryKind, SettingsLocationRead } from "@/api/generated/hoard.schemas";
+import type {
+  CategoryKind,
+  SettingsLocationRead,
+  SettingsReasonRead,
+} from "@/api/generated/hoard.schemas";
 import {
   useListSettingsCategories,
   useListSettingsLocations,
@@ -12,6 +16,14 @@ import {
 export function useLocationName(): (location: SettingsLocationRead) => string {
   const { t } = useTranslation();
   return (location) => location.name ?? t("common.mainLocation");
+}
+
+/** A reason's name: a default reason's, until someone names it, is the
+ *  words for its key. */
+export function useReasonName(): (reason: SettingsReasonRead) => string {
+  const { t } = useTranslation("catalog");
+  return (reason) =>
+    reason.name ?? (reason.key ? t(`settings.reasons.defaults.${reason.key}`) : "");
 }
 
 /**

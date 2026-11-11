@@ -95,7 +95,14 @@
       "title": "Adjustment reasons",
       "add": "Add reason",
       "empty": "No reasons yet.",
-      "name": "Reason"
+      "name": "Reason",
+      "defaults": {
+        "correction": "Correction",
+        "damaged": "Damaged",
+        "expired": "Expired",
+        "lost": "Lost",
+        "personal_use": "Personal use"
+      }
     }
   },
   "errors": {
