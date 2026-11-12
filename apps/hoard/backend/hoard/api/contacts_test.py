@@ -13,12 +13,14 @@ def _contact(id_: int, name: str) -> dict:
     return {"id": id_, "name": name, "is_organization": True, "emails": []}
 
 
-async def test_contacts_are_read_page_by_page(
+async def test_the_community_contacts_are_read_page_by_page(
     client, sign_in, initiative_stand_in: InitiativeStandIn
 ):
     pages = {"1": [_contact(4, "Mill & Co")], "2": [_contact(9, "Dairy")]}
+    scopes: list[str | None] = []
 
     def contacts(request: httpx2.Request) -> httpx2.Response:
+        scopes.append(request.url.params.get("scope"))
         page = request.url.params["page"]
         return httpx2.Response(200, json={"items": pages[page], "has_next": page == "1"})
 
@@ -31,9 +33,10 @@ async def test_contacts_are_read_page_by_page(
         {"id": 4, "name": "Mill & Co", "is_organization": True},
         {"id": 9, "name": "Dairy", "is_organization": True},
     ]
+    assert scopes == ["community", "community"]
 
 
-async def test_a_supplier_is_added_in_the_page_initiative(
+async def test_a_supplier_is_added_to_the_community_contacts(
     client, sign_in, initiative_stand_in: InitiativeStandIn
 ):
     sent: list[dict] = []
@@ -43,25 +46,29 @@ async def test_a_supplier_is_added_in_the_page_initiative(
         return httpx2.Response(201, json=_contact(12, "Beans Ltd"))
 
     initiative_stand_in.routes[("POST", "/contacts/")] = add
-    await sign_in(client, initiative_id=3)
+    # Opened from an initiative or not, the contact is the community's.
+    for initiative_id in (3, None):
+        await sign_in(client, admin=True, initiative_id=initiative_id)
+        answer = await client.post("/api/v1/contacts", json={"name": " Beans Ltd "})
+        assert (answer.status_code, answer.json()) == (
+            201,
+            {"id": 12, "name": "Beans Ltd", "is_organization": True},
+        )
+    assert sent == [{"name": "Beans Ltd", "is_organization": True}] * 2
 
-    answer = await client.post("/api/v1/contacts", json={"name": " Beans Ltd "})
 
-    assert (answer.status_code, answer.json()) == (
-        201,
-        {"id": 12, "name": "Beans Ltd", "is_organization": True},
-    )
-    assert sent == [{"name": "Beans Ltd", "is_organization": True, "initiative_id": 3}]
-
-    initiative_stand_in.routes[("POST", "/contacts/")] = lambda _r: httpx2.Response(
-        403, json={"detail": "CONTACTS_DISABLED"}
-    )
-    refused = await client.post("/api/v1/contacts", json={"name": "Beans Ltd"})
-    assert (refused.status_code, refused.json()) == (403, {"detail": "CONTACT_REFUSED"})
-
-    await sign_in(client, admin=True, initiative_id=None)
-    outside = await client.post("/api/v1/contacts", json={"name": "Beans Ltd"})
-    assert (outside.status_code, outside.json()) == (403, {"detail": "CONTACT_REFUSED"})
+async def test_a_refused_supplier_says_why(client, sign_in, initiative_stand_in: InitiativeStandIn):
+    await sign_in(client)
+    for detail, code in (
+        ("CONTACT_COMMUNITY_PLUGIN_REQUIRED", "COMMUNITY_CONTACTS_NOT_INSTALLED"),
+        ("CONTACT_PLUGIN_INITIATIVE_REQUIRED", "CONTACT_ADD_REFUSED"),
+        ("CONTACTS_DISABLED", "CONTACT_ADD_REFUSED"),
+    ):
+        initiative_stand_in.routes[("POST", "/contacts/")] = lambda _r, d=detail: httpx2.Response(
+            403, json={"detail": d}
+        )
+        refused = await client.post("/api/v1/contacts", json={"name": "Beans Ltd"})
+        assert (refused.status_code, refused.json()) == (403, {"detail": code})
 
 
 async def test_contacts_wait_for_initiative(
