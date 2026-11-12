@@ -129,7 +129,14 @@ function RunForm({ run, onSaved }: { run?: RunRead; onSaved: (saved: RunRead) =>
   return (
     <form onSubmit={submit} className="contents">
       <DialogBody className="space-y-4">
-        {!run && <ItemField label={t("runs.making")} value={item} onChange={setItem} />}
+        {!run && (
+          <ItemField
+            label={t("runs.making")}
+            kinds={["base", "variation"]}
+            value={item}
+            onChange={setItem}
+          />
+        )}
         <div className="grid grid-cols-pair gap-4">
           <Field label={t("runs.code")} hint={run ? undefined : t("runs.codeHint")}>
             <Input value={code} onChange={(event) => setCode(event.target.value)} />
