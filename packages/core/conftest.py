@@ -19,7 +19,12 @@ from seneschal_core import ledger, migrations
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
-from seneschal_core.platform import ORGANIZATION_HOOKS, platform_router
+from seneschal_core.platform import (
+    ORGANIZATION_HOOKS,
+    EndpointCall,
+    platform_router,
+    write_session,
+)
 from seneschal_core.sessions import Sessions
 from seneschal_core.testing import AppDatabase, InitiativeStandIn, database_fixture, new_key_pem
 
@@ -111,12 +116,29 @@ async def plugin(
     await plugin.api.aclose()
 
 
+#: An endpoint only Initiative calls, and one other plug-ins may call too.
+WHO = "plugin.beyonders-studio.core-test.who"
+PUBLIC_WHO = "plugin.beyonders-studio.core-test.public-who"
+
+
+async def _who(call: EndpointCall) -> dict[str, object]:
+    """Who the call says made it, and who a change it makes is recorded as made by."""
+    async with write_session(call) as db:
+        return {"caller": call.claims.caller, "actor": db.actor}
+
+
 @pytest.fixture
 def app(plugin: Plugin) -> FastAPI:
     app = FastAPI()
     install(app, plugin)
     app.include_router(auth_router, prefix="/api/v1")
-    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints={}))
+    app.include_router(
+        platform_router(
+            hooks=ORGANIZATION_HOOKS,
+            endpoints={WHO: _who, PUBLIC_WHO: _who},
+            public={PUBLIC_WHO},
+        )
+    )
     return app
 
 

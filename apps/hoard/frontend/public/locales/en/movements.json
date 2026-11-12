@@ -77,7 +77,8 @@
       "starting": "Starting stock",
       "purchase": "Purchase",
       "stocktake": "Stocktake",
-      "manual": "By hand"
+      "manual": "By hand",
+      "production": "Production run"
     }
   },
   "stocktakes": {

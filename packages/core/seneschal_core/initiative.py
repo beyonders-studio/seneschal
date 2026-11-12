@@ -10,7 +10,12 @@ from the set it publishes at ``<api>/plugin-platform/jwks.json``, issued by
   them, the community, the page, the initiative it was opened in, whether the
   member administers the community and the app's permissions they hold there;
 * the **context token** (``typ`` ``initiative-context+jwt``, scope
-  ``endpoint``) on a call to one of the app's endpoints, naming the endpoint;
+  ``endpoint``) on a call to one of the app's endpoints, naming the endpoint.
+  A call another plug-in made through Initiative names that plug-in
+  (``act.sub``), whether it acts as the community or for one of its members,
+  and the initiative its token is narrowed to; the app takes one only for an
+  endpoint it declares public. A call one of the app's actions made names the
+  reader who ran it and the item it was run on;
 * the **lifecycle token** (the same ``typ``, scope ``lifecycle``) on a call to
   one of the app's hooks, naming the hook.
 
@@ -25,8 +30,8 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Collection, Mapping
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -101,6 +106,15 @@ class HandoffClaims:
 
 
 @dataclass(frozen=True)
+class ContextSubject:
+    """The item an action was run on."""
+
+    #: Initiative's kind of item, such as ``task``.
+    type: str
+    id: int
+
+
+@dataclass(frozen=True)
 class ContextClaims:
     """A context or lifecycle token's claims, verified."""
 
@@ -113,6 +127,26 @@ class ContextClaims:
     #: The hook a lifecycle token was minted for; ``None`` on a context token.
     hook: str | None
     expires_at: datetime
+    #: The plug-in that made the call through Initiative, by its public id;
+    #: ``None`` for a call Initiative made itself.
+    caller: str | None = None
+    #: The member a call from another plug-in acts for, by this app's
+    #: reference for them; ``None`` when it acts as the community.
+    actor: str | None = None
+    #: The reader who ran one of the app's actions, by this app's reference
+    #: for them.
+    viewer: str | None = None
+    #: The item an action was run on.
+    subject: ContextSubject | None = None
+    #: The initiative the call is narrowed to.
+    initiative_id: int | None = None
+
+    @property
+    def member_ref(self) -> str | None:
+        """Who a change the call makes is recorded as made by: the member a
+        caller acts for, or the reader who ran an action; ``None`` for the
+        community itself."""
+        return self.actor or self.viewer
 
 
 class _Keys:
@@ -195,11 +229,6 @@ class Initiative:
             raise TokenRefused("not a page handoff")
         member_ref = _text(payload, "sub")
         page = _text(payload, "surface_id")
-        initiative_id = payload.get("initiative_id")
-        if initiative_id is not None and (
-            not isinstance(initiative_id, int) or isinstance(initiative_id, bool)
-        ):
-            raise TokenRefused("initiative_id is not a number")
         permissions = payload.get("permissions", [])
         if not isinstance(permissions, list) or not all(
             isinstance(permission, str) and permission for permission in permissions
@@ -212,17 +241,41 @@ class Initiative:
             community_status=_status(payload),
             plugin_install_id=_install(payload),
             page=page,
-            initiative_id=initiative_id,
+            initiative_id=_initiative(payload),
             # Only a literal true: an absent or malformed claim is a member's.
             admin=payload.get("community_admin") is True,
             permissions=tuple(permissions),
             expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
         )
 
-    async def verify_context(self, token: str) -> ContextClaims:
-        """A context token's claims (scope ``endpoint``), or :class:`TokenRefused`."""
+    async def verify_context(
+        self, token: str, *, public: Collection[str] = frozenset()
+    ) -> ContextClaims:
+        """A context token's claims (scope ``endpoint``), or :class:`TokenRefused`.
+        A call another plug-in made is taken only for an endpoint in ``public``."""
         payload = await self._context(token, scope="endpoint")
-        return self._context_claims(payload, endpoint_id=_text(payload, "endpoint_id"))
+        endpoint_id = _text(payload, "endpoint_id")
+        claims = self._context_claims(payload, endpoint_id=endpoint_id)
+        if "act" not in payload:
+            if "actor" in payload or "member" in payload:
+                raise TokenRefused("an actor without a calling plug-in")
+            return claims
+        if endpoint_id not in public:
+            raise TokenRefused("this endpoint is not offered to another plug-in")
+        act = payload["act"]
+        if not isinstance(act, Mapping):
+            raise TokenRefused("act is not an object")
+        caller = _text(act, "sub")
+        match payload.get("actor"):
+            case "installation":
+                if "member" in payload:
+                    raise TokenRefused("a member on a call made as the community")
+                actor = None
+            case "member":
+                actor = _text(payload, "member")
+            case _:
+                raise TokenRefused("actor is not installation or member")
+        return replace(claims, caller=caller, actor=actor)
 
     async def verify_lifecycle(self, token: str, *, hook: str) -> ContextClaims:
         """A lifecycle token's claims (scope ``lifecycle``) for ``hook``, or
@@ -230,6 +283,8 @@ class Initiative:
         payload = await self._context(token, scope="lifecycle")
         if payload.get("hook") != hook:
             raise TokenRefused(f"not minted for the {hook} hook")
+        if "act" in payload:
+            raise TokenRefused("a hook is not called by another plug-in")
         return self._context_claims(payload, hook=hook)
 
     def verify_statement(self, statement: object) -> Statement:
@@ -318,8 +373,6 @@ class Initiative:
             raise TokenRefused("not a context token")
         if payload.get("scope") != scope:
             raise TokenRefused(f"not minted for scope {scope}")
-        if "act" in payload:
-            raise TokenRefused("nothing here is offered to another plug-in")
         return payload
 
     @staticmethod
@@ -334,6 +387,9 @@ class Initiative:
             endpoint_id=endpoint_id,
             hook=hook,
             expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+            viewer=_text(payload, "viewer") if "viewer" in payload else None,
+            subject=_subject(payload["subject"]) if "subject" in payload else None,
+            initiative_id=_initiative(payload),
         )
 
 
@@ -342,6 +398,23 @@ def _text(payload: Mapping[str, Any], claim: str) -> str:
     if not isinstance(value, str) or not value:
         raise TokenRefused(f"{claim} is not a non-empty string")
     return value
+
+
+def _number(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _initiative(payload: Mapping[str, Any]) -> int | None:
+    value = payload.get("initiative_id")
+    if value is not None and not _number(value):
+        raise TokenRefused("initiative_id is not a number")
+    return value
+
+
+def _subject(value: object) -> ContextSubject:
+    if not isinstance(value, Mapping) or not _number(value.get("id")):
+        raise TokenRefused("subject is not an item")
+    return ContextSubject(type=_text(value, "type"), id=value["id"])
 
 
 def _install(payload: Mapping[str, Any]) -> int:

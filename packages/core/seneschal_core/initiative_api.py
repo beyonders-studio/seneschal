@@ -11,10 +11,15 @@ thumbprint, as the plug-in SDK names it.
 The assertion is addressed to the token endpoint under the configured API
 address, which must be the deployment's public one.
 
+A token may be narrowed to one initiative the app is placed in (``resource``,
+RFC 8707), and then reaches only that initiative's items.
+
 Community routes are ``<api>/c/{community}/…``. An installation token names its
-community, so the segment is always ``0``. Tokens are kept per community until
-shortly before they expire, and a call answered 401 is sent once more on a
-fresh token.
+community, so the segment is always ``0``. The install's own routes, such as
+the events it emits and the values it keeps on items, are
+``<api>/plugin-platform/installation/…``. Tokens are kept per community and
+narrowing until shortly before they expire, and a call answered 401 is sent
+once more on a fresh token.
 
 See Initiative's ``backend/app/services/marketplace/plugin_oauth.py`` for the
 token endpoint, and the plug-in SDK's ``src/client.ts`` for a client of it.
@@ -48,6 +53,10 @@ logger = logging.getLogger(__name__)
 TOKEN_PATH = "/plugin-platform/oauth/token"
 #: Where a community's routes start, under Initiative's API.
 COMMUNITY_PREFIX = "/c/0"
+#: Where the install's own routes start, under Initiative's API.
+INSTALLATION_PREFIX = "/plugin-platform/installation"
+#: How a token request names the initiative it narrows the token to.
+INITIATIVE_RESOURCE_PREFIX = "urn:initiative:initiative:"
 ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 #: How long a client assertion is valid for.
 ASSERTION_LIFETIME_SECONDS = 60
@@ -96,6 +105,10 @@ def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
+#: A community's reference, and the initiative a token for it is narrowed to.
+_Narrowing = tuple[str, int | None]
+
+
 @dataclass(frozen=True)
 class _Token:
     value: str
@@ -119,8 +132,8 @@ class InitiativeApi:
         self._key = load_private_key(key_pem) if key_pem else None
         self._kid = key_id(self._key) if self._key else None
         self._http = http or httpx2.AsyncClient(timeout=_TIMEOUT_SECONDS)
-        self._tokens: dict[str, _Token] = {}
-        self._locks: defaultdict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._tokens: dict[_Narrowing, _Token] = {}
+        self._locks: defaultdict[_Narrowing, asyncio.Lock] = defaultdict(asyncio.Lock)
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -133,16 +146,82 @@ class InitiativeApi:
         *,
         params: Mapping[str, Any] | None = None,
         body: object = None,
+        narrowed_to: int | None = None,
     ) -> Any:
         """Call ``path`` among the community's routes (``/contacts/``, say) as
         its install, with ``body`` as JSON, and answer the response's body read
-        as JSON (None when empty). Raises :class:`InitiativeRefused` for an
-        error status and :class:`InitiativeUnavailable` when there is no answer."""
-        url = f"{self.api_url}{COMMUNITY_PREFIX}{path}"
-        response = await self._send(community_ref, method, url, params, body)
+        as JSON (None when empty). ``narrowed_to`` narrows the token to that
+        initiative. Raises :class:`InitiativeRefused` for an error status and
+        :class:`InitiativeUnavailable` when there is no answer."""
+        return await self._request(
+            (community_ref, narrowed_to), method, f"{COMMUNITY_PREFIX}{path}", params, body
+        )
+
+    async def emit_event(
+        self,
+        community_ref: str,
+        event_type: str,
+        payload: Mapping[str, Any],
+        *,
+        initiative_id: int | None = None,
+    ) -> None:
+        """Emit the event ``event_type`` (an emission the app's manifest
+        declares) with ``payload`` in the community, about ``initiative_id``
+        when it is about one. Initiative keeps it and delivers it to the
+        community's subscriptions."""
+        await self._request(
+            (community_ref, None),
+            "POST",
+            f"{INSTALLATION_PREFIX}/events",
+            None,
+            {"event_type": event_type, "payload": dict(payload), "initiative_id": initiative_id},
+        )
+
+    async def write_metadata(
+        self,
+        community_ref: str,
+        entity_type: str,
+        entity_id: int | None,
+        *,
+        values: Mapping[str, Any] | None = None,
+        upsert: Mapping[str, Any] | None = None,
+        remove: Mapping[str, Any] | None = None,
+        narrowed_to: int | None = None,
+    ) -> dict[str, Any]:
+        """Change the values the install keeps on one item (``entity_type``
+        ``task``, say), or on itself (``plugin``, with no ``entity_id``):
+        ``values`` sets them by key, a None removing its key; ``upsert`` and
+        ``remove`` change a list field's elements by their ``ref``. Answers
+        every value it keeps there now."""
+        answer = await self._request(
+            (community_ref, narrowed_to),
+            "PUT",
+            f"{INSTALLATION_PREFIX}/metadata",
+            None,
+            {
+                "entity_type": entity_type,
+                "entity_id": entity_id,
+                "values": values,
+                "upsert": upsert,
+                "remove": remove,
+            },
+        )
+        found = answer.get("values") if isinstance(answer, dict) else None
+        return found if isinstance(found, dict) else {}
+
+    async def _request(
+        self,
+        narrowing: _Narrowing,
+        method: str,
+        path: str,
+        params: Mapping[str, Any] | None,
+        body: object,
+    ) -> Any:
+        url = f"{self.api_url}{path}"
+        response = await self._send(narrowing, method, url, params, body)
         if response.status_code == 401:
-            self._tokens.pop(community_ref, None)
-            response = await self._send(community_ref, method, url, params, body)
+            self._tokens.pop(narrowing, None)
+            response = await self._send(narrowing, method, url, params, body)
         if response.status_code >= 500:
             raise InitiativeUnavailable(f"Initiative answered {response.status_code}")
         answer = _json(response)
@@ -183,13 +262,13 @@ class InitiativeApi:
 
     async def _send(
         self,
-        community_ref: str,
+        narrowing: _Narrowing,
         method: str,
         url: str,
         params: Mapping[str, Any] | None,
         body: object,
     ) -> httpx2.Response:
-        token = await self._token(community_ref)
+        token = await self._token(narrowing)
         try:
             return await self._http.request(
                 method,
@@ -202,29 +281,34 @@ class InitiativeApi:
             logger.warning("could not reach Initiative at %s: %s", url, exc)
             raise InitiativeUnavailable(str(exc)) from exc
 
-    async def _token(self, community_ref: str) -> str:
-        """The community's installation token, from the cache while it is fresh."""
-        async with self._locks[community_ref]:
-            cached = self._tokens.get(community_ref)
+    async def _token(self, narrowing: _Narrowing) -> str:
+        """The community's installation token, narrowed as asked, from the
+        cache while it is fresh."""
+        async with self._locks[narrowing]:
+            cached = self._tokens.get(narrowing)
             if cached is not None and time.monotonic() < cached.expires_at:
                 return cached.value
-            token = await self._issue(community_ref)
-            self._tokens[community_ref] = token
+            token = await self._issue(narrowing)
+            self._tokens[narrowing] = token
             return token.value
 
-    async def _issue(self, community_ref: str) -> _Token:
+    async def _issue(self, narrowing: _Narrowing) -> _Token:
         if self._key is None:
             raise InitiativeUnavailable("the app has no key to call Initiative with")
+        community_ref, initiative_id = narrowing
+        form = {
+            "grant_type": "client_credentials",
+            "client_assertion_type": ASSERTION_TYPE,
+            "client_assertion": self._assertion(self._key),
+            "installation": community_ref,
+        }
+        if initiative_id is not None:
+            form["resource"] = f"{INITIATIVE_RESOURCE_PREFIX}{initiative_id}"
         requested_at = time.monotonic()
         try:
             response = await self._http.post(
                 f"{self.api_url}{TOKEN_PATH}",
-                data={
-                    "grant_type": "client_credentials",
-                    "client_assertion_type": ASSERTION_TYPE,
-                    "client_assertion": self._assertion(self._key),
-                    "installation": community_ref,
-                },
+                data=form,
                 headers={"Accept": "application/json"},
             )
         except httpx2.HTTPError as exc:

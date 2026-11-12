@@ -114,6 +114,36 @@ async def test_a_token_is_kept_until_initiative_stops_taking_it(
     assert len(initiative_stand_in.tokens) == 2
 
 
+async def test_a_token_narrowed_to_an_initiative_is_kept_apart(
+    api: InitiativeApi, initiative_stand_in: InitiativeStandIn, community_ref: str
+):
+    initiative_stand_in.routes[("GET", "/tasks/")] = lambda _request: httpx2.Response(200, json=[])
+
+    await api.call(community_ref, "GET", "/tasks/")
+    await api.call(community_ref, "GET", "/tasks/", narrowed_to=12)
+    await api.call(community_ref, "GET", "/tasks/", narrowed_to=12)
+
+    assert sorted(initiative_stand_in.narrowed.values(), key=str) == [12, None]
+
+
+async def test_it_emits_events_and_keeps_values_on_items_as_the_install(
+    api: InitiativeApi, initiative_stand_in: InitiativeStandIn, community_ref: str
+):
+    await api.emit_event(community_ref, "plugin.x.run-started", {"run_id": 4}, initiative_id=12)
+    kept = await api.write_metadata(
+        community_ref, "task", 41, values={"x.status": "in_progress"}, narrowed_to=12
+    )
+    cleared = await api.write_metadata(community_ref, "task", 41, values={"x.status": None})
+
+    assert initiative_stand_in.events == [
+        (
+            community_ref,
+            {"event_type": "plugin.x.run-started", "payload": {"run_id": 4}, "initiative_id": 12},
+        )
+    ]
+    assert (kept, cleared) == ({"x.status": "in_progress"}, {})
+
+
 async def test_an_error_answer_is_a_refusal_with_its_detail(
     api: InitiativeApi, initiative_stand_in: InitiativeStandIn, community_ref: str
 ):

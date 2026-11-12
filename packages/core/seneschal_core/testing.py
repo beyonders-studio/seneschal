@@ -24,6 +24,7 @@ community's routes of its plug-in API: member lookups and searches from
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
@@ -59,6 +60,7 @@ from seneschal_core.initiative import (
 from seneschal_core.initiative_api import (
     ASSERTION_TYPE,
     COMMUNITY_PREFIX,
+    INSTALLATION_PREFIX,
     TOKEN_PATH,
     InitiativeApi,
     key_id,
@@ -191,10 +193,22 @@ class InitiativeStandIn:
         #: Each member the lookup finds, by the install's reference for them,
         #: as Initiative reads a person: ``display_name``, ``username``, ….
         self.people: dict[str, dict[str, Any]] = {}
-        #: The community's routes, by method and path under ``/c/0``.
-        self.routes: dict[tuple[str, str], Route] = {("GET", "/users/search"): self._search_people}
+        #: The community's routes, by method and path under ``/c/0``, and the
+        #: install's own, by their path under the API.
+        self.routes: dict[tuple[str, str], Route] = {
+            ("GET", "/users/search"): self._search_people,
+            ("POST", f"{INSTALLATION_PREFIX}/events"): self._emit,
+            ("PUT", f"{INSTALLATION_PREFIX}/metadata"): self._write_metadata,
+        }
         #: Each installation token issued, and the community it is for.
         self.tokens: dict[str, str] = {}
+        #: The initiative each installation token is narrowed to, if any.
+        self.narrowed: dict[str, int | None] = {}
+        #: Each event emitted: the community, and the body it was sent with.
+        self.events: list[tuple[str, dict[str, Any]]] = []
+        #: The values the install keeps on each item, by community and
+        #: ``(entity_type, entity_id)``.
+        self.metadata: dict[tuple[str, str, int | None], dict[str, Any]] = {}
 
     def jwks(self) -> dict[str, Any]:
         """The key set Initiative publishes."""
@@ -212,9 +226,9 @@ class InitiativeStandIn:
                 f"{self.API_URL}{TOKEN_PATH}",
             ):
                 return self._issue(request)
-            community = f"{httpx2.URL(self.API_URL).path}{COMMUNITY_PREFIX}"
-            route = self.routes.get((request.method, request.url.path.removeprefix(community)))
-            if not request.url.path.startswith(community) or route is None:
+            path = request.url.path.removeprefix(httpx2.URL(self.API_URL).path)
+            route = self.routes.get((request.method, path.removeprefix(COMMUNITY_PREFIX)))
+            if route is None:
                 return httpx2.Response(404)
             scheme, _, token = request.headers.get("authorization", "").partition(" ")
             if scheme != "Bearer" or token not in self.tokens:
@@ -257,8 +271,12 @@ class InitiativeStandIn:
             or claims["exp"] - claims["iat"] > 300
         ):
             return httpx2.Response(400, json={"error": "invalid_grant"})
+        resource = form.get("resource")
+        if resource is not None and not resource.startswith("urn:initiative:initiative:"):
+            return httpx2.Response(400, json={"error": "invalid_target"})
         token = secrets.token_hex(16)
         self.tokens[token] = form["installation"]
+        self.narrowed[token] = int(resource.rsplit(":", 1)[1]) if resource else None
         return httpx2.Response(
             200,
             json={
@@ -268,6 +286,26 @@ class InitiativeStandIn:
                 "scope": "members:read",
             },
         )
+
+    def _community(self, request: httpx2.Request) -> str:
+        return self.tokens[request.headers["authorization"].partition(" ")[2]]
+
+    def _emit(self, request: httpx2.Request) -> httpx2.Response:
+        self.events.append((self._community(request), json.loads(request.content)))
+        return httpx2.Response(202, json={"status": "accepted"})
+
+    def _write_metadata(self, request: httpx2.Request) -> httpx2.Response:
+        """Keeps ``values`` by key, a null removing its key."""
+        body = json.loads(request.content)
+        held = self.metadata.setdefault(
+            (self._community(request), body["entity_type"], body.get("entity_id")), {}
+        )
+        for key, value in (body.get("values") or {}).items():
+            if value is None:
+                held.pop(key, None)
+            else:
+                held[key] = value
+        return httpx2.Response(200, json={"values": held})
 
     def _search_people(self, request: httpx2.Request) -> httpx2.Response:
         """The members ``user_id`` names, or those whose handle holds

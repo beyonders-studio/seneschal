@@ -12,13 +12,20 @@ from sqlmodel import select
 
 from hoard.records import (
     MAX_IMAGE_BYTES,
+    Adjustment,
+    AdjustmentKind,
+    Allergen,
     CategoryKind,
+    Item,
+    ItemKind,
+    Location,
     Material,
     Product,
     ProductImage,
     PropertyDefinition,
     PropertyType,
     PropertyValue,
+    Recipe,
     RecordKind,
     Stocktake,
     Unit,
@@ -167,3 +174,39 @@ async def test_a_product_image_is_an_image_of_at_most_five_megabytes(db: WriteSe
     await db.delete(product)
     await db.flush()
     assert (await db.exec(select(ProductImage))).all() == []
+
+
+async def test_making_keeps_its_shapes(db: WriteSession, main: Location, material, base):
+    await material("Flour", allergens=[Allergen.WHEAT, Allergen.GLUTEN])
+    dough = await base("Dough")
+    assert (await db.get_one(Item, dough.id)).kind is ItemKind.BASE
+
+    for row, constraint in (
+        (Recipe(organization_id=db.organization_id), "ck_recipes_output"),
+        (
+            Material(
+                organization_id=db.organization_id,
+                name="Rye",
+                tracking_unit_id=dough.tracking_unit_id,
+                allergens=["gluten", "unknown"],
+            ),
+            "ck_materials_allergens",
+        ),
+        (
+            Adjustment(
+                organization_id=db.organization_id,
+                item_id=dough.id,
+                location_id=main.id,
+                kind=AdjustmentKind.PRODUCTION,
+                dated_on=date(2026, 11, 2),
+                change=Decimal(1),
+            ),
+            "ck_adjustments_production",
+        ),
+    ):
+        async with db.begin_nested():
+            with pytest.raises(DBAPIError, match=constraint):
+                if isinstance(row, Material):
+                    await add_material(db, row)
+                db.add(row)
+                await db.flush()

@@ -1,5 +1,6 @@
-"""What materials' and products' pages share: the fields they take, who made
-a record and changed it, and an item's stock and lots at each location."""
+"""What the pages of materials, bases and products share: the fields they
+take, who made a record and changed it, and an item's stock and lots at each
+location."""
 
 from __future__ import annotations
 

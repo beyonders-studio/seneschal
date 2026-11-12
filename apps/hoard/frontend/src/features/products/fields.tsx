@@ -10,6 +10,7 @@ import type {
 } from "@/api/generated/hoard.schemas";
 import { deleteProductVariation, getReadProductQueryKey } from "@/api/generated/products/products";
 import { toast } from "@/components/Toaster";
+import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
@@ -18,6 +19,7 @@ import { LotsTable } from "@/features/items/lots";
 import { ProductImages } from "@/features/products/ProductImages";
 import { VariationDialog } from "@/features/products/VariationDialog";
 import { StatusBadge, useVariationName } from "@/features/products/variations";
+import { RecipeSection } from "@/features/recipes/RecipeSection";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useMoney } from "@/lib/money";
@@ -139,7 +141,19 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       ({ item }) => <Variations productId={item.id} variations={item.variations} />
     ),
     builtin("stock", "catalog:items.stock", (product) => product.id, Stock),
+    builtin(
+      "recipe",
+      "recipes:section.title",
+      (product) => product.id,
+      ({ item }) => <RecipeSection product={item} />
+    ),
     builtin("lots", "catalog:items.lots", (product) => product.id, Lots),
+    builtin(
+      "declarations",
+      "declarations:panel.title",
+      (product) => product.id,
+      ({ item }) => <DeclarationsPanel of="product" id={item.id} />
+    ),
   ],
   columns: ["name", "status", "category", "on_hand", "low_stock_limit", "default_price"],
   costs: new Set(["default_price"]),
@@ -154,9 +168,11 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
         }),
         at(3, field("images")),
         at(4, field("variations")),
-        at(5, field("stock")),
-        at(6, field("lots")),
-        at(7, { type: "byline" }),
+        at(5, field("recipe")),
+        at(6, field("stock")),
+        at(7, field("lots")),
+        at(8, field("declarations")),
+        at(9, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

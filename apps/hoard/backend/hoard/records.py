@@ -5,9 +5,16 @@
 * **Locations**: stock and lots sit per location. Each organization has one
   main location, made on its first change to stock (``hoard.stock``).
 * **Items**: whatever holds stock. A **material** is bought, never made; a
-  **product** is sold, through its **variations**, and a simple product has
-  one default variation. Each material and variation is an item, and the item
-  holds its average unit cost (``hoard.costing``).
+  **base** is made from materials and other bases, and never bought or sold;
+  a **product** is sold, through its **variations**, and a simple product has
+  one default variation. Each material, base and variation is an item, and
+  the item holds its average unit cost (``hoard.costing``).
+* **Recipes**: what one batch of a variation or a base is made from, and how
+  much it makes. A product marked a **bundle** has a recipe of its own, whose
+  lines are the variations it holds.
+* **Production runs** make a variation or a base from a recipe, in batches,
+  into the output lot that shares the run's code. Each run keeps its own
+  lines of what it consumes, from which lots.
 * **Lots**: a number, a date, an expiry and notes, per item and location,
   each with a running balance.
 * **Stock levels**: what is on hand of an item at a location.
@@ -17,6 +24,9 @@
   adjustments (``seneschal_core.ledger``).
 * **Purchases** of materials, from a supplier among the community's contacts,
   with lines that are received into lots.
+* **Task links**: the Initiative task that tracks a run or a purchase.
+* **The event outbox**: events recorded with the change that caused them,
+  waiting to be sent to Initiative.
 * **Stocktakes**: counts of materials or products at a location, whose
   variances become adjustments.
 * **Settings**: the organization's one row of them, such as its currency.
@@ -27,14 +37,15 @@
   someone changes it from how Hoard ships it, in the UI kit's shapes.
 
 Quantities, costs and prices are exact decimals to six places. A supplier is an
-Initiative contact, named by its id. Every record says who made it and when,
-and who last changed it and when; items and stock levels, which only hold what
-is derived from records, do not.
+Initiative contact, named by its id, and an initiative and a task are named by
+their Initiative ids. Every record says who made it and when, and who last
+changed it and when; items, stock levels and the event outbox, which only hold
+what is derived from records, do not.
 """
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -43,12 +54,14 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     Column,
+    DateTime,
     Index,
     LargeBinary,
+    Text,
     UniqueConstraint,
     text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlmodel import Field
 
 from seneschal_core.models import (
@@ -95,6 +108,7 @@ class CategoryKind(StrEnum):
 
     MATERIAL = "material"
     PRODUCT = "product"
+    BASE = "base"
 
 
 class ItemKind(StrEnum):
@@ -102,6 +116,7 @@ class ItemKind(StrEnum):
 
     MATERIAL = "material"
     VARIATION = "variation"
+    BASE = "base"
 
 
 class ProductStatus(StrEnum):
@@ -121,6 +136,8 @@ class AdjustmentKind(StrEnum):
     STOCKTAKE = "stocktake"
     #: A change made by hand, with its reason.
     MANUAL = "manual"
+    #: A completed production run's: each of its lines consumed, and its output made.
+    PRODUCTION = "production"
 
 
 class RecordKind(StrEnum):
@@ -130,6 +147,50 @@ class RecordKind(StrEnum):
     MATERIAL = "material"
     PRODUCT = "product"
     LOT = "lot"
+    BASE = "base"
+    RUN = "run"
+
+
+class RunStatus(StrEnum):
+    """Where a production run stands. Only a completed run has moved stock."""
+
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+
+
+class Allergen(StrEnum):
+    """The food allergens a material or a lot may contain: the US's nine and
+    the EU's fourteen, by one key each where they name the same thing."""
+
+    CELERY = "celery"
+    CRUSTACEANS = "crustaceans"
+    EGGS = "eggs"
+    FISH = "fish"
+    #: Cereals containing gluten.
+    GLUTEN = "gluten"
+    LUPIN = "lupin"
+    MILK = "milk"
+    MOLLUSCS = "molluscs"
+    MUSTARD = "mustard"
+    PEANUTS = "peanuts"
+    SESAME = "sesame"
+    SOYBEANS = "soybeans"
+    #: Sulphur dioxide and sulphites.
+    SULPHITES = "sulphites"
+    TREE_NUTS = "tree_nuts"
+    WHEAT = "wheat"
+
+
+#: The check every allergen list keeps: each of :class:`Allergen`'s keys.
+ALLERGENS_CHECK = "allergens <@ ARRAY[{}]::text[]".format(
+    ", ".join(f"'{allergen}'" for allergen in Allergen)
+)
+
+
+def allergens() -> Any:
+    """Allergen keys, or None where they are not known."""
+    return Field(default=None, sa_column=Column(ARRAY(Text), nullable=True))
 
 
 class PropertyType(StrEnum):
@@ -223,6 +284,9 @@ class Item(OrganizationRow, table=True):
     kind: ItemKind = Field(sa_column=enum_column(ItemKind, "item_kind"))
     #: The moving weighted average unit cost, which ``hoard.costing`` derives.
     average_cost: Decimal = amount()
+    #: Whether a material's or a base's stock was at or below its low-stock
+    #: limit when ``hoard.events`` last looked.
+    low_stock: bool = False
 
 
 class Material(OrganizationRow, Stamped, table=True):
@@ -237,6 +301,7 @@ class Material(OrganizationRow, Stamped, table=True):
         reference("materials", "purchase_unit_id", "units"),
         reference("materials", "category_id", "categories"),
         CheckConstraint("purchase_conversion > 0", name="ck_materials_purchase_conversion"),
+        CheckConstraint(ALLERGENS_CHECK, name="ck_materials_allergens"),
     )
 
     #: Its item's id.
@@ -256,6 +321,33 @@ class Material(OrganizationRow, Stamped, table=True):
     supplier_contact_id: int | None = Field(default=None, sa_type=BigInteger)
     #: The supplier's code for it.
     supplier_code: str | None = None
+    #: What an ingredient list calls it, when not its name.
+    ingredient_name: str | None = None
+    #: The allergens it contains, as its supplier declares them; None until known.
+    allergens: list[str] | None = allergens()
+
+
+class Base(OrganizationRow, Stamped, table=True):
+    """Made from materials and other bases by its recipe, never bought or
+    sold: a spice blend, a syrup. A setup may call bases by another word
+    (:attr:`OrganizationSettings.base_word`)."""
+
+    __tablename__ = "bases"
+    __table_args__ = (
+        referable("bases"),
+        reference("bases", "id", "items", ondelete="CASCADE"),
+        reference("bases", "tracking_unit_id", "units"),
+        reference("bases", "category_id", "categories"),
+    )
+
+    #: Its item's id.
+    id: int = Field(default=None, sa_column=Column(BigInteger, primary_key=True))
+    name: str
+    sku: str | None = None
+    #: The unit stock is counted in.
+    tracking_unit_id: int = Field(sa_type=BigInteger)
+    category_id: int | None = Field(default=None, sa_type=BigInteger)
+    low_stock_limit: Decimal | None = amount(None)
 
 
 class Product(OrganizationRow, Stamped, table=True):
@@ -276,6 +368,11 @@ class Product(OrganizationRow, Stamped, table=True):
     category_id: int | None = Field(default=None, sa_type=BigInteger)
     default_price: Decimal | None = amount(None)
     low_stock_limit: Decimal | None = amount(None)
+    #: Sold as the variations its recipe holds.
+    bundle: bool = False
+    #: Whether its variations' stock together was at or below its low-stock
+    #: limit when ``hoard.events`` last looked.
+    low_stock: bool = False
 
 
 class Variation(OrganizationRow, Stamped, table=True):
@@ -284,6 +381,7 @@ class Variation(OrganizationRow, Stamped, table=True):
 
     __tablename__ = "variations"
     __table_args__ = (
+        referable("variations"),
         reference("variations", "id", "items", ondelete="CASCADE"),
         reference("variations", "product_id", "products", ondelete="CASCADE"),
         Index(
@@ -362,6 +460,8 @@ class Purchase(OrganizationRow, Stamped, table=True):
     discount: Decimal = amount()
     shipping: Decimal = amount()
     tax: Decimal = amount()
+    #: The initiative it was opened from; None for one opened before Hoard kept it.
+    initiative_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class PurchaseLine(OrganizationRow, Stamped, table=True):
@@ -401,6 +501,7 @@ class Lot(OrganizationRow, Stamped, table=True):
         reference("lots", "location_id", "locations"),
         reference("lots", "purchase_line_id", "purchase_lines", ondelete="CASCADE"),
         Index("ix_lots_item", "organization_id", "item_id", "location_id"),
+        CheckConstraint(ALLERGENS_CHECK, name="ck_lots_allergens"),
     )
 
     id: int = identity()
@@ -414,6 +515,9 @@ class Lot(OrganizationRow, Stamped, table=True):
     notes: str | None = None
     #: The sum of its adjustments, which the database keeps.
     balance: Decimal = amount()
+    #: The allergens it contains, as its supplier declares them for this lot;
+    #: None where they are not known, and its item's hold.
+    allergens: list[str] | None = allergens()
 
 
 class StockLevel(OrganizationRow, table=True):
@@ -496,9 +600,21 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         reference("adjustments", "reason_id", "adjustment_reasons"),
         reference("adjustments", "purchase_line_id", "purchase_lines", ondelete="CASCADE"),
         reference("adjustments", "stocktake_row_id", "stocktake_rows", ondelete="CASCADE"),
+        reference("adjustments", "production_run_id", "production_runs", ondelete="CASCADE"),
+        reference(
+            "adjustments", "production_run_line_id", "production_run_lines", ondelete="CASCADE"
+        ),
         Index("ix_adjustments_item", "organization_id", "item_id", "dated_on", "id"),
+        Index("ix_adjustments_production_run", "organization_id", "production_run_id"),
+        Index(
+            "uq_adjustments_production_output",
+            "production_run_id",
+            unique=True,
+            postgresql_where=text("production_run_line_id IS NULL"),
+        ),
         UniqueConstraint("purchase_line_id", name="uq_adjustments_purchase_line_id"),
         UniqueConstraint("stocktake_row_id", name="uq_adjustments_stocktake_row_id"),
+        UniqueConstraint("production_run_line_id", name="uq_adjustments_production_run_line_id"),
         CheckConstraint("change <> 0", name="ck_adjustments_change"),
         CheckConstraint(
             "(kind = 'purchase') = (purchase_line_id IS NOT NULL)",
@@ -507,6 +623,14 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         CheckConstraint(
             "(kind = 'stocktake') = (stocktake_row_id IS NOT NULL)",
             name="ck_adjustments_stocktake",
+        ),
+        CheckConstraint(
+            "(kind = 'production') = (production_run_id IS NOT NULL)",
+            name="ck_adjustments_production",
+        ),
+        CheckConstraint(
+            "production_run_line_id IS NULL OR production_run_id IS NOT NULL",
+            name="ck_adjustments_production_line",
         ),
     )
 
@@ -520,9 +644,13 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     unit_cost: Decimal = amount()
     reason_id: int | None = Field(default=None, sa_type=BigInteger)
     notes: str | None = None
-    #: What caused it, by kind: the received purchase line, or the stocktake's row.
+    #: What caused it, by kind: the received purchase line, the stocktake's
+    #: row, or the completed production run: one of its lines consumed, or,
+    #: with no line, its output made.
     purchase_line_id: int | None = Field(default=None, sa_type=BigInteger)
     stocktake_row_id: int | None = Field(default=None, sa_type=BigInteger)
+    production_run_id: int | None = Field(default=None, sa_type=BigInteger)
+    production_run_line_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class OrganizationSettings(OrganizationRow, Stamped, table=True):
@@ -538,6 +666,9 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     id: int = identity()
     #: The ISO 4217 code every cost and price is in.
     currency: str = DEFAULT_CURRENCY
+    #: What the organization calls a base, such as "blend"; pages say the
+    #: translated word for a base until someone names it.
+    base_word: str | None = None
 
 
 class ProductImage(OrganizationRow, Stamped, table=True):
@@ -574,6 +705,7 @@ class PropertyDefinition(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         referable("property_definitions"),
         UniqueConstraint("organization_id", "kind", "name", name="uq_property_definitions_name"),
+        UniqueConstraint("organization_id", "kind", "key", name="uq_property_definitions_key"),
         CheckConstraint(
             "(type = 'currency') = (currency IS NOT NULL)",
             name="ck_property_definitions_currency",
@@ -582,6 +714,8 @@ class PropertyDefinition(OrganizationRow, Stamped, table=True):
 
     id: int = identity()
     kind: RecordKind = Field(sa_column=enum_column(RecordKind, "record_kind"))
+    #: Names a property a starting setup added, so adding it again finds it.
+    key: str | None = None
     name: str
     type: PropertyType = Field(sa_column=enum_column(PropertyType, "property_type"))
     options: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSONB))
@@ -590,9 +724,9 @@ class PropertyDefinition(OrganizationRow, Stamped, table=True):
 
 
 class PropertyValue(OrganizationRow, Stamped, table=True):
-    """What one record holds of a property: a material, a product or a lot,
-    whichever its definition's kind is. A record holding nothing of it has no
-    row."""
+    """What one record holds of a property: a material, a product, a lot, a
+    base or a production run, whichever its definition's kind is. A record
+    holding nothing of it has no row."""
 
     __tablename__ = "property_values"
     __table_args__ = (
@@ -600,6 +734,8 @@ class PropertyValue(OrganizationRow, Stamped, table=True):
         reference("property_values", "material_id", "materials", ondelete="CASCADE"),
         reference("property_values", "product_id", "products", ondelete="CASCADE"),
         reference("property_values", "lot_id", "lots", ondelete="CASCADE"),
+        reference("property_values", "base_id", "bases", ondelete="CASCADE"),
+        reference("property_values", "run_id", "production_runs", ondelete="CASCADE"),
         UniqueConstraint(
             "organization_id", "material_id", "definition_id", name="uq_property_values_material"
         ),
@@ -609,8 +745,15 @@ class PropertyValue(OrganizationRow, Stamped, table=True):
         UniqueConstraint(
             "organization_id", "lot_id", "definition_id", name="uq_property_values_lot"
         ),
+        UniqueConstraint(
+            "organization_id", "base_id", "definition_id", name="uq_property_values_base"
+        ),
+        UniqueConstraint(
+            "organization_id", "run_id", "definition_id", name="uq_property_values_run"
+        ),
         CheckConstraint(
-            "num_nonnulls(material_id, product_id, lot_id) = 1", name="ck_property_values_record"
+            "num_nonnulls(material_id, product_id, lot_id, base_id, run_id) = 1",
+            name="ck_property_values_record",
         ),
     )
 
@@ -619,6 +762,8 @@ class PropertyValue(OrganizationRow, Stamped, table=True):
     material_id: int | None = Field(default=None, sa_type=BigInteger)
     product_id: int | None = Field(default=None, sa_type=BigInteger)
     lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    base_id: int | None = Field(default=None, sa_type=BigInteger)
+    run_id: int | None = Field(default=None, sa_type=BigInteger)
     value: Any = Field(sa_column=Column(JSONB, nullable=False))
 
 
@@ -634,3 +779,180 @@ class Layout(OrganizationRow, Stamped, table=True):
     kind: RecordKind = Field(sa_column=enum_column(RecordKind, "record_kind"))
     view: LayoutView = Field(sa_column=enum_column(LayoutView, "layout_view"))
     definition: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))
+
+
+class Recipe(OrganizationRow, Stamped, table=True):
+    """What one batch of a variation or a base is made from, and how much of
+    it a batch makes; or what a bundle product holds. Each has at most one."""
+
+    __tablename__ = "recipes"
+    __table_args__ = (
+        referable("recipes"),
+        reference("recipes", "variation_id", "variations", ondelete="CASCADE"),
+        reference("recipes", "base_id", "bases", ondelete="CASCADE"),
+        reference("recipes", "product_id", "products", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "variation_id", name="uq_recipes_variation"),
+        UniqueConstraint("organization_id", "base_id", name="uq_recipes_base"),
+        UniqueConstraint("organization_id", "product_id", name="uq_recipes_product"),
+        CheckConstraint(
+            "num_nonnulls(variation_id, base_id, product_id) = 1", name="ck_recipes_output"
+        ),
+        CheckConstraint(
+            "batch_quantity > 0 AND (minutes IS NULL OR minutes >= 0)", name="ck_recipes_batch"
+        ),
+    )
+
+    id: int = identity()
+    variation_id: int | None = Field(default=None, sa_type=BigInteger)
+    base_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: A bundle product, whose lines are the variations it holds.
+    product_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: How much one batch makes, in its output's unit.
+    batch_quantity: Decimal = amount(Decimal(1))
+    #: How long one batch takes.
+    minutes: int | None = None
+
+
+class RecipeLine(OrganizationRow, Stamped, table=True):
+    """One item a batch takes, and how much of it, in its tracking unit: a
+    material or a base, or, in a bundle's recipe, a variation."""
+
+    __tablename__ = "recipe_lines"
+    __table_args__ = (
+        reference("recipe_lines", "recipe_id", "recipes", ondelete="CASCADE"),
+        reference("recipe_lines", "item_id", "items"),
+        UniqueConstraint("organization_id", "recipe_id", "item_id", name="uq_recipe_lines_item"),
+        CheckConstraint("quantity > 0", name="ck_recipe_lines_quantity"),
+    )
+
+    id: int = identity()
+    recipe_id: int = Field(sa_type=BigInteger)
+    item_id: int = Field(sa_type=BigInteger)
+    quantity: Decimal = amount()
+    #: Its place among the recipe's lines.
+    position: int = 0
+
+
+class ProductionRun(OrganizationRow, Stamped, table=True):
+    """Making a variation or a base at a location, in batches of its recipe.
+    Its code is its output lot's number. Only completing it moves stock: each
+    line out, and the actual quantity in, into its output lot."""
+
+    __tablename__ = "production_runs"
+    __table_args__ = (
+        referable("production_runs"),
+        reference("production_runs", "item_id", "items", ondelete="CASCADE"),
+        reference("production_runs", "recipe_id", "recipes"),
+        reference("production_runs", "location_id", "locations"),
+        reference("production_runs", "output_lot_id", "lots"),
+        UniqueConstraint("organization_id", "code", name="uq_production_runs_code"),
+        CheckConstraint(
+            "planned_batches > 0 AND actual_quantity >= 0 AND labour_minutes >= 0",
+            name="ck_production_runs_amounts",
+        ),
+        CheckConstraint(
+            "status <> 'completed' OR (completed_on IS NOT NULL AND actual_quantity IS NOT NULL)",
+            name="ck_production_runs_completed",
+        ),
+    )
+
+    id: int = identity()
+    code: str
+    #: What it makes: a variation or a base.
+    item_id: int = Field(sa_type=BigInteger)
+    #: The recipe its lines were filled from; None once that recipe is deleted.
+    recipe_id: int | None = Field(default=None, sa_type=BigInteger)
+    status: RunStatus = Field(
+        default=RunStatus.NOT_STARTED,
+        sa_column=enum_column(RunStatus, "run_status", server_default="not_started"),
+    )
+    location_id: int = Field(sa_type=BigInteger)
+    #: The initiative it was opened from.
+    initiative_id: int | None = Field(default=None, sa_type=BigInteger)
+    planned_batches: Decimal = amount(Decimal(1))
+    #: How much it made, in its output's unit: known once it is completed.
+    actual_quantity: Decimal | None = amount(None)
+    labour_minutes: int | None = None
+    #: Who is making it: a member's reference.
+    assignee_ref: str | None = None
+    started_on: date | None = None
+    deadline_on: date | None = None
+    completed_on: date | None = None
+    #: When what it made expires.
+    expires_on: date | None = None
+    #: The lot it made, once it is completed.
+    output_lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Whether a material it consumed had no cost on its date, which
+    #: ``hoard.costing`` keeps.
+    uncosted: bool = False
+
+
+class ProductionRunLine(OrganizationRow, Stamped, table=True):
+    """What a run consumes of one item, in its tracking unit, and from which
+    lot: the lot someone recorded, or the one Hoard assumed (``assumed``)."""
+
+    __tablename__ = "production_run_lines"
+    __table_args__ = (
+        referable("production_run_lines"),
+        reference("production_run_lines", "run_id", "production_runs", ondelete="CASCADE"),
+        reference("production_run_lines", "item_id", "items"),
+        reference("production_run_lines", "lot_id", "lots"),
+        Index("ix_production_run_lines_run", "organization_id", "run_id"),
+        CheckConstraint("quantity > 0", name="ck_production_run_lines_quantity"),
+    )
+
+    id: int = identity()
+    run_id: int = Field(sa_type=BigInteger)
+    item_id: int = Field(sa_type=BigInteger)
+    lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    quantity: Decimal = amount()
+    assumed: bool = False
+
+
+class TaskLink(OrganizationRow, Stamped, table=True):
+    """The Initiative task that tracks a production run or a purchase: one
+    task each, and one record per task."""
+
+    __tablename__ = "task_links"
+    __table_args__ = (
+        reference("task_links", "run_id", "production_runs", ondelete="CASCADE"),
+        reference("task_links", "purchase_id", "purchases", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "task_id", name="uq_task_links_task"),
+        UniqueConstraint("organization_id", "run_id", name="uq_task_links_run"),
+        UniqueConstraint("organization_id", "purchase_id", name="uq_task_links_purchase"),
+        CheckConstraint("num_nonnulls(run_id, purchase_id) = 1", name="ck_task_links_record"),
+    )
+
+    id: int = identity()
+    #: The task's Initiative id.
+    task_id: int = Field(sa_type=BigInteger)
+    run_id: int | None = Field(default=None, sa_type=BigInteger)
+    purchase_id: int | None = Field(default=None, sa_type=BigInteger)
+
+
+class OutboxEvent(OrganizationRow, table=True):
+    """An event recorded with the change that caused it, waiting to be sent to
+    Initiative (``hoard.events``). It is deleted once sent."""
+
+    __tablename__ = "event_outbox"
+    __table_args__ = (
+        Index("ix_event_outbox_due", "organization_id", "next_attempt_at"),
+        CheckConstraint("attempts >= 0", name="ck_event_outbox_attempts"),
+    )
+
+    id: int = identity()
+    #: The event's name, such as ``run-started``.
+    name: str
+    payload: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))
+    #: The initiative it is about, if it is about one.
+    initiative_id: int | None = Field(default=None, sa_type=BigInteger)
+    created_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )
+    attempts: int = 0
+    #: When to send it next.
+    next_attempt_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )

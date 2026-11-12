@@ -2,6 +2,7 @@ import { useTranslation } from "react-i18next";
 
 import type { MaterialDetail, MaterialRead } from "@/api/generated/hoard.schemas";
 import { useSupplierNames } from "@/features/contacts/SupplierPicker";
+import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
@@ -133,6 +134,12 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       (material) => material.id,
       ({ item }) => <LotsTable lots={item.lots} />
     ),
+    builtin(
+      "declarations",
+      "declarations:panel.title",
+      (material) => material.id,
+      ({ item }) => <DeclarationsPanel of="material" id={item.id} />
+    ),
   ],
   columns: ["name", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
   costs: new Set(["average_cost"]),
@@ -157,7 +164,8 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
         }),
         at(3, field("stock")),
         at(4, field("lots")),
-        at(5, { type: "byline" }),
+        at(5, field("declarations")),
+        at(6, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

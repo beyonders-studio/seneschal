@@ -3,14 +3,15 @@ and its built pages, all from one origin."""
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
-from hoard import plugin_manifest
+from hoard import plugin_manifest, tracking
 from hoard.api import router as api_router
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
 from hoard.endpoints import ENDPOINTS
@@ -64,9 +65,14 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await plugin.start()
+        # The events the outbox holds are sent until the app stops.
+        delivering = asyncio.create_task(tracking.deliver_forever(plugin))
         try:
             yield
         finally:
+            delivering.cancel()
+            with suppress(asyncio.CancelledError):
+                await delivering
             await plugin.stop()
 
     app = FastAPI(
@@ -83,7 +89,13 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     install(app, plugin)
 
     app.include_router(api_router)
-    app.include_router(platform_router(hooks=ORGANIZATION_HOOKS, endpoints=ENDPOINTS))
+    app.include_router(
+        platform_router(
+            hooks=ORGANIZATION_HOOKS,
+            endpoints=ENDPOINTS,
+            public=plugin_manifest.PUBLIC_ENDPOINTS,
+        )
+    )
 
     static = settings.static_dir.resolve()
 
