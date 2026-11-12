@@ -10,5 +10,6 @@ export * from "./products/products";
 export * from "./properties/properties";
 export * from "./purchases/purchases";
 export * from "./reports/reports";
+export * from "./runs/runs";
 export * from "./settings/settings";
 export * from "./stocktakes/stocktakes";
