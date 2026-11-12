@@ -152,6 +152,12 @@ async def _items(db: WriteSession, order: Order) -> set[int]:
     return {line.item_id for line in await lines(db, order.id)}
 
 
+async def note(db: WriteSession, order: Order) -> None:
+    """Note that what ``order`` commits may have changed, such as after it
+    moves to another location, for its items' listings."""
+    await _note(db, await _items(db, order))
+
+
 def default_price(product: Product, variation: Variation) -> Decimal:
     """What a variation sells for unless an order says otherwise."""
     return variation.price if variation.price is not None else product.default_price or Decimal(0)
