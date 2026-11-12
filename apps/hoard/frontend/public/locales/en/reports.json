@@ -2,11 +2,12 @@
   "loadError": "Try again in a moment.",
   "reorder": {
     "title": "Stock to reorder",
-    "description": "Materials and products at or below their low-stock limit, counting stock at every location together.",
+    "description": "Materials, bases and products at or below their low-stock limit, counting stock at every location together.",
     "empty": "Nothing to reorder: everything is above its low-stock limit.",
     "kind": "Kind",
     "kinds": {
       "material": "Material",
+      "base": "Base",
       "product": "Product"
     }
   },
@@ -24,6 +25,7 @@
     "download": "Download {{kind}} as {{format}}",
     "kinds": {
       "materials": "Materials",
+      "bases": "Bases",
       "products": "Products",
       "variations": "Variations",
       "purchases": "Purchases",
@@ -31,7 +33,9 @@
       "lots": "Lots",
       "adjustments": "Adjustments",
       "stocktakes": "Stocktakes",
-      "stocktake_rows": "Stocktake counts"
+      "stocktake_rows": "Stocktake counts",
+      "recipes": "Recipes",
+      "recipe_lines": "Recipe lines"
     },
     "formats": {
       "csv": "CSV",

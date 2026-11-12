@@ -23,7 +23,7 @@ export function ItemHeader({
   onRemoved,
   more,
 }: {
-  back: { to: "/stock/materials" | "/stock/products"; label: string };
+  back: { to: "/stock/materials" | "/stock/bases" | "/stock/products"; label: string };
   title: string;
   marks?: ReactNode;
   onEdit: () => void;

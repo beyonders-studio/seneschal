@@ -96,6 +96,14 @@ function ReorderReport() {
                     >
                       {row.name}
                     </Link>
+                  ) : row.kind === "base" ? (
+                    <Link
+                      to="/stock/bases/$baseId"
+                      params={{ baseId: String(row.id) }}
+                      className="hover:underline"
+                    >
+                      {row.name}
+                    </Link>
                   ) : (
                     <Link
                       to="/stock/products/$productId"

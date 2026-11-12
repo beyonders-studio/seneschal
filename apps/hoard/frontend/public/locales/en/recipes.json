@@ -1,15 +1,60 @@
 {
   "recipes": {
     "emptyTitle": "No recipes yet",
-    "emptyBody": "Your recipes will be here: what goes into each product and base, and how much one batch makes."
-  },
-  "bases": {
-    "emptyTitle": "No bases yet",
-    "emptyBody": "Your bases will be here: what you make from materials and use in other recipes.",
-    "pageTitle": "Base"
+    "emptyBody": "Your recipes will be here: what goes into each product and base, and how much one batch makes. Add one on a base's or a product's page.",
+    "output": "Makes",
+    "kind": "Kind",
+    "batch": "One batch",
+    "lines": "Lines",
+    "kinds": {
+      "variation": "Product",
+      "base": "Base",
+      "bundle": "Bundle"
+    }
   },
   "section": {
     "title": "Recipe",
-    "empty": "No recipe yet."
+    "of": "Recipe for {{variation}}",
+    "bundle": "Holds",
+    "empty": "No recipe yet.",
+    "emptyOf": "No recipe for {{variation}} yet.",
+    "add": "Add recipe",
+    "makeBundle": "Make it a bundle",
+    "bundleHint": "A bundle sells other products together, such as a gift box, in place of a recipe."
+  },
+  "card": {
+    "makes": "One batch makes {{quantity}}",
+    "minutes_one": "{{count}} minute",
+    "minutes_other": "{{count}} minutes",
+    "scaleTo": "Scale to make",
+    "item": "Item",
+    "share": "By weight",
+    "noLines": "Nothing in it yet.",
+    "removeTitle": "Delete the recipe for {{name}}?",
+    "removeBundleTitle": "Stop selling {{name}} as a bundle?",
+    "removeBody": "Its lines go with it. Production runs made from it keep what they used.",
+    "removeFailed": "Couldn't delete the recipe."
+  },
+  "dialog": {
+    "addTitle": "Recipe for {{name}}",
+    "addTitleOf": "Recipe for {{name}}, {{variation}}",
+    "bundleTitle": "What {{name}} holds",
+    "batchQuantity": "One batch makes",
+    "batchQuantityHint": "In the unit it's counted in.",
+    "minutes": "Minutes a batch takes",
+    "lines": "What a batch takes",
+    "holds": "What it holds",
+    "item": "Item {{number}}",
+    "quantity": "Quantity",
+    "addLine": "Add line",
+    "removeLine": "Remove item {{number}}",
+    "saveFailed": "Couldn't save the recipe."
+  },
+  "errors": {
+    "RECIPE_LINE_KIND": "A recipe holds materials that keep stock and bases; a bundle holds products.",
+    "RECIPE_LINE_REPEATED": "Each item goes in once.",
+    "RECIPE_CYCLE": "That would make it from itself.",
+    "RECIPE_BUNDLE": "A bundle's products take no recipe of their own.",
+    "RECIPE_EXISTS": "It already has a recipe."
   }
 }
