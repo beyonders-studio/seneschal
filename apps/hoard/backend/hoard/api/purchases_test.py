@@ -7,7 +7,7 @@ from decimal import Decimal
 from sqlmodel import select
 
 from hoard import plugin_manifest
-from hoard.records import Item, Lot
+from hoard.records import Item, Lot, OutboxEvent, Purchase
 from hoard.stock import on_hand
 from seneschal_core.db import WriteSession
 
@@ -123,3 +123,22 @@ async def test_costs_are_neither_sent_nor_taken_without_the_permission(
     assert listed["total"] == 1
     assert "total" not in listed["items"][0]
     assert (listed["items"][0]["lines"], listed["items"][0]["received"]) == (1, 0)
+
+
+async def test_a_purchase_is_placed_in_the_pages_initiative_and_its_receipt_recorded(
+    client, sign_in, db: WriteSession, material, main
+):
+    flour = await material("Flour")
+    await db.commit()
+    await sign_in(client, (plugin_manifest.SEE_COSTS,), initiative_id=7)
+
+    received = await _receive(client, await _buy(client, flour.id, "10", "2"))
+
+    purchase = await db.get_one(Purchase, received["id"])
+    assert purchase.initiative_id == 7
+    recorded = await db.exec(select(OutboxEvent).order_by(OutboxEvent.id))
+    assert [(event.name, event.initiative_id) for event in recorded] == [
+        ("purchase-placed", 7),
+        ("purchase-line-received", 7),
+        ("purchase-received", 7),
+    ]

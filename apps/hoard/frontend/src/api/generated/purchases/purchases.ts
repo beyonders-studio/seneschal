@@ -184,7 +184,8 @@ export function useListPurchases<
 }
 
 /**
- * Add a purchase, with its lines, none of them received.
+ * Add a purchase, with its lines, none of them received, in the
+ * initiative the page was opened in; it is recorded as placed.
  * @summary Create Purchase
  */
 export const createPurchase = (
@@ -248,7 +249,8 @@ export type CreatePurchaseMutationError = ErrorType<void | HTTPValidationError>;
 export type CreatePurchaseMutationVariables = { data: BodyType<PurchaseCreate> };
 
 /**
- * Add a purchase, with its lines, none of them received.
+ * Add a purchase, with its lines, none of them received, in the
+ * initiative the page was opened in; it is recorded as placed.
  * @summary Create Purchase
  */
 export const useCreatePurchase = <

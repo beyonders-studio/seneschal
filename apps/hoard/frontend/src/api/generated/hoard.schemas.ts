@@ -1306,6 +1306,17 @@ export interface StocktakeRowConfirm {
   counted: number | string;
 }
 
+/**
+ * What is tracked on Initiative's tasks, and what waits to be sent.
+ */
+export interface TrackingRead {
+  runs: number;
+  purchases: number;
+  waiting: number;
+  failing: number;
+  retry_at: string | null;
+}
+
 export type Healthz200 = { [key: string]: string };
 
 export type ListSettingsCategoriesParams = {

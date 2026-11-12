@@ -114,7 +114,11 @@ async def test_stock_falling_to_its_limit_is_recorded_once_until_it_rises_again(
         await use(change)
     await db.commit()
 
-    low = await _outbox(serving_database, db.organization_id)
+    low = [
+        event
+        for event in await _outbox(serving_database, db.organization_id)
+        if event.name == "stock-low"
+    ]
     assert [event.payload["on_hand"] for event in low] == ["4.000000", "4.000000"]
     assert low[0].payload | {"id": 0} == {
         "kind": "material",

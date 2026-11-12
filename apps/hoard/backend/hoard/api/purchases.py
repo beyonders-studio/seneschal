@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
-from hoard import purchases
+from hoard import events, purchases
 from hoard.api.adjustments import (
     NOT_FOUND,
     NOTES,
@@ -38,7 +38,7 @@ from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.shapes import Page, PageDep
 from hoard.records import PLACES, Lot, Material, Purchase, PurchaseLine
 from hoard.stock import StockRefused
-from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
+from seneschal_core.api import OrganizationSessionDep, SessionDep, WriteSessionDep, refuse
 from seneschal_core.db import OrganizationSession, WriteSession
 
 router = APIRouter(prefix="/purchases", tags=["purchases"])
@@ -308,9 +308,10 @@ async def _next_code(db: WriteSession) -> str:
     },
 )
 async def create_purchase(
-    db: WriteSessionDep, sees_costs: SeesCostsDep, body: PurchaseCreate
+    db: WriteSessionDep, session: SessionDep, sees_costs: SeesCostsDep, body: PurchaseCreate
 ) -> PurchaseRead:
-    """Add a purchase, with its lines, none of them received."""
+    """Add a purchase, with its lines, none of them received, in the
+    initiative the page was opened in; it is recorded as placed."""
     _no_costs(
         sees_costs,
         [body.discount, body.shipping, body.tax, *(line.unit_cost for line in body.lines)],
@@ -325,6 +326,7 @@ async def create_purchase(
         discount=body.discount or Decimal(0),
         shipping=body.shipping or Decimal(0),
         tax=body.tax or Decimal(0),
+        initiative_id=session.initiative_id,
     )
     db.add(purchase)
     await _flush_code(db)
@@ -341,6 +343,10 @@ async def create_purchase(
                 unit_cost=line.unit_cost or Decimal(0),
             )
         )
+    await db.flush()
+    await events.record(
+        db, await events.purchase_event(db, events.EventName.PURCHASE_PLACED, purchase)
+    )
     await db.commit()
     return await _read(db, purchase, sees_costs)
 
