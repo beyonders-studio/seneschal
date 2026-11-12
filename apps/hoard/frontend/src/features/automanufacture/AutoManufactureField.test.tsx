@@ -51,7 +51,10 @@ describe("AutoManufactureField", () => {
       ...SETTINGS,
       "GET /api/v1/settings/reasons": { status: 200, data: [] },
       "GET /api/v1/properties": { status: 200, data: [] },
-      "PUT /api/v1/settings": { status: 200, data: { currency: "USD", auto_manufacture: "always" } },
+      "PUT /api/v1/settings": {
+        status: 200,
+        data: { currency: "USD", auto_manufacture: "always" },
+      },
     });
 
     await choose("Store orders", "Make only what is out of stock");
