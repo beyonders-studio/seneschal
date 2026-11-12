@@ -13,4 +13,6 @@ from hoard.channels import Connector
 
 def connector(values: Mapping[str, Any]) -> Connector:
     """The connector for the store the connection's ``values`` name."""
-    raise NotImplementedError
+    from hoard.channels.shopify.connector import ShopifyConnector
+
+    return ShopifyConnector(values)
