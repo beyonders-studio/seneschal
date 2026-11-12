@@ -1,17 +1,17 @@
 """The events Hoard sends Initiative, which a community's automations
 subscribe to: a production run started or completed, a purchase placed, a
-purchase line received, a purchase received in full, and stock falling to its
-low-stock limit.
+purchase line received, a purchase received in full, stock falling to its
+low-stock limit, and a lot put on hold, ready to check, or off hold.
 
 An event is recorded in the outbox (:func:`record`) in the same transaction as
 the change that caused it, so it is sent if and only if the change is kept.
 ``hoard.tracking`` sends what the outbox holds once the transaction commits.
 
 Each event's payload is the returns its emission declares in
-``hoard.plugin_manifest``, from :data:`RETURNS`: what the run or purchase is,
+``hoard.plugin_manifest``, from :data:`RETURNS`: what the run, purchase or hold is,
 where it stands, and the task that tracks it, never a cost. Its identity names
-the run, the purchase or the item it is about, as the writes about the same
-record do.
+the run, the purchase, the item or the lot it is about, as the writes about
+the same record do.
 """
 
 from __future__ import annotations
@@ -28,8 +28,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard.records import (
     PLACES,
     Base,
+    Hold,
+    HoldReason,
     Item,
     ItemKind,
+    Lot,
     Material,
     OutboxEvent,
     Product,
@@ -53,6 +56,10 @@ class EventName(StrEnum):
     PURCHASE_LINE_RECEIVED = "purchase-line-received"
     PURCHASE_RECEIVED = "purchase-received"
     STOCK_LOW = "stock-low"
+    HOLD_PLACED = "hold-placed"
+    #: A hold's ready date has come: its lot is ready to check.
+    HOLD_READY = "hold-ready"
+    HOLD_ENDED = "hold-ended"
 
 
 @dataclass(frozen=True)
@@ -100,6 +107,17 @@ _PURCHASE = [
     Return("lines_received", "int", "Lines received"),
     *_TRACKED,
 ]
+_HOLD = [
+    Return("hold_id", "int", "Hold"),
+    Return("lot_id", "int", "Lot"),
+    Return("lot", "string", "Lot number"),
+    Return("item_id", "int", "Item"),
+    Return("item", "string", "Item, by name"),
+    Return("reason", "string", "Reason"),
+    Return("ready_on", "string", "Ready on"),
+    Return("ended", "string", "Released or discarded"),
+    Return("ended_on", "string", "Ended on"),
+]
 
 #: Each event's payload, in order.
 RETURNS: dict[EventName, list[Return]] = {
@@ -121,10 +139,14 @@ RETURNS: dict[EventName, list[Return]] = {
         Return("on_hand", "string", "On hand"),
         Return("low_stock_limit", "string", "Low-stock limit"),
     ],
+    EventName.HOLD_PLACED: _HOLD,
+    EventName.HOLD_READY: _HOLD,
+    EventName.HOLD_ENDED: _HOLD,
 }
 
 _RUN_IDENTITY = Identity("run", ("run_id",))
 _PURCHASE_IDENTITY = Identity("purchase", ("purchase_id",))
+_LOT_IDENTITY = Identity("lot", ("lot_id",))
 
 #: What each event is about.
 IDENTITIES: dict[EventName, Identity] = {
@@ -134,6 +156,9 @@ IDENTITIES: dict[EventName, Identity] = {
     EventName.PURCHASE_LINE_RECEIVED: _PURCHASE_IDENTITY,
     EventName.PURCHASE_RECEIVED: _PURCHASE_IDENTITY,
     EventName.STOCK_LOW: Identity("stock", ("kind", "id")),
+    EventName.HOLD_PLACED: _LOT_IDENTITY,
+    EventName.HOLD_READY: _LOT_IDENTITY,
+    EventName.HOLD_ENDED: _LOT_IDENTITY,
 }
 
 
@@ -230,6 +255,25 @@ async def purchase_event(
             "quantity": str(line.tracking_quantity),
         }
     return Event(name, payload, purchase.initiative_id)
+
+
+async def hold_event(db: AsyncSession, name: EventName, hold: Hold) -> Event:
+    """``name``, a hold's event, about ``hold`` as it stands. A reason nobody
+    has named is sent as its key."""
+    lot = await db.get_one(Lot, hold.lot_id)
+    reason = await db.get_one(HoldReason, hold.reason_id)
+    payload = {
+        "hold_id": hold.id,
+        "lot_id": lot.id,
+        "lot": lot.number,
+        "item_id": lot.item_id,
+        "item": await item_name(db, lot.item_id),
+        "reason": reason.name or reason.key,
+        "ready_on": _text(hold.ready_on),
+        "ended": None if hold.ended is None else hold.ended.value,
+        "ended_on": _text(hold.ended_on),
+    }
+    return Event(name, payload)
 
 
 async def record_if_low(db: WriteSession, item_id: int) -> None:

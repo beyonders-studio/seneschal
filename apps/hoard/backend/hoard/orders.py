@@ -5,8 +5,8 @@ copied in from a store, and shipped in one or more shipments
 An open order **commits** what its lines have not yet shipped, at its
 location: a pending, shipped or cancelled one commits nothing, and a bundle's
 own line commits nothing, since its parts are lines of their own. What is
-**available** is what is on hand less what is committed, which is what Hoard
-tells each store it may sell.
+**available** is what is on hand less what is committed and what is on hold
+(``hoard.holds``), which is what Hoard tells each store it may sell.
 
 An order is made by hand, with its lines, or copied in from a store
 (``hoard.sync``), whose lines change only there. A bundle sold by hand is
@@ -28,7 +28,7 @@ from sqlalchemy.orm import aliased
 from sqlmodel import col, exists, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import recipes
+from hoard import holds, recipes
 from hoard.records import (
     Order,
     OrderLine,
@@ -99,9 +99,13 @@ async def committed(db: AsyncSession, item_id: int, location_id: int | None = No
 
 
 async def available(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
-    """What is on hand of an item less what open orders commit: at one
-    location, or at all of them."""
-    return await on_hand(db, item_id, location_id) - await committed(db, item_id, location_id)
+    """What is on hand of an item less what open orders commit and what its
+    held lots hold: at one location, or at all of them."""
+    return (
+        await on_hand(db, item_id, location_id)
+        - await committed(db, item_id, location_id)
+        - await holds.on_hold(db, item_id, location_id)
+    )
 
 
 async def lines(db: AsyncSession, order_id: int) -> list[OrderLine]:

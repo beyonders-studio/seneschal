@@ -6,8 +6,8 @@ each initiative it is placed in, and Settings for the whole community, which
 only the community's admins open. Each page opens on Hoard's implicit ``use``
 permission; seeing costs and prices takes :data:`SEE_COSTS` as well.
 
-For dashboards it declares reads (``hoard.endpoints`` answers them), a widget
-drawing each (the plain scripts in ``widgets/``, which Initiative runs in its
+For dashboards it declares reads (``hoard.endpoints`` answers them), among
+them the lots on hold ready to check, a widget drawing each (the plain scripts in ``widgets/``, which Initiative runs in its
 widget sandbox), and one dashboard arranging the first two, which publishing
 Hoard lists on its own.
 
@@ -80,6 +80,8 @@ WASTE = f"plugin.{PUBLIC_ID}.waste"
 YIELD = f"plugin.{PUBLIC_ID}.yield"
 #: Which allergens each active product contains.
 ALLERGEN_MATRIX = f"plugin.{PUBLIC_ID}.allergen-matrix"
+#: The lots on hold whose ready date has come, to check.
+HOLDS_READY = f"plugin.{PUBLIC_ID}.holds-ready"
 #: Link a task to the production run or purchase it tracks. Public: a
 #: community's automations call it.
 LINK_TASK = f"plugin.{PUBLIC_ID}.link-task"
@@ -186,6 +188,21 @@ ENDPOINTS: list[dict[str, Any]] = [
         ),
     },
     {
+        "id": HOLDS_READY,
+        "direction": "read",
+        "label": {"en": "Holds ready to check"},
+        "description": {"en": "Lots on hold whose ready date has come"},
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("lot", "string", "Lot"),
+            ("item", "string", "Item"),
+            ("reason", "string", "Reason"),
+            ("ready_on", "string", "Ready on"),
+            list_=True,
+        ),
+    },
+    {
         "id": LINK_TASK,
         "direction": "write",
         "label": {"en": "Link a task"},
@@ -264,6 +281,9 @@ ENDPOINTS: list[dict[str, Any]] = [
             (events.EventName.PURCHASE_LINE_RECEIVED, "Purchase line received"),
             (events.EventName.PURCHASE_RECEIVED, "Purchase received in full"),
             (events.EventName.STOCK_LOW, "Stock at its low-stock limit"),
+            (events.EventName.HOLD_PLACED, "Lot put on hold"),
+            (events.EventName.HOLD_READY, "Lot on hold ready to check"),
+            (events.EventName.HOLD_ENDED, "Lot off hold"),
         )
     ),
 ]
@@ -442,6 +462,18 @@ WIDGETS: list[tuple[str, str, str, str, dict[str, Any]]] = [
         {
             "product": ["Chai latte", "Oat chai latte"],
             **{allergen.value: [allergen is Allergen.MILK, False] for allergen in Allergen},
+        },
+    ),
+    (
+        "holds-ready",
+        "Holds ready to check",
+        "Lots on hold whose ready date has come",
+        HOLDS_READY,
+        {
+            "lot": ["R-0031"],
+            "item": ["Lavender soap"],
+            "reason": ["Curing"],
+            "ready_on": ["2026-12-10"],
         },
     ),
 ]

@@ -31,6 +31,10 @@
 * **Orders**, by hand for a customer among the community's contacts or copied
   in from a store, with lines; **shipments** of their lines, which record the
   lots they draw; and **returns** of what was shipped.
+* **Holds**: a lot kept from use, for a reason among the **hold reasons**,
+  until it is released or discarded.
+* **Document links**: an Initiative file linked to a lot, a product, a
+  material or a base.
 * **Task links**: the Initiative task that tracks a run or a purchase.
 * **The event outbox**: events recorded with the change that caused them,
   waiting to be sent to Initiative.
@@ -170,6 +174,50 @@ class RunStatus(StrEnum):
     COMPLETED = "completed"
 
 
+class Picking(StrEnum):
+    """Which lot of a category's items goes first: the lot pickers are steered
+    to, and the lot a draw nobody recorded is assumed to take."""
+
+    EARLIEST_EXPIRY = "earliest_expiry"
+    #: By the date the lot was received or made, the oldest first.
+    FIRST_IN = "first_in"
+    #: The newest first.
+    LAST_IN = "last_in"
+    #: No lot is assumed: every draw names its lot.
+    RECORDED = "recorded"
+
+
+class HoldEnd(StrEnum):
+    """How a hold ended."""
+
+    RELEASED = "released"
+    DISCARDED = "discarded"
+
+
+class Regime(StrEnum):
+    """The rules an organization keeps records for, which an admin ticks in
+    its settings. Each sets how long its records are kept (``hoard.backups``)."""
+
+    #: US food: the source and recipient of each food (one up, one back).
+    US_ONE_UP_ONE_BACK = "us_one_up_one_back"
+    #: US food on the Food Traceability List.
+    US_FOOD_TRACEABILITY = "us_food_traceability"
+    #: US organic certification.
+    US_ORGANIC = "us_organic"
+    #: US cosmetics: adverse events.
+    US_COSMETICS = "us_cosmetics"
+    #: EU and UK food traceability.
+    EU_FOOD = "eu_food"
+    #: EU and UK cosmetics: the product information file and distributors.
+    EU_COSMETICS = "eu_cosmetics"
+    #: Canada's food traceability.
+    CANADA_FOOD = "canada_food"
+
+
+#: The check every list of regimes keeps: each of :class:`Regime`'s keys.
+REGIMES_CHECK = "regimes <@ ARRAY[{}]::text[]".format(", ".join(f"'{regime}'" for regime in Regime))
+
+
 class Channel(StrEnum):
     """A sales channel a store is on: each has its connector (``hoard.channels``)."""
 
@@ -249,6 +297,8 @@ class Allergen(StrEnum):
     WHEAT = "wheat"
 
 
+#: The check every list of fragrance allergens keeps: an object.
+FRAGRANCE_ALLERGENS_CHECK = "jsonb_typeof(fragrance_allergens) = 'object'"
 #: The check every allergen list keeps: each of :class:`Allergen`'s keys.
 ALLERGENS_CHECK = "allergens <@ ARRAY[{}]::text[]".format(
     ", ".join(f"'{allergen}'" for allergen in Allergen)
@@ -266,6 +316,12 @@ def auto_manufacture() -> Any:
 def allergens() -> Any:
     """Allergen keys, or None where they are not known."""
     return Field(default=None, sa_column=Column(ARRAY(Text), nullable=True))
+
+
+def fragrance_allergens() -> Any:
+    """Fragrance allergens by key, each with its share in percent, or None
+    where they are not known."""
+    return Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
 class PropertyType(StrEnum):
@@ -324,6 +380,11 @@ class Category(OrganizationRow, Stamped, table=True):
     id: int = identity()
     kind: CategoryKind = Field(sa_column=enum_column(CategoryKind, "category_kind"))
     name: str
+    #: Which of its items' lots goes first.
+    picking: Picking = Field(
+        default=Picking.EARLIEST_EXPIRY,
+        sa_column=enum_column(Picking, "picking", server_default="earliest_expiry"),
+    )
 
 
 class Location(OrganizationRow, Stamped, table=True):
@@ -347,6 +408,9 @@ class Location(OrganizationRow, Stamped, table=True):
     id: int = identity()
     name: str | None = None
     main: bool = False
+    #: The Initiative contact holding its address and phone, which a trace
+    #: names it by.
+    contact_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class Item(OrganizationRow, table=True):
@@ -377,6 +441,7 @@ class Material(OrganizationRow, Stamped, table=True):
         reference("materials", "category_id", "categories"),
         CheckConstraint("purchase_conversion > 0", name="ck_materials_purchase_conversion"),
         CheckConstraint(ALLERGENS_CHECK, name="ck_materials_allergens"),
+        CheckConstraint(FRAGRANCE_ALLERGENS_CHECK, name="ck_materials_fragrance_allergens"),
     )
 
     #: Its item's id.
@@ -400,6 +465,9 @@ class Material(OrganizationRow, Stamped, table=True):
     ingredient_name: str | None = None
     #: The allergens it contains, as its supplier declares them; None until known.
     allergens: list[str] | None = allergens()
+    #: The EU fragrance allergens it contains, as its supplier declares them:
+    #: each one's share of it in percent, as a decimal string; None until known.
+    fragrance_allergens: dict[str, str] | None = fragrance_allergens()
 
 
 class Base(OrganizationRow, Stamped, table=True):
@@ -413,6 +481,7 @@ class Base(OrganizationRow, Stamped, table=True):
         reference("bases", "id", "items", ondelete="CASCADE"),
         reference("bases", "tracking_unit_id", "units"),
         reference("bases", "category_id", "categories"),
+        CheckConstraint("cure_days > 0", name="ck_bases_cure_days"),
     )
 
     #: Its item's id.
@@ -423,6 +492,8 @@ class Base(OrganizationRow, Stamped, table=True):
     tracking_unit_id: int = Field(sa_type=BigInteger)
     category_id: int | None = Field(default=None, sa_type=BigInteger)
     low_stock_limit: Decimal | None = amount(None)
+    #: How many days what a run makes of it cures before it is used; None for none.
+    cure_days: int | None = None
 
 
 class Product(OrganizationRow, Stamped, table=True):
@@ -432,6 +503,7 @@ class Product(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         referable("products"),
         reference("products", "category_id", "categories"),
+        CheckConstraint("cure_days > 0", name="ck_products_cure_days"),
     )
 
     id: int = identity()
@@ -450,6 +522,13 @@ class Product(OrganizationRow, Stamped, table=True):
     #: Whether its variations' stock together was at or below its low-stock
     #: limit when ``hoard.events`` last looked.
     low_stock: bool = False
+    #: How many days what a run makes of it cures before it is sold; None for none.
+    cure_days: int | None = None
+    #: Whether it is on the US Food Traceability List.
+    traceability_list: bool = False
+    #: Whether it is washed off after use, which sets the share past which a
+    #: fragrance allergen in it is declared.
+    rinse_off: bool = False
 
 
 class Variation(OrganizationRow, Stamped, table=True):
@@ -497,6 +576,16 @@ class DefaultReason(StrEnum):
     PERSONAL_USE = "personal_use"
     #: What came back of a shipment damaged, written off rather than restocked.
     RETURNED_DAMAGED = "returned_damaged"
+
+
+class DefaultHoldReason(StrEnum):
+    """The hold reasons an organization starts with, which people rename or
+    remove."""
+
+    CURING = "curing"
+    AWAITING_RESULTS = "awaiting_results"
+    SUSPECT = "suspect"
+    RECALL = "recall"
 
 
 class AdjustmentReason(OrganizationRow, Stamped, table=True):
@@ -583,6 +672,7 @@ class Lot(OrganizationRow, Stamped, table=True):
         reference("lots", "purchase_line_id", "purchase_lines", ondelete="CASCADE"),
         Index("ix_lots_item", "organization_id", "item_id", "location_id"),
         CheckConstraint(ALLERGENS_CHECK, name="ck_lots_allergens"),
+        CheckConstraint(FRAGRANCE_ALLERGENS_CHECK, name="ck_lots_fragrance_allergens"),
     )
 
     id: int = identity()
@@ -599,6 +689,9 @@ class Lot(OrganizationRow, Stamped, table=True):
     #: The allergens it contains, as its supplier declares them for this lot;
     #: None where they are not known, and its item's hold.
     allergens: list[str] | None = allergens()
+    #: The fragrance allergens its supplier declares for this lot; None where
+    #: they are not known, and its item's hold.
+    fragrance_allergens: dict[str, str] | None = fragrance_allergens()
 
 
 class StockLevel(OrganizationRow, table=True):
@@ -687,6 +780,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         ),
         reference("adjustments", "shipment_line_id", "shipment_lines", ondelete="CASCADE"),
         reference("adjustments", "return_line_id", "return_lines", ondelete="CASCADE"),
+        reference("adjustments", "hold_id", "holds"),
         Index("ix_adjustments_item", "organization_id", "item_id", "dated_on", "id"),
         Index("ix_adjustments_production_run", "organization_id", "production_run_id"),
         Index(
@@ -726,6 +820,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
             "AND (return_line_id IS NULL OR kind IN ('return', 'manual'))",
             name="ck_adjustments_return",
         ),
+        CheckConstraint("hold_id IS NULL OR kind = 'manual'", name="ck_adjustments_hold"),
     )
 
     id: int = identity()
@@ -749,6 +844,8 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     production_run_line_id: int | None = Field(default=None, sa_type=BigInteger)
     shipment_line_id: int | None = Field(default=None, sa_type=BigInteger)
     return_line_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The hold a manual adjustment discards its lot from.
+    hold_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class OrganizationSettings(OrganizationRow, Stamped, table=True):
@@ -759,6 +856,7 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         UniqueConstraint("organization_id", name="uq_settings_organization_id"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settings_currency"),
+        CheckConstraint(REGIMES_CHECK, name="ck_settings_regimes"),
     )
 
     id: int = identity()
@@ -774,6 +872,11 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     auto_manufacture: AutoManufacture = Field(
         default=AutoManufacture.OFF,
         sa_column=enum_column(AutoManufacture, "auto_manufacture", server_default="off"),
+    )
+    #: The rules it keeps records for, which an admin ticks: keys of :class:`Regime`.
+    regimes: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     )
 
 
@@ -1013,6 +1116,104 @@ class ProductionRunLine(OrganizationRow, Stamped, table=True):
     lot_id: int | None = Field(default=None, sa_type=BigInteger)
     quantity: Decimal = amount()
     assumed: bool = False
+
+
+class HoldReason(OrganizationRow, Stamped, table=True):
+    """Why a lot is on hold. A default reason carries its ``key`` and has no
+    name until someone gives it one, as an adjustment reason does; a setup's
+    reason carries its key and the name it was added with."""
+
+    __tablename__ = "hold_reasons"
+    __table_args__ = (
+        referable("hold_reasons"),
+        UniqueConstraint("organization_id", "name", name="uq_hold_reasons_name"),
+        UniqueConstraint("organization_id", "key", name="uq_hold_reasons_key"),
+        CheckConstraint("name IS NOT NULL OR key IS NOT NULL", name="ck_hold_reasons_name"),
+    )
+
+    id: int = identity()
+    key: str | None = None
+    name: str | None = None
+
+
+class Hold(OrganizationRow, Stamped, table=True):
+    """A lot kept from being used, shipped or offered to a store, for a
+    reason, until it is released or discarded. A lot has at most one open
+    hold; ended ones are kept."""
+
+    __tablename__ = "holds"
+    __table_args__ = (
+        referable("holds"),
+        reference("holds", "lot_id", "lots", ondelete="CASCADE"),
+        reference("holds", "reason_id", "hold_reasons"),
+        reference("holds", "run_id", "production_runs"),
+        reference("holds", "order_id", "orders"),
+        reference("holds", "from_hold_id", "holds"),
+        Index("ix_holds_lot", "organization_id", "lot_id"),
+        Index(
+            "uq_holds_open",
+            "organization_id",
+            "lot_id",
+            unique=True,
+            postgresql_where=text("ended IS NULL"),
+        ),
+        CheckConstraint("(ended IS NULL) = (ended_on IS NULL)", name="ck_holds_ended"),
+    )
+
+    id: int = identity()
+    lot_id: int = Field(sa_type=BigInteger)
+    reason_id: int = Field(sa_type=BigInteger)
+    #: The day before which it is not released, such as the end of a cure.
+    ready_on: date | None = None
+    notes: str | None = None
+    #: The production run that put its lot on hold, curing.
+    run_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The order it was placed from, when a problem with the order was reported.
+    order_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The hold whose lot this one's was made from, when it was placed with
+    #: everything made from that lot.
+    from_hold_id: int | None = Field(default=None, sa_type=BigInteger)
+    ended_on: date | None = None
+    #: How it ended; None while it is open.
+    ended: HoldEnd | None = Field(
+        default=None, sa_column=enum_column(HoldEnd, "hold_end", nullable=True)
+    )
+    #: When its ``hold-ready`` event was recorded, so it is recorded once.
+    ready_sent_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class DocumentLink(OrganizationRow, Stamped, table=True):
+    """An Initiative file linked to one lot, product, material or base, such
+    as a supplier's certificate or a report of a problem. Hoard keeps only the
+    file's id."""
+
+    __tablename__ = "document_links"
+    __table_args__ = (
+        reference("document_links", "lot_id", "lots", ondelete="CASCADE"),
+        reference("document_links", "product_id", "products", ondelete="CASCADE"),
+        reference("document_links", "material_id", "materials", ondelete="CASCADE"),
+        reference("document_links", "base_id", "bases", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "lot_id", "file_id", name="uq_document_links_lot"),
+        UniqueConstraint(
+            "organization_id", "product_id", "file_id", name="uq_document_links_product"
+        ),
+        UniqueConstraint(
+            "organization_id", "material_id", "file_id", name="uq_document_links_material"
+        ),
+        UniqueConstraint("organization_id", "base_id", "file_id", name="uq_document_links_base"),
+        CheckConstraint(
+            "num_nonnulls(lot_id, product_id, material_id, base_id) = 1",
+            name="ck_document_links_record",
+        ),
+    )
+
+    id: int = identity()
+    #: The file's Initiative id.
+    file_id: int = Field(sa_type=BigInteger)
+    lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    product_id: int | None = Field(default=None, sa_type=BigInteger)
+    material_id: int | None = Field(default=None, sa_type=BigInteger)
+    base_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class TaskLink(OrganizationRow, Stamped, table=True):

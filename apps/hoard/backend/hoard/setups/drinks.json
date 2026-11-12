@@ -17,17 +17,17 @@
     "bottle_1750ml"
   ],
   "categories": [
-    { "key": "tea_botanical", "kinds": ["material"] },
-    { "key": "green_coffee", "kinds": ["material"] },
-    { "key": "roasted_coffee", "kinds": ["material", "base"] },
-    { "key": "blend", "kinds": ["base"] },
-    { "key": "base", "kinds": ["base"] },
-    { "key": "prep", "kinds": ["base"] },
-    { "key": "dairy", "kinds": ["material"] },
-    { "key": "syrup_mixer", "kinds": ["material", "base"] },
-    { "key": "packaging", "kinds": ["material"] },
-    { "key": "packed_product", "kinds": ["product"] },
-    { "key": "drink", "kinds": ["product"] }
+    { "key": "tea_botanical", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "green_coffee", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "roasted_coffee", "kinds": ["material", "base"], "picking": "earliest_expiry" },
+    { "key": "blend", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "base", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "dairy", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "syrup_mixer", "kinds": ["material", "base"], "picking": "earliest_expiry" },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    { "key": "packed_product", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" }
   ],
   "properties": [
     {
@@ -73,5 +73,6 @@
     "spoiled",
     "tasting_sample",
     "damaged_packaging"
-  ]
+  ],
+  "hold_reasons": []
 }

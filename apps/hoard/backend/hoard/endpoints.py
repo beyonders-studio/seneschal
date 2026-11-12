@@ -8,14 +8,14 @@ Initiative holds a reader to the permission an endpoint declares before it
 calls: what stock is worth is read only by a member who sees costs. Another
 plug-in calls only ``link-task``, which is public.
 
-The reports are ``hoard.reports``'s and the tracking writes are
-``hoard.tracking``'s."""
+The reports are ``hoard.reports``'s, the holds ready to check
+``hoard.holds``'s, and the tracking writes ``hoard.tracking``'s."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from hoard import plugin_manifest, reports, tracking
+from hoard import holds, plugin_manifest, reports, tracking
 from seneschal_core.platform import EndpointCall, EndpointHandler, organization_session
 
 
@@ -43,6 +43,7 @@ ENDPOINTS: dict[str, EndpointHandler] = {
     plugin_manifest.WASTE: reports.waste,
     plugin_manifest.YIELD: reports.planned_against_actual,
     plugin_manifest.ALLERGEN_MATRIX: reports.allergen_matrix,
+    plugin_manifest.HOLDS_READY: holds.ready,
     plugin_manifest.LINK_TASK: tracking.link_task,
     plugin_manifest.COMPLETE_RUN: tracking.complete_run,
     plugin_manifest.RECEIVE_PURCHASE: tracking.receive_purchase,
