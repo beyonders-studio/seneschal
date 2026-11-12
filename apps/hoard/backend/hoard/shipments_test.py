@@ -123,6 +123,25 @@ async def test_shipping_draws_lots_and_unshipping_takes_it_back(
     assert came_back.unit_cost == Decimal("3.636363")
 
 
+async def test_nothing_comes_back_of_a_shipment_copied_from_history(
+    db: WriteSession, main: Location, lot, sell
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    await lot(chai.id, "C-1", "10")
+    shipment = await shipments.add(db, await sell((chai.id, "4", "9")), main.id, [])
+    # As a store's history is copied: shipped, moving no stock.
+    shipment.status, shipment.shipped_on = ShipmentStatus.SHIPPED, SHIPPED_ON
+    await db.flush()
+    [line] = await shipments.lines(db, shipment.id)
+
+    assert (
+        await _refused(shipments.record_return(db, line, Decimal(1), SHIPPED_ON, damaged=False))
+        is shipments.ShipmentError.SHIPMENT_FROM_HISTORY
+    )
+    assert (await shipments.returned(db, [line.id]))[line.id] == 0
+    assert await on_hand(db, chai.id) == 10
+
+
 async def _refused(making) -> shipments.ShipmentError | orders.OrderError:
     with pytest.raises(shipments.ShipmentRefused) as refused:
         await making

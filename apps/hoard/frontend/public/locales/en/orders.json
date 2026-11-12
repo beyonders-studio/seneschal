@@ -135,6 +135,7 @@
     "SHIPMENT_LINE_NOT_SHIPPABLE": "That line doesn't ship itself: a bundle ships as its parts.",
     "SHIPMENT_OVER_ORDER": "That is more than the order has left to ship.",
     "SHIPMENT_LOT_MISMATCH": "That lot isn't this item's, at this shipment's location.",
-    "RETURN_OVER_SHIPPED": "That is more than the shipment sent of it."
+    "RETURN_OVER_SHIPPED": "That is more than the shipment sent of it.",
+    "SHIPMENT_FROM_HISTORY": "This shipment was copied from the store's history and took no stock, so nothing comes back of it here. Record what came back as an adjustment."
   }
 }

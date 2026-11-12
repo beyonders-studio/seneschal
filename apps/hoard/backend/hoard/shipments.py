@@ -72,6 +72,9 @@ class ShipmentError(StrEnum):
     SHIPMENT_LOT_MISMATCH = "SHIPMENT_LOT_MISMATCH"
     #: More came back than the line shipped.
     RETURN_OVER_SHIPPED = "RETURN_OVER_SHIPPED"
+    #: It was copied from the store's history and moved no stock, so nothing
+    #: comes back of it either.
+    SHIPMENT_FROM_HISTORY = "SHIPMENT_FROM_HISTORY"
 
 
 class ShipmentRefused(Exception):
@@ -365,6 +368,9 @@ async def record_return(
     shipment = await db.get_one(Shipment, line.shipment_id)
     if shipment.status is not ShipmentStatus.SHIPPED:
         raise ShipmentRefused(ShipmentError.SHIPMENT_NOT_SHIPPED)
+    out = (await db.exec(select(Adjustment).where(Adjustment.shipment_line_id == line.id))).first()
+    if out is None:
+        raise ShipmentRefused(ShipmentError.SHIPMENT_FROM_HISTORY)
     if quantity > line.quantity - (await returned(db, [line.id]))[line.id]:
         raise ShipmentRefused(ShipmentError.RETURN_OVER_SHIPPED)
     back = ReturnLine(
@@ -376,7 +382,6 @@ async def record_return(
     )
     db.add(back)
     await db.flush()
-    out = (await db.exec(select(Adjustment).where(Adjustment.shipment_line_id == line.id))).one()
     changes = [(AdjustmentKind.RETURN, quantity, out.unit_cost, None)]
     if damaged:
         changes.append((AdjustmentKind.MANUAL, -quantity, Decimal(0), await _returned_damaged(db)))
