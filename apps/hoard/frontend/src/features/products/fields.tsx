@@ -10,6 +10,7 @@ import type {
 } from "@/api/generated/hoard.schemas";
 import { deleteProductVariation, getReadProductQueryKey } from "@/api/generated/products/products";
 import { toast } from "@/components/Toaster";
+import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
 import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
@@ -21,6 +22,7 @@ import { VariationDialog } from "@/features/products/VariationDialog";
 import { StatusBadge, useVariationName } from "@/features/products/variations";
 import { RecipeSection } from "@/features/recipes/RecipeSection";
 import { useSettingsNames } from "@/features/settings/names";
+import { StoreSection } from "@/features/stores/StoreSection";
 import { errorMessage } from "@/lib/errors";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
@@ -154,6 +156,18 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       (product) => product.id,
       ({ item }) => <DeclarationsPanel of="product" id={item.id} />
     ),
+    builtin(
+      "stores",
+      "stores:product.title",
+      (product) => product.id,
+      ({ item }) => <StoreSection product={item} />
+    ),
+    builtin(
+      "auto_manufacture",
+      "sync:autoManufacture.title",
+      (product) => product.auto_manufacture,
+      ({ item }) => <AutoManufactureField product={item} />
+    ),
   ],
   columns: ["name", "status", "category", "on_hand", "low_stock_limit", "default_price"],
   costs: new Set(["default_price"]),
@@ -172,7 +186,9 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
         at(6, field("stock")),
         at(7, field("lots")),
         at(8, field("declarations")),
-        at(9, { type: "byline" }),
+        at(9, field("stores")),
+        at(10, field("auto_manufacture")),
+        at(11, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

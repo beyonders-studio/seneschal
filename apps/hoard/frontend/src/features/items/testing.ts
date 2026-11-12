@@ -18,7 +18,7 @@ globalThis.ResizeObserver ??= class {
 /** The settings item pages read: a unit, a category of each kind, the main
  *  location and one more, and the currency. */
 export const SETTINGS: Record<string, Answer> = {
-  "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
+  "GET /api/v1/settings": { status: 200, data: { currency: "USD", auto_manufacture: "off" } },
   "GET /api/v1/settings/units": { status: 200, data: [{ id: 1, name: "g" }] },
   "GET /api/v1/settings/categories": {
     status: 200,
@@ -78,6 +78,7 @@ export const product = (fields: Partial<ProductRead> = {}): ProductRead => ({
   low_stock_limit: null,
   on_hand: "0",
   default_price: null,
+  auto_manufacture: null,
   properties: [],
   ...fields,
 });

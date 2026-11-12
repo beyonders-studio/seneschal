@@ -2,12 +2,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useTranslation } from "react-i18next";
 
 import { HoardPage } from "@/components/HoardPage";
+import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
 import { CategoriesSection } from "@/features/settings/CategoriesSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
 import { UnitsSection } from "@/features/settings/UnitsSection";
+import { StoresSection } from "@/features/stores/StoresSection";
 import { TrackingSection } from "@/features/tracking/TrackingSection";
 
 /** Settings, opened at community level, which Initiative opens only to the
@@ -26,6 +28,8 @@ function SettingsPage() {
         <ReasonsSection />
         <PropertiesSection />
         <TrackingSection />
+        <StoresSection />
+        <AutoManufactureField />
       </div>
     </HoardPage>
   );

@@ -51,6 +51,8 @@ export const AdjustmentKind = {
   stocktake: "stocktake",
   manual: "manual",
   production: "production",
+  shipment: "shipment",
+  return: "return",
 } as const;
 
 export interface AdjustmentRead {
@@ -106,6 +108,19 @@ export const Allergen = {
   sulphites: "sulphites",
   tree_nuts: "tree_nuts",
   wheat: "wheat",
+} as const;
+
+/**
+ * Whether a store order makes what it sells: never, always, or only what
+ * is out of stock. A product or variation with none takes its product's,
+ * then the organization's.
+ */
+export type AutoManufacture = (typeof AutoManufacture)[keyof typeof AutoManufacture];
+
+export const AutoManufacture = {
+  off: "off",
+  always: "always",
+  out_of_stock: "out_of_stock",
 } as const;
 
 /**
@@ -476,6 +491,7 @@ export const DefaultReason = {
   expired: "expired",
   lost: "lost",
   personal_use: "personal_use",
+  returned_damaged: "returned_damaged",
 } as const;
 
 export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
@@ -1043,6 +1059,7 @@ export interface ProductRead {
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
+  auto_manufacture: AutoManufacture | null;
   properties: HoardPropertySummary[];
 }
 
@@ -1175,6 +1192,7 @@ export interface ProductVariationRead {
   is_default: boolean;
   price: string | null;
   average_cost: string | null;
+  auto_manufacture: AutoManufacture | null;
 }
 
 /**
@@ -1192,6 +1210,7 @@ export interface ProductDetail {
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
+  auto_manufacture: AutoManufacture | null;
   properties: HoardPropertySummary[];
   variations: ProductVariationRead[];
 }
@@ -1215,6 +1234,7 @@ export interface ProductVariationWrite {
   attributes?: ProductVariationWriteAttributes;
   sku?: string | null;
   price?: number | string | null;
+  auto_manufacture?: AutoManufacture | null;
 }
 
 /**
@@ -1231,6 +1251,7 @@ export interface ProductWrite {
   category_id?: number | null;
   low_stock_limit?: number | string | null;
   default_price?: number | string | null;
+  auto_manufacture?: AutoManufacture | null;
 }
 
 export interface PurchaseLineCreate {
@@ -1527,6 +1548,7 @@ export interface SettingsLocationUpdate {
 
 export interface SettingsRead {
   currency: string;
+  auto_manufacture: AutoManufacture;
 }
 
 export interface SettingsReasonRead {
@@ -1556,9 +1578,12 @@ export interface SettingsUnitWrite {
   name: string;
 }
 
+/**
+ * The settings to change: each left as it is unless sent.
+ */
 export interface SettingsUpdate {
-  /** @pattern ^[A-Z]{3}$ */
-  currency: string;
+  currency?: string | null;
+  auto_manufacture?: AutoManufacture | null;
 }
 
 export type SetupAddWords = { [key: string]: string };

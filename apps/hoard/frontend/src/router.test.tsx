@@ -154,6 +154,21 @@ describe("Hoard's pages", () => {
     await screen.findByRole("heading", { level: 2, name: "Run R-0003" });
   });
 
+  it.each([
+    ["/orders", "Orders", "No orders yet"],
+    ["/orders/listings", "Listings", "No listings yet"],
+  ])("%s opens under Orders, on its tab", async (path, tab, empty) => {
+    await openSignedIn(path);
+    expect(await selectedTab("Orders")).toBe(tab);
+    await screen.findByText(empty);
+  });
+
+  it("/orders/3 opens one order, under its tab", async () => {
+    await openSignedIn("/orders/3");
+    expect(await selectedTab("Orders")).toBe("Orders");
+    await screen.findByRole("heading", { level: 2, name: "Order" });
+  });
+
   it("/reports opens its page", async () => {
     await openSignedIn("/reports");
     await screen.findByRole("heading", { level: 1, name: "Reports" });
@@ -170,6 +185,8 @@ describe("Hoard's pages", () => {
       "Locations",
       "Adjustment reasons",
       "Tasks",
+      "Stores",
+      "Auto-manufacture",
     ]) {
       await screen.findByRole("heading", { level: 2, name: section });
     }
