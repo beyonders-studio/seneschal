@@ -98,6 +98,24 @@ async def test_auto_manufacture_is_changed_only_when_sent(client, sign_in, db: W
     assert made.json()["variations"][0]["auto_manufacture"] == "out_of_stock"
 
 
+async def test_a_product_keeps_its_cure_time_and_its_traceability_flags(
+    client, sign_in, db: WriteSession, main
+):
+    product = await _product(db, main, "1")
+    await sign_in(client)
+    path = f"/api/v1/products/{product.id}"
+
+    kept = await client.put(
+        path,
+        json={"name": "Soap", "cure_days": 28, "traceability_list": True, "rinse_off": True},
+    )
+    refused = await client.put(path, json={"name": "Soap", "cure_days": 0})
+
+    page = kept.json()
+    assert (page["cure_days"], page["traceability_list"], page["rinse_off"]) == (28, True, True)
+    assert refused.status_code == 422
+
+
 async def test_product_images_are_kept_by_type_and_size(
     client, sign_in, db: WriteSession, main: Location
 ):

@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
+from sqlmodel import select
 
 from hoard import plugin_manifest
 from hoard.app import create_app
@@ -23,6 +24,9 @@ from hoard.records import (
     Adjustment,
     AdjustmentKind,
     Base,
+    DefaultHoldReason,
+    Hold,
+    HoldReason,
     Location,
     Lot,
     Material,
@@ -33,7 +37,7 @@ from hoard.records import (
     PurchaseLine,
     Unit,
 )
-from hoard.stock import add_base, add_material, adjust, main_location
+from hoard.stock import add_base, add_default_hold_reasons, add_material, adjust, main_location
 from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
@@ -194,6 +198,25 @@ def lot(db: WriteSession, main: Location) -> Callable[..., Awaitable[Lot]]:
         return made
 
     return lot
+
+
+@pytest.fixture
+def hold(db: WriteSession) -> Callable[..., Awaitable[Hold]]:
+    """Put a lot on hold, open, for one of the default hold reasons."""
+
+    async def hold(
+        lot: Lot, reason: DefaultHoldReason = DefaultHoldReason.SUSPECT, **fields: Any
+    ) -> Hold:
+        await add_default_hold_reasons(db)
+        reason_id = (await db.exec(select(HoldReason.id).where(HoldReason.key == reason))).one()
+        made = Hold(
+            organization_id=db.organization_id, lot_id=lot.id, reason_id=reason_id, **fields
+        )
+        db.add(made)
+        await db.flush()
+        return made
+
+    return hold
 
 
 #: A line to sell: the item, its quantity and its price.

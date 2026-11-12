@@ -321,7 +321,7 @@ def allergens() -> Any:
 def fragrance_allergens() -> Any:
     """Fragrance allergens by key, each with its share in percent, or None
     where they are not known."""
-    return Field(default=None, sa_column=Column(JSONB, nullable=True))
+    return Field(default=None, sa_column=Column(JSONB(none_as_null=True), nullable=True))
 
 
 class PropertyType(StrEnum):

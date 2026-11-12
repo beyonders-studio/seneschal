@@ -12,9 +12,12 @@ from hoard import costing
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    Category,
+    CategoryKind,
     Location,
     Lot,
     Material,
+    Picking,
     Product,
     Unit,
     Variation,
@@ -124,3 +127,61 @@ async def test_lots_are_drawn_by_earliest_expiry_then_first_in_and_no_further_th
     # What was drawn already is not drawn again; what no lot holds draws on none.
     assert rest == [(late.id, 1), (lasting.id, 2), (None, 2)]
     assert drawn == {soon.id: 2, late.id: 3, lasting.id: 2}
+
+
+async def test_lots_on_hold_are_never_drawn(db: WriteSession, main: Location, material, lot, hold):
+    flour = await material("Flour")
+    held = await lot(flour.id, "A", "3", expires_on=date(2026, 12, 1))
+    free = await lot(flour.id, "B", "2", expires_on=date(2026, 12, 9))
+    await hold(held)
+
+    assert await draw_lots(db, flour.id, main.id, Decimal(4), {}) == [(free.id, 2), (None, 2)]
+
+
+@pytest.mark.parametrize(
+    ("rule", "order"),
+    [
+        (Picking.EARLIEST_EXPIRY, ["soon", "late", "lasting"]),
+        (Picking.FIRST_IN, ["lasting", "late", "soon"]),
+        (Picking.LAST_IN, ["soon", "late", "lasting"]),
+        (Picking.RECORDED, []),
+    ],
+)
+async def test_lots_are_drawn_as_the_category_picks_them(
+    db: WriteSession, main: Location, material, lot, rule: Picking, order: list[str]
+):
+    category = Category(
+        organization_id=db.organization_id, kind=CategoryKind.MATERIAL, name="Bulk", picking=rule
+    )
+    db.add(category)
+    await db.flush()
+    flour = await material("Flour", category_id=category.id)
+    lots = {
+        "late": await lot(flour.id, "A", "1", date(2026, 11, 1), expires_on=date(2026, 12, 10)),
+        "soon": await lot(flour.id, "B", "1", date(2026, 11, 2), expires_on=date(2026, 12, 5)),
+        "lasting": await lot(flour.id, "C", "1", date(2026, 10, 1)),
+    }
+
+    draws = await draw_lots(db, flour.id, main.id, Decimal(3), {})
+
+    # Where every draw is recorded, none is assumed.
+    expected = [(lots[name].id, 1) for name in order] or [(None, 3)]
+    assert draws == expected
+
+
+async def test_a_variation_is_drawn_as_its_products_category_picks(
+    db: WriteSession, main: Location, lot
+):
+    category = Category(
+        organization_id=db.organization_id,
+        kind=CategoryKind.PRODUCT,
+        name="Soap",
+        picking=Picking.LAST_IN,
+    )
+    db.add(category)
+    await db.flush()
+    _, soap = await add_product(db, Product(name="Soap", category_id=category.id))
+    first = await lot(soap.id, "S-1", "1", date(2026, 11, 1))
+    last = await lot(soap.id, "S-2", "1", date(2026, 11, 5))
+
+    assert await draw_lots(db, soap.id, main.id, Decimal(2), {}) == [(last.id, 1), (first.id, 1)]
