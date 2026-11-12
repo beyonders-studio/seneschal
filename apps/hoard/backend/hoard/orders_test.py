@@ -222,3 +222,39 @@ async def test_what_is_on_hold_is_not_available(db: WriteSession, main: Location
 
     assert await orders.available(db, chai.id, main.id) == 6
     assert await orders.available(db, chai.id) == 6
+
+
+async def test_an_open_order_is_short_of_what_its_location_lacks(
+    db: WriteSession, main: Location, lot, sell, hold
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    _, mug = await add_product(db, Product(name="Mug"))
+    suspect = await lot(chai.id, "C-1", "4")
+    await lot(chai.id, "C-2", "3")
+    await lot(mug.id, "M-1", "9")
+    await sell((chai.id, "2", "4"))
+    order = await sell((chai.id, "4", "4"), (mug.id, "1", "8"))
+    chai_line, mug_line = await orders.lines(db, order.id)
+    assert await orders.short(db, order) == {}
+
+    await hold(suspect)
+    # 3 on hand that is not held, less 6 committed: chai lacks 3.
+    assert await orders.short(db, order) == {chai_line.id: 3}
+    order.status = OrderStatus.CANCELLED
+    assert await orders.short(db, order) == {}
+
+
+async def test_a_deleted_order_leaves_its_holds_naming_none(
+    db: WriteSession, main: Location, lot, sell, hold
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    picked = await lot(chai.id, "C-1", "4")
+    order = await sell((chai.id, "1", "4"))
+    [line] = await orders.lines(db, order.id)
+    await shipments.add(db, order, main.id, [shipments.Pick(line.id, lot_id=picked.id)])
+    kept = await hold(picked, order_id=order.id)
+
+    await orders.delete(db, order)
+
+    await db.refresh(kept)
+    assert (kept.order_id, kept.ended) == (None, None)
