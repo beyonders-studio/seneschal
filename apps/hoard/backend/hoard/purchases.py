@@ -18,7 +18,7 @@ from decimal import Decimal
 from sqlalchemy import delete, func
 from sqlmodel import col, select
 
-from hoard import costing
+from hoard import costing, events
 from hoard.records import (
     PLACES,
     Adjustment,
@@ -98,6 +98,7 @@ async def receive_line(
 ) -> Lot | None:
     """Receive ``line``: for an inventoriable material, its lot (numbered from
     the purchase's code when no number is given) and its purchase adjustment.
+    Records the line received, and the purchase received once every line is.
     Answers the lot."""
     purchase = await db.get_one(Purchase, line.purchase_id)
     material = await db.get_one(Material, line.material_id)
@@ -129,6 +130,14 @@ async def receive_line(
             )
         )
     await rederive_purchase(db, purchase)
+    received = await events.purchase_event(
+        db, events.EventName.PURCHASE_LINE_RECEIVED, purchase, line
+    )
+    await events.record(db, received)
+    if received.payload["lines_received"] == received.payload["lines"]:
+        await events.record(
+            db, await events.purchase_event(db, events.EventName.PURCHASE_RECEIVED, purchase)
+        )
     return lot
 
 
