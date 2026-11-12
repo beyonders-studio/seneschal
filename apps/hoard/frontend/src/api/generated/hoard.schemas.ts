@@ -26,6 +26,7 @@ export type ItemKind = (typeof ItemKind)[keyof typeof ItemKind];
 export const ItemKind = {
   material: "material",
   variation: "variation",
+  base: "base",
 } as const;
 
 /**
@@ -49,6 +50,7 @@ export const AdjustmentKind = {
   purchase: "purchase",
   stocktake: "stocktake",
   manual: "manual",
+  production: "production",
 } as const;
 
 export interface AdjustmentRead {
@@ -90,6 +92,7 @@ export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
 export const CategoryKind = {
   material: "material",
   product: "product",
+  base: "base",
 } as const;
 
 export interface ContactCreate {
@@ -615,6 +618,8 @@ export const RecordKind = {
   material: "material",
   product: "product",
   lot: "lot",
+  base: "base",
+  run: "run",
 } as const;
 
 export interface HoardDetailLayoutRead {
