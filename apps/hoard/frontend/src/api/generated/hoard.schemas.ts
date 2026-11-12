@@ -970,6 +970,41 @@ export interface PagePurchaseSummary {
   total: number;
 }
 
+/**
+ * Where a production run stands. Only a completed run has moved stock.
+ */
+export type RunStatus = (typeof RunStatus)[keyof typeof RunStatus];
+
+export const RunStatus = {
+  not_started: "not_started",
+  in_progress: "in_progress",
+  completed: "completed",
+} as const;
+
+export interface RunSummary {
+  id: number;
+  code: string;
+  item: AdjustmentItem;
+  status: RunStatus;
+  location_id: number;
+  initiative_id: number | null;
+  planned_batches: string;
+  planned_quantity: string | null;
+  actual_quantity: string | null;
+  assignee_ref: string | null;
+  started_on: string | null;
+  deadline_on: string | null;
+  completed_on: string | null;
+  uncosted: boolean;
+  cost?: string | null;
+  unit_cost?: string | null;
+}
+
+export interface PageRunSummary {
+  items: RunSummary[];
+  total: number;
+}
+
 export interface StocktakeSummary {
   id: number;
   kind: CategoryKind;
@@ -1191,6 +1226,99 @@ export interface ReportValuation {
   total: string;
 }
 
+export interface RunComplete {
+  actual_quantity: number | string;
+  completed_on?: string | null;
+}
+
+export interface RunCreate {
+  item_id: number;
+  code?: string | null;
+  planned_batches?: number | string;
+  location_id?: number | null;
+  start?: boolean;
+  deadline_on?: string | null;
+  expires_on?: string | null;
+  assignee_ref?: string | null;
+  labour_minutes?: number | null;
+}
+
+/**
+ * A lot a run made, or one a line consumes or may.
+ */
+export interface RunLot {
+  id: number;
+  number: string;
+  expires_on: string | null;
+  balance: string;
+}
+
+export interface RunLineRead {
+  id: number;
+  item: AdjustmentItem;
+  quantity: string;
+  lot: RunLot | null;
+  assumed: boolean;
+  lots: RunLot[];
+  unit_cost?: string | null;
+  cost?: string | null;
+}
+
+/**
+ * A change to a line: only what is sent.
+ */
+export interface RunLineUpdate {
+  quantity?: number | string | null;
+  lot_id?: number | null;
+}
+
+export interface RunRead {
+  id: number;
+  code: string;
+  item: AdjustmentItem;
+  status: RunStatus;
+  location_id: number;
+  initiative_id: number | null;
+  planned_batches: string;
+  planned_quantity: string | null;
+  actual_quantity: string | null;
+  assignee_ref: string | null;
+  started_on: string | null;
+  deadline_on: string | null;
+  completed_on: string | null;
+  uncosted: boolean;
+  cost?: string | null;
+  unit_cost?: string | null;
+  recipe_id: number | null;
+  labour_minutes: number | null;
+  expires_on: string | null;
+  output_lot: RunLot | null;
+  lines: RunLineRead[];
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export interface RunStart {
+  started_on?: string | null;
+}
+
+/**
+ * A change to a run: only what is sent. Its planned batches and location
+ * change only until it is completed.
+ */
+export interface RunUpdate {
+  code?: string | null;
+  planned_batches?: number | string | null;
+  location_id?: number | null;
+  deadline_on?: string | null;
+  expires_on?: string | null;
+  assignee_ref?: string | null;
+  labour_minutes?: number | null;
+  started_on?: string | null;
+}
+
 export interface SettingsCategoryCreate {
   kind: CategoryKind;
   /**
@@ -1396,4 +1524,15 @@ export type SearchMemberNamesParams = {
 
 export type ListPropertiesParams = {
   kind: RecordKind;
+};
+
+export type ListRunsParams = {
+  status?: RunStatus | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
 };

@@ -60,6 +60,37 @@ const STOCK = {
   },
 };
 
+/** What Production's pages read: no runs, but the one opened. */
+const PRODUCTION = {
+  ...SETTINGS,
+  "GET /api/v1/runs": NONE,
+  "GET /api/v1/runs/3": {
+    status: 200,
+    data: {
+      id: 3,
+      code: "R-0003",
+      item: { id: 8, kind: "base", name: "Dough", attributes: {} },
+      status: "not_started",
+      location_id: 1,
+      initiative_id: 7,
+      planned_batches: "1.000000",
+      planned_quantity: "1.000000",
+      actual_quantity: null,
+      assignee_ref: null,
+      started_on: null,
+      deadline_on: null,
+      completed_on: null,
+      uncosted: false,
+      recipe_id: 2,
+      labour_minutes: null,
+      expires_on: null,
+      output_lot: null,
+      lines: [],
+      ...STAMPS,
+    },
+  },
+};
+
 /** Waits for a page with tabs, and answers which tab is selected. */
 const selectedTab = async (page: string) => {
   await screen.findByRole("heading", { level: 1, name: page });
@@ -109,15 +140,15 @@ describe("Hoard's pages", () => {
     ["/production/runs", "Runs", "No production runs yet"],
     ["/production/recipes", "Recipes", "No recipes yet"],
   ])("%s opens under Production, on its tab", async (path, tab, empty) => {
-    await openSignedIn(path);
+    await openSignedIn(path, signedIn(), PRODUCTION);
     expect(await selectedTab("Production")).toBe(tab);
     await screen.findByText(empty);
   });
 
   it("/production/runs/3 opens one run, under its tab", async () => {
-    await openSignedIn("/production/runs/3");
+    await openSignedIn("/production/runs/3", signedIn(), PRODUCTION);
     expect(await selectedTab("Production")).toBe("Runs");
-    await screen.findByRole("heading", { level: 2, name: "Production run" });
+    await screen.findByRole("heading", { level: 2, name: "Run R-0003" });
   });
 
   it("/reports opens its page", async () => {
