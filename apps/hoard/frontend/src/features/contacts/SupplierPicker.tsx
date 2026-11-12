@@ -1,4 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
+import { X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -26,7 +27,7 @@ export function useSupplierNames(): (contactId: number | null | undefined) => st
 
 /**
  * Picks a supplier among the community's contacts in Initiative, under
- * `label` when it is not a purchase's.
+ * `label` when it is not a purchase's, or clears the one picked.
  * A name typed that no contact has is added as a new contact. When the
  * community has no contacts yet, a notice says so.
  */
@@ -37,7 +38,7 @@ export function SupplierPicker({
 }: {
   label?: string;
   value: number | null;
-  onChange: (contactId: number) => void;
+  onChange: (contactId: number | null) => void;
 }) {
   const { t } = useTranslation("connection");
   const queries = useQueryClient();
@@ -65,12 +66,17 @@ export function SupplierPicker({
       error={contacts.isError ? errorMessage(contacts.error, t, "suppliers.loadFailed") : undefined}
     >
       <Combobox
-        items={(contacts.data ?? []).map((contact) => ({
-          value: String(contact.id),
-          label: contact.name,
-        }))}
+        items={[
+          // Clearing is listed first while there is something to clear: "" is
+          // no contact's id.
+          ...(value !== null ? [{ value: "", label: t("ui:clear"), icon: X }] : []),
+          ...(contacts.data ?? []).map((contact) => ({
+            value: String(contact.id),
+            label: contact.name,
+          })),
+        ]}
         value={value === null ? null : String(value)}
-        onValueChange={(next) => onChange(Number(next))}
+        onValueChange={(next) => onChange(next ? Number(next) : null)}
         typedLabel={(typed) => (typed ? t("suppliers.add", { name: typed }) : "")}
         onCreate={addSupplier}
         loading={contacts.isLoading}

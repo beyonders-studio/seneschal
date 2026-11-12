@@ -43,7 +43,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Every contact the community's install may see, by name.
+ * Every one of the community's own contacts, by name.
  * @summary List Contacts
  */
 export const listContacts = (
@@ -82,7 +82,7 @@ export type ListContactsQueryResult = NonNullable<Awaited<ReturnType<typeof list
 export type ListContactsQueryError = ErrorType<void>;
 
 /**
- * Every contact the community's install may see, by name.
+ * Every one of the community's own contacts, by name.
  * @summary List Contacts
  */
 export function useListContacts<
@@ -104,7 +104,7 @@ export function useListContacts<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Every contact the community's install may see, by name.
+ * Every one of the community's own contacts, by name.
  * @summary List Contacts
  */
 export function useListContacts<
@@ -126,7 +126,7 @@ export function useListContacts<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Every contact the community's install may see, by name.
+ * Every one of the community's own contacts, by name.
  * @summary List Contacts
  */
 export function useListContacts<
@@ -140,7 +140,7 @@ export function useListContacts<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Every contact the community's install may see, by name.
+ * Every one of the community's own contacts, by name.
  * @summary List Contacts
  */
 export function useListContacts<
@@ -163,8 +163,7 @@ export function useListContacts<
 }
 
 /**
- * Add a contact, a supplier by default, in the initiative the page was
- * opened from.
+ * Add one of the community's contacts, a supplier by default.
  * @summary Create Contact
  */
 export const createContact = (
@@ -228,8 +227,7 @@ export type CreateContactMutationError = ErrorType<void | HTTPValidationError>;
 export type CreateContactMutationVariables = { data: BodyType<ContactCreate> };
 
 /**
- * Add a contact, a supplier by default, in the initiative the page was
- * opened from.
+ * Add one of the community's contacts, a supplier by default.
  * @summary Create Contact
  */
 export const useCreateContact = <
