@@ -12,7 +12,9 @@ import { deleteProductVariation, getReadProductQueryKey } from "@/api/generated/
 import { toast } from "@/components/Toaster";
 import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
 import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
+import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
+import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge } from "@/features/items/ItemList";
@@ -54,6 +56,11 @@ const LowStockLimit = ({ item }: Shown) => {
 };
 
 const Category = ({ item }: Shown) => useSettingsNames().category(item.category_id);
+
+const YesNo = ({ value }: { value: boolean }) => {
+  const { t } = useTranslation();
+  return value ? t("common.yes") : t("common.no");
+};
 
 const DefaultPrice = ({ item }: Shown) => {
   const money = useMoney();
@@ -128,6 +135,24 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       (product) => product.default_price,
       DefaultPrice
     ),
+    builtin(
+      "cure_days",
+      "catalog:items.cureDays",
+      (product) => product.cure_days,
+      ({ item }) => <CureDays days={item.cure_days} />
+    ),
+    builtin(
+      "traceability_list",
+      "catalog:products.traceabilityList",
+      (product) => product.traceability_list,
+      ({ item }) => <YesNo value={item.traceability_list} />
+    ),
+    builtin(
+      "rinse_off",
+      "catalog:products.rinseOff",
+      (product) => product.rinse_off,
+      ({ item }) => <YesNo value={item.rinse_off} />
+    ),
   ],
   pageFields: [
     builtin(
@@ -157,6 +182,12 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       ({ item }) => <DeclarationsPanel of="product" id={item.id} />
     ),
     builtin(
+      "documents",
+      "documents:section.title",
+      (product) => product.id,
+      ({ item }) => <DocumentsSection of="product" id={item.id} />
+    ),
+    builtin(
       "stores",
       "stores:product.title",
       (product) => product.id,
@@ -178,7 +209,15 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       main: [
         at(1, {
           type: "section",
-          children: ["on_hand", "low_stock_limit", "category", "default_price"].map(field),
+          children: [
+            "on_hand",
+            "low_stock_limit",
+            "category",
+            "default_price",
+            "cure_days",
+            "traceability_list",
+            "rinse_off",
+          ].map(field),
         }),
         at(3, field("images")),
         at(4, field("variations")),
@@ -186,9 +225,10 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
         at(6, field("stock")),
         at(7, field("lots")),
         at(8, field("declarations")),
-        at(9, field("stores")),
-        at(10, field("auto_manufacture")),
-        at(11, { type: "byline" }),
+        at(9, field("documents")),
+        at(10, field("stores")),
+        at(11, field("auto_manufacture")),
+        at(12, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { baseDetail, materialDetail, productDetail, SETTINGS } from "@/features/items/testing";
+import { lotRead } from "@/features/lots/testing";
 import { orderRead } from "@/features/orders/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
@@ -27,6 +28,7 @@ const STOCK = {
   "GET /api/v1/bases/3": { status: 200, data: baseDetail({ id: 3 }) },
   "GET /api/v1/products/3": { status: 200, data: productDetail({ id: 3 }) },
   "GET /api/v1/products/3/images": { status: 200, data: [] },
+  "GET /api/v1/lots/3": { status: 200, data: lotRead() },
   "GET /api/v1/purchases/3": {
     status: 200,
     data: {
@@ -111,6 +113,7 @@ describe("Hoard's pages", () => {
     ["/stock/purchases", "Purchases", "No purchases yet"],
     ["/stock/adjustments", "Adjustments", "No adjustments yet"],
     ["/stock/stocktakes", "Stocktakes", "No stocktakes yet"],
+    ["/stock/recall", "Recall", "Recall a lot"],
   ])("%s opens under Stock, on its tab", async (path, tab, empty) => {
     await openSignedIn(path, signedIn(), STOCK);
     expect(await stockTab()).toBe(tab);
@@ -127,6 +130,14 @@ describe("Hoard's pages", () => {
     await openSignedIn(path, signedIn(), STOCK);
     expect(await stockTab()).toBe(tab);
     await screen.findByRole("heading", { level: 2, name: heading });
+  });
+
+  it("/stock/lots/3 opens one lot, with the way back to its item", async () => {
+    await openSignedIn("/stock/lots/3", signedIn(), STOCK);
+    await screen.findByRole("heading", { level: 2, name: "Lot L-3" });
+    expect(screen.getByRole("link", { name: "Oolong" }).getAttribute("href")).toBe(
+      "/stock/materials/5"
+    );
   });
 
   it("Stock opens on its materials, and its tabs move between records", async () => {
@@ -190,9 +201,11 @@ describe("Hoard's pages", () => {
       "Categories",
       "Locations",
       "Adjustment reasons",
+      "Hold reasons",
       "Tasks",
       "Stores",
       "Auto-manufacture",
+      "Backups",
     ]) {
       await screen.findByRole("heading", { level: 2, name: section });
     }

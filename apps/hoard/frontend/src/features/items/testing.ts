@@ -18,20 +18,23 @@ globalThis.ResizeObserver ??= class {
 /** The settings item pages read: a unit, a category of each kind, the main
  *  location and one more, and the currency. */
 export const SETTINGS: Record<string, Answer> = {
-  "GET /api/v1/settings": { status: 200, data: { currency: "USD", auto_manufacture: "off" } },
+  "GET /api/v1/settings": {
+    status: 200,
+    data: { currency: "USD", auto_manufacture: "off", regimes: [] },
+  },
   "GET /api/v1/settings/units": { status: 200, data: [{ id: 1, name: "g" }] },
   "GET /api/v1/settings/categories": {
     status: 200,
     data: [
-      { id: 2, kind: "material", name: "Tea" },
-      { id: 3, kind: "product", name: "Drinks" },
+      { id: 2, kind: "material", name: "Tea", picking: "earliest_expiry" },
+      { id: 3, kind: "product", name: "Drinks", picking: "earliest_expiry" },
     ],
   },
   "GET /api/v1/settings/locations": {
     status: 200,
     data: [
-      { id: 10, name: null, main: true },
-      { id: 11, name: "Back room", main: false },
+      { id: 10, name: null, main: true, contact_id: null },
+      { id: 11, name: "Back room", main: false, contact_id: null },
     ],
   },
   "GET /api/v1/members": { status: 200, data: [{ member_ref: "member-ref", name: "Ada" }] },
@@ -79,6 +82,9 @@ export const product = (fields: Partial<ProductRead> = {}): ProductRead => ({
   on_hand: "0",
   default_price: null,
   auto_manufacture: null,
+  cure_days: null,
+  traceability_list: false,
+  rinse_off: false,
   properties: [],
   ...fields,
 });
@@ -97,6 +103,7 @@ export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
   tracking_unit_id: 1,
   low_stock_limit: null,
   category_id: null,
+  cure_days: null,
   on_hand: "0",
   average_cost: null,
   properties: [],

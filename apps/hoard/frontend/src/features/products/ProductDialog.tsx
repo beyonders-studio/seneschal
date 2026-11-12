@@ -13,11 +13,13 @@ import {
   getReadProductQueryKey,
   updateProduct,
 } from "@/api/generated/products/products";
+import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
+import { Checkbox } from "@/ui/checkbox";
 import {
   Dialog,
   DialogBody,
@@ -28,6 +30,7 @@ import {
 } from "@/ui/dialog";
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 
 /**
@@ -78,6 +81,9 @@ function ProductForm({
   const [categoryId, setCategoryId] = useState(product?.category_id ?? null);
   const [lowStockLimit, setLowStockLimit] = useState(product?.low_stock_limit ?? "");
   const [defaultPrice, setDefaultPrice] = useState(product?.default_price ?? "");
+  const [cureDays, setCureDays] = useState(product?.cure_days?.toString() ?? "");
+  const [traceabilityList, setTraceabilityList] = useState(product?.traceability_list ?? false);
+  const [rinseOff, setRinseOff] = useState(product?.rinse_off ?? false);
   const save = useMutation({
     mutationFn: (body: ProductWrite) =>
       product ? updateProduct(product.id, body) : createProduct(body),
@@ -95,6 +101,9 @@ function ProductForm({
       status,
       category_id: categoryId,
       low_stock_limit: orNull(lowStockLimit),
+      cure_days: days(cureDays),
+      traceability_list: traceabilityList,
+      rinse_off: rinseOff,
       ...(seesCosts ? { default_price: orNull(defaultPrice) } : {}),
     });
   };
@@ -147,7 +156,28 @@ function ProductForm({
               />
             </Field>
           )}
+          <CureDaysField value={cureDays} onChange={setCureDays} />
         </div>
+        {(
+          [
+            [
+              "product-traceability-list",
+              "products.traceabilityList",
+              traceabilityList,
+              setTraceabilityList,
+            ],
+            ["product-rinse-off", "products.rinseOff", rinseOff, setRinseOff],
+          ] as const
+        ).map(([id, label, checked, setChecked]) => (
+          <div key={id} className="flex items-center gap-2">
+            <Checkbox
+              id={id}
+              checked={checked}
+              onCheckedChange={(next) => setChecked(next === true)}
+            />
+            <Label htmlFor={id}>{t(label)}</Label>
+          </div>
+        ))}
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
             {errorMessage(save.error, t, "products.saveFailed")}

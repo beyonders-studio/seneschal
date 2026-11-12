@@ -9,6 +9,7 @@ import {
   updateBase,
 } from "@/api/generated/bases/bases";
 import type { BaseDetail, BaseWrite } from "@/api/generated/hoard.schemas";
+import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { useSettingsNames } from "@/features/settings/names";
@@ -65,6 +66,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
   const [categoryId, setCategoryId] = useState(base?.category_id ?? null);
   const [trackingUnitId, setTrackingUnitId] = useState(base?.tracking_unit_id ?? null);
   const [lowStockLimit, setLowStockLimit] = useState(base?.low_stock_limit ?? "");
+  const [cureDays, setCureDays] = useState(base?.cure_days?.toString() ?? "");
   const save = useMutation({
     mutationFn: (body: BaseWrite) => (base ? updateBase(base.id, body) : createBase(body)),
     onSuccess: async (saved) => {
@@ -83,6 +85,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
       low_stock_limit: orNull(lowStockLimit),
+      cure_days: days(cureDays),
     });
   };
 
@@ -120,6 +123,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
               onChange={(event) => setLowStockLimit(event.target.value)}
             />
           </Field>
+          <CureDaysField value={cureDays} onChange={setCureDays} />
         </div>
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">

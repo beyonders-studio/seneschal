@@ -89,5 +89,8 @@
         "damaged_packaging": "Damaged packaging"
       }
     }
+  },
+  "errors": {
+    "SETUP_STARTED": "Hoard is set up already."
   }
 }

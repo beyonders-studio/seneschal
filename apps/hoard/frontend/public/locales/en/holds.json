@@ -1,0 +1,12 @@
+{
+  "section": {
+    "title": "Hold",
+    "available": "Available.",
+    "onHold": "On hold.",
+    "badge": "On hold"
+  },
+  "reasons": {
+    "title": "Hold reasons",
+    "empty": "No hold reasons yet."
+  }
+}

@@ -1,5 +1,7 @@
 import type { BaseDetail, BaseRead } from "@/api/generated/hoard.schemas";
+import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
+import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge } from "@/features/items/ItemList";
@@ -83,6 +85,12 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       TrackingUnit
     ),
     builtin("average_cost", "catalog:items.averageCost", (base) => base.average_cost, AverageCost),
+    builtin(
+      "cure_days",
+      "catalog:items.cureDays",
+      (base) => base.cure_days,
+      ({ item }) => <CureDays days={item.cure_days} />
+    ),
   ],
   pageFields: [
     builtin(
@@ -97,6 +105,12 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       "catalog:items.lots",
       (base) => base.id,
       ({ item }) => <LotsTable lots={item.lots} />
+    ),
+    builtin(
+      "documents",
+      "documents:section.title",
+      (base) => base.id,
+      ({ item }) => <DocumentsSection of="base" id={item.id} />
     ),
   ],
   columns: ["name", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
@@ -114,13 +128,15 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
             "sku",
             "category",
             "tracking_unit",
+            "cure_days",
             "average_cost",
           ].map(field),
         }),
         at(3, field("recipe")),
         at(4, field("stock")),
         at(5, field("lots")),
-        at(6, { type: "byline" }),
+        at(6, field("documents")),
+        at(7, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

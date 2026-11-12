@@ -1,0 +1,10 @@
+{
+  "section": {
+    "title": "Trace",
+    "empty": "Nothing went into this lot or came from it yet."
+  },
+  "recall": {
+    "emptyTitle": "Recall a lot",
+    "emptyBody": "Find every lot made from it and every shipment it reached or may have reached."
+  }
+}

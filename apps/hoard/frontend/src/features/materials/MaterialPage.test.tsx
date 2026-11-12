@@ -25,6 +25,7 @@ const OOLONG = materialDetail({
       expires_on: null,
       notes: null,
       balance: "10.000000",
+      on_hold: false,
       properties: [],
     },
   ],
