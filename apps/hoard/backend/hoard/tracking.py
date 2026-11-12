@@ -261,7 +261,7 @@ async def complete_run(call: EndpointCall) -> dict[str, Any]:
             raise refuse(status.HTTP_409_CONFLICT, TrackingError.RUN_COMPLETED)
         try:
             await runs.complete(db, run, actual, date.today())
-        except StockRefused as refused:
+        except (StockRefused, runs.RunRefused) as refused:
             raise refuse(status.HTTP_409_CONFLICT, refused.code) from None
         await db.commit()
     return {"run_id": run.id, "code": run.code, "status": run.status.value}

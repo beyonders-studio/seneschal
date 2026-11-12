@@ -77,6 +77,8 @@
     "REQUEST_INVALID": "Hoard couldn't read that request.",
     "ADMIN_ONLY": "Only the community's admins can do that.",
     "NOT_FOUND": "That record isn't in Hoard.",
-    "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment."
+    "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment.",
+    "LOT_ON_HOLD": "That lot is on hold, so nothing can be drawn from it.",
+    "LOT_REQUIRED": "Name the lot of each line: its category records every lot."
   }
 }

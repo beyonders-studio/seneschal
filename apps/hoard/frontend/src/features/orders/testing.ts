@@ -1,14 +1,21 @@
 import type {
   OrderLineRead,
+  OrderLot,
   OrderRead,
   OrderShipmentLineRead,
   OrderShipmentRead,
 } from "@/api/generated/hoard.schemas";
 
-/** A lot a shipment line may draw. */
-export const orderLot = { id: 4, number: "C-1", expires_on: null, balance: "10.000000" };
+/** A lot a shipment line may draw, not on hold. */
+export const orderLot: OrderLot = {
+  id: 4,
+  number: "C-1",
+  expires_on: null,
+  balance: "10.000000",
+  on_hold: false,
+};
 
-/** An order's line: 4 of Chai at $5, nothing of it shipped. */
+/** An order's line: 4 of Chai at $5, nothing of it shipped, and not short. */
 export const orderLine = (overrides: Partial<OrderLineRead> = {}): OrderLineRead => ({
   id: 9,
   item: { id: 3, kind: "variation", name: "Chai", attributes: {} },
@@ -17,6 +24,7 @@ export const orderLine = (overrides: Partial<OrderLineRead> = {}): OrderLineRead
   bundle_line_id: null,
   held: "0.000000",
   shipped: "0.000000",
+  short: "0.000000",
   production_run_id: null,
   selling_plan: null,
   ...overrides,

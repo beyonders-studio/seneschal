@@ -5,6 +5,7 @@ export * from "./contacts/contacts";
 export * from "./declarations/declarations";
 export * from "./export/export";
 export * from "./health/health";
+export * from "./holds/holds";
 export * from "./layouts/layouts";
 export * from "./listings/listings";
 export * from "./lots/lots";

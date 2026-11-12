@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 
 import { type Answer, openSignedIn, signedIn } from "@/testing";
 
+// The kit's options scroll themselves into view, which jsdom cannot.
+Element.prototype.scrollIntoView ??= () => {};
+
 /** What Settings reads: one of each kind of setting. */
 const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings": { status: 200, data: { currency: "EUR" } },
   "GET /api/v1/settings/units": { status: 200, data: [{ id: 1, name: "kg" }] },
   "GET /api/v1/settings/categories": {
     status: 200,
-    data: [{ id: 2, kind: "material", name: "Tea" }],
+    data: [{ id: 2, kind: "material", name: "Tea", picking: "earliest_expiry" }],
   },
   "GET /api/v1/settings/locations": {
     status: 200,
@@ -23,6 +26,13 @@ const SETTINGS: Record<string, Answer> = {
     data: [
       { id: 5, key: null, name: "Spilled" },
       { id: 7, key: "personal_use", name: null },
+    ],
+  },
+  "GET /api/v1/holds/reasons": {
+    status: 200,
+    data: [
+      { id: 9, key: "curing", name: null },
+      { id: 10, key: null, name: "Mould" },
     ],
   },
   "GET /api/v1/properties": {
@@ -63,7 +73,13 @@ describe("Settings", () => {
     screen.getByText("Tea");
     screen.getByText("Spilled");
     screen.getByText("Personal use");
+    screen.getByText("Curing");
+    screen.getByText("Mould");
     screen.getByText("Euro (EUR)");
+    expect(screen.getByRole("combobox", { name: "Which lot of Tea goes first" })).toHaveProperty(
+      "disabled",
+      true
+    );
     expect(screen.queryByRole("button", { name: "Add unit" })).toBeNull();
     expect(screen.queryByLabelText("Currency code")).toBeNull();
     expect(screen.queryByRole("button", { name: /kg/ })).toBeNull();
@@ -135,5 +151,27 @@ describe("Settings", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(sent(asked, "delete")).toBeDefined());
+  });
+
+  it("lets an admin pick which lot of a category goes first", async () => {
+    const asked = await openSignedIn("/settings", signedIn({ page: "settings", admin: true }), {
+      ...SETTINGS,
+      "PATCH /api/v1/settings/categories/2": {
+        status: 200,
+        data: { id: 2, kind: "material", name: "Tea", picking: "first_in" },
+      },
+    });
+
+    fireEvent.keyDown(
+      await screen.findByRole("combobox", { name: "Which lot of Tea goes first" }),
+      { key: "Enter" }
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "First in, first out" }));
+
+    await waitFor(() =>
+      expect(asked.some((request) => request.url === "/api/v1/settings/categories/2")).toBe(true)
+    );
+    const changed = asked.find((request) => request.url === "/api/v1/settings/categories/2");
+    expect(JSON.parse(changed?.data ?? "")).toEqual({ picking: "first_in" });
   });
 });

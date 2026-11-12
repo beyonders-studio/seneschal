@@ -12,13 +12,17 @@ import pytest
 from sqlmodel import col, select
 
 from hoard import costing, orders, shipments
+from hoard.holds import HoldError
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
     AdjustmentReason,
+    Category,
+    CategoryKind,
     DefaultReason,
     Location,
     OrderLine,
+    Picking,
     Product,
     ReturnLine,
     Shipment,
@@ -142,7 +146,7 @@ async def test_nothing_comes_back_of_a_shipment_copied_from_history(
     assert await on_hand(db, chai.id) == 10
 
 
-async def _refused(making) -> shipments.ShipmentError | orders.OrderError:
+async def _refused(making) -> shipments.ShipmentError | orders.OrderError | HoldError:
     with pytest.raises(shipments.ShipmentRefused) as refused:
         await making
     return refused.value.code
@@ -265,3 +269,37 @@ async def test_what_comes_back_is_restocked_or_written_off(
     assert await on_hand(db, chai.id) == 12
     await shipments.unship(db, shipment)
     assert await on_hand(db, chai.id) == 16
+
+
+async def test_a_held_lot_does_not_ship_and_a_recorded_one_is_named(
+    db: WriteSession, main: Location, lot, sell, hold
+):
+    gifts = Category(organization_id=db.organization_id, kind=CategoryKind.PRODUCT, name="Gifts")
+    gifts.picking = Picking.RECORDED
+    db.add(gifts)
+    await db.flush()
+    _, chai = await add_product(db, Product(name="Chai"))
+    _, box = await add_product(db, Product(name="Box", category_id=gifts.id))
+    suspect = await lot(chai.id, "C-1", "5", date(2026, 11, 1))
+    good = await lot(chai.id, "C-2", "5", date(2026, 11, 2))
+    boxed = await lot(box.id, "B-1", "5")
+    await hold(suspect)
+    order = await sell((chai.id, "2", "4"), (box.id, "1", "9"))
+    chai_line, box_line = await orders.lines(db, order.id)
+
+    assert await _refused(
+        shipments.add(db, order, main.id, [shipments.Pick(chai_line.id, lot_id=suspect.id)])
+    ) is (HoldError.LOT_ON_HOLD)
+    shipment = await shipments.add(db, order, main.id, [])
+    assert await _refused(shipments.ship(db, shipment, SHIPPED_ON)) is HoldError.LOT_REQUIRED
+    chai_sent, box_sent = await shipments.lines(db, shipment.id)
+    await shipments.set_lot(db, shipment, box_sent, boxed.id)
+    await shipments.set_lot(db, shipment, chai_sent, good.id)
+    await hold(good)
+    assert await _refused(shipments.ship(db, shipment, SHIPPED_ON)) is HoldError.LOT_ON_HOLD
+
+    await shipments.set_lot(db, shipment, chai_sent, None)
+    await lot(chai.id, "C-3", "5", date(2026, 11, 3))
+    await shipments.ship(db, shipment, SHIPPED_ON)
+    drawn = {line.lot_id for line in await shipments.lines(db, shipment.id)}
+    assert suspect.id not in drawn and good.id not in drawn and boxed.id in drawn

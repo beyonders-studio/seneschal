@@ -1,6 +1,6 @@
 import { type QueryKey, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { toast } from "@/components/Toaster";
@@ -49,6 +49,7 @@ export function NamedList<T extends Named>({
   rename,
   remove,
   removable = () => true,
+  detail,
 }: {
   words: string;
   items: T[] | undefined;
@@ -59,6 +60,8 @@ export function NamedList<T extends Named>({
   rename: (item: T, name: string) => Promise<unknown>;
   remove: (item: T) => Promise<unknown>;
   removable?: (item: T) => boolean;
+  /** What else a row shows of its item, beside its name. */
+  detail?: (item: T) => ReactNode;
 }) {
   const { t } = useTranslation("catalog");
   const changes = useChangesSettings();
@@ -88,6 +91,7 @@ export function NamedList<T extends Named>({
             {items.map((item) => (
               <TableRow key={item.id}>
                 <TableCell>{nameOf(item)}</TableCell>
+                {detail && <TableCell className="text-right">{detail(item)}</TableCell>}
                 <TableCell className="w-12">
                   <RowActionsMenu subject={nameOf(item)}>
                     {changes && (

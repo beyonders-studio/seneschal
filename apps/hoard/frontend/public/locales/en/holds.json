@@ -3,10 +3,79 @@
     "title": "Hold",
     "available": "Available.",
     "onHold": "On hold.",
-    "badge": "On hold"
+    "badge": "On hold",
+    "reasonIs": "On hold: {{reason}}.",
+    "readyOn": "Ready on {{date}}.",
+    "ready": "Ready to check since {{date}}.",
+    "fromOrder": "Placed from an order.",
+    "fromRun": "Put on hold by its run, to cure.",
+    "fromHold": "Made from a lot on hold.",
+    "place": "Put on hold",
+    "release": "Release",
+    "discard": "Discard"
+  },
+  "place": {
+    "title": "Put {{number}} on hold",
+    "reason": "Reason",
+    "readyOn": "Ready on",
+    "readyOnHint": "It can't be released before this day.",
+    "madeFrom": "Also hold everything made from it",
+    "submit": "Put on hold",
+    "placed_one": "{{count}} lot put on hold.",
+    "placed_other": "{{count}} lots put on hold.",
+    "failed": "The hold couldn't be placed."
+  },
+  "release": {
+    "title": "Release {{number}}",
+    "body": "Its stock can be used, shipped and sold again.",
+    "endedOn": "Released on",
+    "submit": "Release",
+    "failed": "The hold couldn't be released."
+  },
+  "discard": {
+    "title": "Discard from {{number}}",
+    "reason": "Reason",
+    "quantity": "Quantity",
+    "quantityHint": "Leave it empty to discard all of it. Whatever is left is released.",
+    "endedOn": "Date",
+    "submit": "Discard",
+    "failed": "It couldn't be discarded."
+  },
+  "order": {
+    "button": "Hold its lots",
+    "title": "Hold the lots of {{code}}",
+    "body": "Puts every lot this order's shipments drew on hold, whether someone recorded it or Hoard assumed it.",
+    "reason": "Reason",
+    "madeFrom": "Also hold everything made from them",
+    "submit": "Hold the lots",
+    "nothing": "Every lot it drew is on hold already.",
+    "failed": "The lots couldn't be put on hold."
   },
   "reasons": {
     "title": "Hold reasons",
-    "empty": "No hold reasons yet."
+    "defaults": {
+      "curing": "Curing",
+      "awaiting_results": "Awaiting test results",
+      "suspect": "Suspect",
+      "recall": "Recall"
+    }
+  },
+  "picking": {
+    "hint": "Each category's rule picks which lot goes first: the lot pickers are steered to, and the one Hoard assumes when nobody records a lot.",
+    "label": "Which lot of {{name}} goes first",
+    "rules": {
+      "earliest_expiry": "Earliest expiry first",
+      "first_in": "First in, first out",
+      "last_in": "Last in, first out",
+      "recorded": "Always recorded"
+    },
+    "failed": "The rule couldn't be saved."
+  },
+  "errors": {
+    "LOT_ON_HOLD": "That lot is on hold.",
+    "LOT_REQUIRED": "Name the lot: this category records every lot.",
+    "HOLD_ENDED": "That hold has already ended.",
+    "HOLD_NOT_READY": "It isn't ready yet: release it on or after its ready date.",
+    "DISCARD_OVER_BALANCE": "That's more than the lot holds."
   }
 }

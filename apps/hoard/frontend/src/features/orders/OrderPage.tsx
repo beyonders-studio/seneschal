@@ -31,6 +31,7 @@ import { toast } from "@/components/Toaster";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { useContactNames } from "@/features/contacts/ContactPicker";
 import { HoldFromOrder } from "@/features/holds/HoldFromOrder";
+import { OnHoldBadge } from "@/features/items/lots";
 import { type LineAction, LineDialog } from "@/features/orders/LineDialog";
 import { OrderDialog } from "@/features/orders/OrderDialog";
 import { OrderBadges, useOrderFor } from "@/features/orders/OrdersPage";
@@ -122,6 +123,9 @@ function Order({ order }: { order: OrderRead }) {
           <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
             {t("order.title", { code: order.code })}
             <OrderBadges order={order} />
+            {order.lines.some((line) => Number(line.short) > 0) && (
+              <Badge variant="warning">{t("order.short")}</Badge>
+            )}
           </h2>
           <p className="text-sm text-muted-foreground">
             {[
@@ -307,15 +311,21 @@ function Order({ order }: { order: OrderRead }) {
   );
 }
 
-/** How much of a line has shipped; nothing for a bundle, whose parts ship. */
+/** How much of a line has shipped, and how short it is; nothing for a
+ *  bundle, whose parts ship. */
 function Shipped({ line, bundle }: { line: OrderLineRead; bundle: boolean }) {
   const { t } = useTranslation("orders");
   const { quantity } = useMovementLabels();
   if (bundle) return null;
   return (
-    <>
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
+      {Number(line.short) > 0 && (
+        <Badge variant="warning" title={t("lines.shortHint")}>
+          {t("lines.short", { quantity: quantity(line.short) })}
+        </Badge>
+      )}
       {t("lines.shippedOf", { shipped: quantity(line.shipped), quantity: quantity(line.quantity) })}
-    </>
+    </span>
   );
 }
 
@@ -344,13 +354,15 @@ function ShipmentCard({
   const pending = shipment.status === "pending";
   const shipped = shipment.status === "shipped";
   const lotName = (lot: OrderLot) =>
-    lot.expires_on
-      ? t("shipments.lotExpires", {
-          number: lot.number,
-          date: date(lot.expires_on),
-          balance: quantity(lot.balance),
-        })
-      : t("shipments.lotOption", { number: lot.number, balance: quantity(lot.balance) });
+    lot.on_hold
+      ? t("shipments.lotOnHold", { lot: lot.number })
+      : lot.expires_on
+        ? t("shipments.lotExpires", {
+            number: lot.number,
+            date: date(lot.expires_on),
+            balance: quantity(lot.balance),
+          })
+        : t("shipments.lotOption", { number: lot.number, balance: quantity(lot.balance) });
 
   return (
     <Card>
@@ -457,6 +469,7 @@ function ShipmentCard({
                     <span className="inline-flex flex-wrap items-center gap-2">
                       {line.lot.number}
                       {line.assumed && <Badge variant="secondary">{t("shipments.assumed")}</Badge>}
+                      {line.lot.on_hold && <OnHoldBadge />}
                     </span>
                   ) : (
                     <span className="text-muted-foreground">{t("shipments.noLot")}</span>

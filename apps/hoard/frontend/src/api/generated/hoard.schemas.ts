@@ -952,6 +952,73 @@ export interface HoardPropertyValuesSet {
   steps?: HoardPropertyStep[];
 }
 
+export interface HoldCreate {
+  lot_id: number;
+  reason_id: number;
+  ready_on?: string | null;
+  notes?: string | null;
+  made_from?: boolean;
+}
+
+export interface HoldDiscard {
+  reason_id: number;
+  quantity?: number | string | null;
+  ended_on?: string | null;
+}
+
+/**
+ * How a hold ended.
+ */
+export type HoldEnd = (typeof HoldEnd)[keyof typeof HoldEnd];
+
+export const HoldEnd = {
+  released: "released",
+  discarded: "discarded",
+} as const;
+
+export interface HoldOrderCreate {
+  reason_id?: number | null;
+  notes?: string | null;
+  made_from?: boolean;
+}
+
+/**
+ * A hold on a lot, open or ended.
+ */
+export interface HoldRead {
+  id: number;
+  lot_id: number;
+  lot: string;
+  reason_id: number;
+  ready_on: string | null;
+  notes: string | null;
+  run_id: number | null;
+  order_id: number | null;
+  from_hold_id: number | null;
+  ended: HoldEnd | null;
+  ended_on: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface HoldReasonRead {
+  id: number;
+  key: string | null;
+  name: string | null;
+}
+
+export interface HoldReasonWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+}
+
+export interface HoldRelease {
+  ended_on?: string | null;
+}
+
 /**
  * The item a listing sells, or null to unlink it.
  */
@@ -1147,6 +1214,7 @@ export interface OrderLineRead {
   bundle_line_id: number | null;
   held: string;
   shipped: string;
+  short: string;
   production_run_id: number | null;
   selling_plan: string | null;
 }
@@ -1167,6 +1235,7 @@ export interface OrderLot {
   number: string;
   expires_on: string | null;
   balance: string;
+  on_hold: boolean;
 }
 
 /**

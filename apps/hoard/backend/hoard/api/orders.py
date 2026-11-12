@@ -10,7 +10,7 @@ number there instead, and its lines change only in the store.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -22,7 +22,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
-from hoard import orders
+from hoard import holds, orders, stock
 from hoard.api.adjustments import (
     NOT_FOUND,
     AdjustmentItem,
@@ -38,10 +38,12 @@ from hoard.api.shapes import Page, PageDep
 from hoard.orders import OrderError, OrderRefused
 from hoard.records import (
     PLACES,
+    Hold,
     Lot,
     Order,
     OrderLine,
     OrderStatus,
+    Picking,
     ReturnLine,
     Shipment,
     ShipmentLine,
@@ -81,6 +83,8 @@ class OrderLot(BaseModel):
     expires_on: date | None
     #: What is left of it.
     balance: Decimal
+    #: Whether it is on hold, so that nothing ships from it.
+    on_hold: bool
 
 
 class OrderReturnRead(BaseModel):
@@ -102,7 +106,8 @@ class OrderShipmentLineRead(BaseModel):
     lot: OrderLot | None
     assumed: bool
     #: While the shipment is pending, the lots of its item at the shipment's
-    #: location that hold stock, the earliest expiry first.
+    #: location that hold stock and are not on hold, in the order its
+    #: category's picking rule takes them.
     lots: list[OrderLot]
     returns: list[OrderReturnRead]
 
@@ -134,6 +139,9 @@ class OrderLineRead(BaseModel):
     held: Decimal
     #: How much of it has shipped.
     shipped: Decimal
+    #: How much of what it has left to ship its item lacks at the order's
+    #: location, while the order is open (``hoard.orders.short``).
+    short: Decimal
     production_run_id: int | None
     selling_plan: str | None
 
@@ -186,8 +194,28 @@ def _summary(order: Order, value: Decimal) -> dict[str, Any]:
     }
 
 
-def _lot(lot: Lot) -> OrderLot:
-    return OrderLot(id=lot.id, number=lot.number, expires_on=lot.expires_on, balance=lot.balance)
+def _lot(lot: Lot, held: set[int]) -> OrderLot:
+    return OrderLot(
+        id=lot.id,
+        number=lot.number,
+        expires_on=lot.expires_on,
+        balance=lot.balance,
+        on_hold=lot.id in held,
+    )
+
+
+#: The order each picking rule takes an item's lots in, the first first.
+_PICKING: dict[Picking, Callable[[Lot], tuple[Any, ...]]] = {
+    Picking.EARLIEST_EXPIRY: lambda lot: (
+        lot.expires_on is None,
+        lot.expires_on or date.max,
+        lot.dated_on,
+        lot.id,
+    ),
+    Picking.FIRST_IN: lambda lot: (lot.dated_on, lot.id),
+    Picking.LAST_IN: lambda lot: (-lot.dated_on.toordinal(), -lot.id),
+    Picking.RECORDED: lambda lot: (lot.dated_on, lot.id),
+}
 
 
 async def _shipments(
@@ -212,8 +240,9 @@ async def _shipments(
 async def _choices(
     db: OrganizationSession, sent: Sequence[Shipment], held: Sequence[ShipmentLine]
 ) -> dict[tuple[int, int], list[OrderLot]]:
-    """The lots holding stock that each pending shipment's lines may draw, by
-    item and location."""
+    """The lots holding stock and not on hold that each pending shipment's
+    lines may draw, by item and location, in the order the item's picking
+    rule takes them."""
     pending = {s.id: s.location_id for s in sent if s.status is ShipmentStatus.PENDING}
     wanted = {
         (line.item_id, pending[line.shipment_id]) for line in held if line.shipment_id in pending
@@ -221,17 +250,18 @@ async def _choices(
     if not wanted:
         return {}
     found = await db.exec(
-        select(Lot)
-        .where(
+        select(Lot).where(
             col(Lot.item_id).in_({item_id for item_id, _ in wanted}),
             col(Lot.location_id).in_({location_id for _, location_id in wanted}),
             col(Lot.balance) > 0,
+            col(Lot.id).not_in(holds.held_lots()),
         )
-        .order_by(col(Lot.expires_on).asc().nulls_last(), col(Lot.dated_on), col(Lot.id))
     )
+    rules = {item_id: await stock.picking(db, item_id) for item_id, _ in wanted}
     choices: dict[tuple[int, int], list[OrderLot]] = {}
-    for lot in found.all():
-        choices.setdefault((lot.item_id, lot.location_id), []).append(_lot(lot))
+    for lot in sorted(found.all(), key=lambda lot: _PICKING[rules[lot.item_id]](lot)):
+        if (lot.item_id, lot.location_id) in wanted:
+            choices.setdefault((lot.item_id, lot.location_id), []).append(_lot(lot, set()))
     return choices
 
 
@@ -270,6 +300,8 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
         .execution_options(populate_existing=True)
     )
     lots = {lot.id: lot for lot in found.all()}
+    on_hold = set((await db.exec(holds.held_lots().where(col(Hold.lot_id).in_(lots)))).all())
+    short = await orders.short(db, order)
     back = await _returns(db, held)
     choices = await _choices(db, sent, held)
     value = sum((line.quantity * line.price for line in order_lines), Decimal(0))
@@ -290,6 +322,7 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
                 bundle_line_id=line.bundle_line_id,
                 held=holding[line.id],
                 shipped=shipped[line.id],
+                short=short[line.id],
                 production_run_id=line.production_run_id,
                 selling_plan=line.selling_plan,
             )
@@ -312,7 +345,7 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
                         order_line_id=line.order_line_id,
                         item=items[line.item_id],
                         quantity=line.quantity,
-                        lot=_lot(lots[line.lot_id]) if line.lot_id in lots else None,
+                        lot=_lot(lots[line.lot_id], on_hold) if line.lot_id in lots else None,
                         assumed=line.assumed,
                         lots=choices.get((line.item_id, shipment.location_id), [])
                         if shipment.status is ShipmentStatus.PENDING
