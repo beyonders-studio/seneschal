@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { OrderStatus, type OrderSummary } from "@/api/generated/hoard.schemas";
 import { useListOrders } from "@/api/generated/orders/orders";
 import { useMovementLabels } from "@/features/adjustments/labels";
-import { useContactNames } from "@/features/contacts/CustomerPicker";
+import { useContactNames } from "@/features/contacts/ContactPicker";
 import { OrderDialog } from "@/features/orders/OrderDialog";
 import { useMoney } from "@/lib/money";
 import { useSession } from "@/session";

@@ -25,6 +25,16 @@
     "addFailed": "The contact couldn't be added.",
     "required": "Choose the customer the order is for."
   },
+  "carriers": {
+    "label": "Carrier",
+    "choose": "Choose a carrier",
+    "search": "Search contacts",
+    "none": "No contact has that name.",
+    "add": "Add “{{name}}” as a contact",
+    "noContacts": "Your community has no contacts yet. Type a carrier's name to add them.",
+    "loadFailed": "The community's contacts couldn't be read.",
+    "addFailed": "The contact couldn't be added."
+  },
   "order": {
     "title": "Order {{code}}",
     "addTitle": "New order",
@@ -82,6 +92,7 @@
     "nothingPicked": "Type how much of something the shipment sends.",
     "tracking": "Tracking number",
     "trackingIs": "tracking {{tracking}}",
+    "carrierIs": "by {{carrier}}",
     "reference": "Reference",
     "addressHint": "The order's address when left empty.",
     "ship": "Ship",
