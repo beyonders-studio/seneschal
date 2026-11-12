@@ -207,6 +207,30 @@ async def test_a_body_too_large_is_refused_before_anything_else(client):
     assert (answer.status_code, answer.json()) == (413, {"detail": "REQUEST_TOO_LARGE"})
 
 
+async def test_a_hook_may_answer_with_an_object(client, initiative_stand_in, community_ref):
+    answer = await _call(
+        client, initiative_stand_in, "after_connect", community_ref, {"connection": "shop"}
+    )
+
+    assert (answer.status_code, answer.json()) == (
+        200,
+        {"body": {"connection": "shop"}, "community_ref": community_ref},
+    )
+
+
+async def test_a_webhook_carries_a_stores_delivery_of_up_to_a_mebibyte(
+    client, initiative_stand_in, community_ref
+):
+    delivery = {"connection": "shop", "headers": {}, "body": "x" * (1024 * 1024)}
+    too_large = {**delivery, "body": "x" * (3 * 1024 * 1024)}
+
+    taken = await _call(client, initiative_stand_in, "webhook", community_ref, delivery)
+    refused = await _call(client, initiative_stand_in, "webhook", community_ref, too_large)
+
+    assert taken.status_code == 204
+    assert (refused.status_code, refused.json()) == (413, {"detail": "REQUEST_TOO_LARGE"})
+
+
 #: The core's own endpoints (``conftest.py``): one only Initiative calls, and
 #: one other plug-ins may call too.
 WHO = "plugin.beyonders-studio.core-test.who"

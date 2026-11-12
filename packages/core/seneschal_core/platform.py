@@ -10,7 +10,9 @@ Each app mounts :func:`platform_router` with its own handlers, and the ids of
 the endpoints it declares public: only those take a call another plug-in made
 through Initiative. A handler reads the call's organization through
 :func:`organization_session`, and changes it through :func:`write_session`.
-A hook it does not handle is answered 404, and Initiative stops sending it. The community's
+A hook it does not handle is answered 404, and Initiative stops sending it. A
+handler answering nothing is answered 204; one answering an object, such as
+``after_connect``'s managed values, is answered 200 with it. The community's
 own hooks, which keep the organization registry, are :data:`ORGANIZATION_HOOKS`:
 
 * ``installed``: the organization, made on first sight;
@@ -30,6 +32,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import APIRouter, Request, Response, status
+from fastapi.responses import JSONResponse
 
 from seneschal_core import organizations
 from seneschal_core.api import ErrorCode, Plugin, PluginDep, refuse
@@ -39,6 +42,9 @@ from seneschal_core.organizations import CommunityStatus
 
 #: The most a call's body may hold. It is read before its token is checked.
 MAX_BODY_BYTES = 64 * 1024
+#: The most a ``webhook`` call's body may hold: a store's delivery of up to
+#: 1 MiB, escaped into a JSON string, and its headers.
+MAX_WEBHOOK_BODY_BYTES = 2 * 1024 * 1024 + MAX_BODY_BYTES
 
 
 @dataclass(frozen=True)
@@ -55,7 +61,7 @@ class EndpointCall:
     params: Mapping[str, Any]
 
 
-HookHandler = Callable[[HookCall], Awaitable[None]]
+HookHandler = Callable[[HookCall], Awaitable[Mapping[str, Any] | None]]
 EndpointHandler = Callable[[EndpointCall], Awaitable[Any]]
 
 
@@ -63,12 +69,12 @@ class HookBodyInvalid(ValueError):
     """The hook's body is not the call its name says it is."""
 
 
-async def _body(request: Request) -> dict[str, Any]:
-    """The call's body, a JSON object of at most :data:`MAX_BODY_BYTES`."""
+async def _body(request: Request, limit: int = MAX_BODY_BYTES) -> dict[str, Any]:
+    """The call's body, a JSON object of at most ``limit`` bytes."""
     body = bytearray()
     async for chunk in request.stream():
         body.extend(chunk)
-        if len(body) > MAX_BODY_BYTES:
+        if len(body) > limit:
             raise refuse(status.HTTP_413_CONTENT_TOO_LARGE, ErrorCode.REQUEST_TOO_LARGE)
     try:
         call = json.loads(body) if body else {}
@@ -86,7 +92,7 @@ def _bearer(request: Request) -> str:
     return token
 
 
-async def _organization(call: EndpointCall) -> organizations.Organization:
+async def _organization(call: EndpointCall | HookCall) -> organizations.Organization:
     """The organization of the call's community, made on first sight. An
     unavailable community reads nothing."""
     if call.claims.community_status in organizations.UNAVAILABLE:
@@ -102,7 +108,9 @@ async def _organization(call: EndpointCall) -> organizations.Organization:
 
 
 @asynccontextmanager
-async def organization_session(call: EndpointCall) -> AsyncIterator[OrganizationSession]:
+async def organization_session(
+    call: EndpointCall | HookCall,
+) -> AsyncIterator[OrganizationSession]:
     """A session reading the organization of the call's community."""
     organization = await _organization(call)
     async with call.plugin.database.organization_session(organization.id) as db:
@@ -110,7 +118,7 @@ async def organization_session(call: EndpointCall) -> AsyncIterator[Organization
 
 
 @asynccontextmanager
-async def write_session(call: EndpointCall) -> AsyncIterator[WriteSession]:
+async def write_session(call: EndpointCall | HookCall) -> AsyncIterator[WriteSession]:
     """A session changing the organization of the call's community, for the
     member the call names (:attr:`~seneschal_core.initiative.ContextClaims.member_ref`).
     A community that may not change is refused."""
@@ -138,20 +146,22 @@ def platform_router(
         handler = hooks.get(name)
         if handler is None:
             raise refuse(status.HTTP_404_NOT_FOUND, ErrorCode.HOOK_UNKNOWN)
-        body = await _body(request)
+        body = await _body(request, MAX_WEBHOOK_BODY_BYTES if name == "webhook" else MAX_BODY_BYTES)
         try:
             claims = await plugin.initiative.verify_lifecycle(_bearer(request), hook=name)
         except TokenRefused:
             raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.INVALID_TOKEN) from None
         try:
-            await handler(HookCall(plugin=plugin, claims=claims, body=body))
+            answer = await handler(HookCall(plugin=plugin, claims=claims, body=body))
         except HookBodyInvalid:
             raise refuse(status.HTTP_400_BAD_REQUEST, ErrorCode.REQUEST_INVALID) from None
         except StatementRefused as refused:
             raise refuse(
                 status.HTTP_422_UNPROCESSABLE_CONTENT, ErrorCode.STATEMENT_REFUSED
             ) from refused
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        if answer is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return JSONResponse(dict(answer))
 
     @router.post("/v1/endpoints")
     async def call_endpoint(request: Request, plugin: PluginDep) -> dict[str, Any]:

@@ -19,7 +19,8 @@ platform and one for billing, publishes the first as Initiative does, and signs
 handoffs, context tokens and statements with them. It holds the app's own key
 too, issues installation tokens for assertions signed with it, and answers the
 community's routes of its plug-in API: member lookups and searches from
-:attr:`people`, and whatever a test adds to :attr:`routes`.
+:attr:`people`, the install's configuration from :attr:`connections`, and
+whatever a test adds to :attr:`routes`.
 """
 
 from __future__ import annotations
@@ -199,6 +200,7 @@ class InitiativeStandIn:
             ("GET", "/users/search"): self._search_people,
             ("POST", f"{INSTALLATION_PREFIX}/events"): self._emit,
             ("PUT", f"{INSTALLATION_PREFIX}/metadata"): self._write_metadata,
+            ("GET", f"{INSTALLATION_PREFIX}/config"): self._config,
         }
         #: Each installation token issued, and the community it is for.
         self.tokens: dict[str, str] = {}
@@ -209,6 +211,9 @@ class InitiativeStandIn:
         #: The values the install keeps on each item, by community and
         #: ``(entity_type, entity_id)``.
         self.metadata: dict[tuple[str, str, int | None], dict[str, Any]] = {}
+        #: Each static connection's values, by community and connection id, as
+        #: the install's configuration hands them over.
+        self.connections: dict[str, dict[str, dict[str, Any]]] = {}
 
     def jwks(self) -> dict[str, Any]:
         """The key set Initiative publishes."""
@@ -306,6 +311,27 @@ class InitiativeStandIn:
             else:
                 held[key] = value
         return httpx2.Response(200, json={"values": held})
+
+    def _config(self, request: httpx2.Request) -> httpx2.Response:
+        """The install's configuration in the token's community."""
+        community_ref = self._community(request)
+        connections = self.connections.get(community_ref, {})
+        return httpx2.Response(
+            200,
+            json={
+                "community_ref": community_ref,
+                "install_id": 1,
+                "listing_uid": self.listing_uid,
+                "listing_version": "1.0.0",
+                "enabled": True,
+                "config_state": "ok" if connections else "unverified",
+                "config_state_detail": None,
+                "needs_config": not connections,
+                "connections": connections,
+                "connection_refs": {},
+                "member_connections": [],
+            },
+        )
 
     def _search_people(self, request: httpx2.Request) -> httpx2.Response:
         """The members ``user_id`` names, or those whose handle holds

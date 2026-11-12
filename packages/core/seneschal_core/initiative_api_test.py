@@ -198,3 +198,16 @@ async def test_no_answer_or_a_failing_one_is_unavailable(initiative_stand_in, co
             await failing.people(community_ref, ["ref-a"])
     finally:
         await failing.aclose()
+
+
+async def test_it_reads_the_installs_configuration_in_its_community(
+    api: InitiativeApi, initiative_stand_in: InitiativeStandIn, community_ref: str
+):
+    shopify = {"shop": "tea.myshopify.com", "client_secret": "s3cret"}
+    initiative_stand_in.connections[community_ref] = {"shopify": shopify}
+
+    config = await api.installation_config(community_ref)
+    elsewhere = await api.installation_config(f"{community_ref}-other")
+
+    assert (config["community_ref"], config["connections"]) == (community_ref, {"shopify": shopify})
+    assert elsewhere["connections"] == {}

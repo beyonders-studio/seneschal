@@ -22,6 +22,7 @@ from seneschal_core.db import Database
 from seneschal_core.platform import (
     ORGANIZATION_HOOKS,
     EndpointCall,
+    HookCall,
     platform_router,
     write_session,
 )
@@ -127,6 +128,15 @@ async def _who(call: EndpointCall) -> dict[str, object]:
         return {"caller": call.claims.caller, "actor": db.actor}
 
 
+async def _answer(call: HookCall) -> dict[str, object]:
+    """A hook that answers: what its body held, and which community called."""
+    return {"body": dict(call.body), "community_ref": call.claims.community_ref}
+
+
+async def _received(call: HookCall) -> None:
+    """A hook that answers nothing."""
+
+
 @pytest.fixture
 def app(plugin: Plugin) -> FastAPI:
     app = FastAPI()
@@ -134,7 +144,7 @@ def app(plugin: Plugin) -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(
         platform_router(
-            hooks=ORGANIZATION_HOOKS,
+            hooks={**ORGANIZATION_HOOKS, "after_connect": _answer, "webhook": _received},
             endpoints={WHO: _who, PUBLIC_WHO: _who},
             public={PUBLIC_WHO},
         )
