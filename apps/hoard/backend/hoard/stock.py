@@ -1,4 +1,5 @@
-"""Hoard's stock: its items, where they sit, and changes made by hand.
+"""Hoard's stock: its items (materials, bases and variations), where they sit,
+and changes made by hand.
 
 Whatever changes stock takes a :class:`~seneschal_core.db.WriteSession`, which
 only a community that may change opens. Each change is an adjustment; the
@@ -22,6 +23,7 @@ from hoard import costing
 from hoard.records import (
     Adjustment,
     AdjustmentReason,
+    Base,
     DefaultReason,
     Item,
     ItemKind,
@@ -82,6 +84,15 @@ async def add_material(db: WriteSession, material: Material) -> Material:
     return material
 
 
+async def add_base(db: WriteSession, base: Base) -> Base:
+    """Add ``base``, as a new item."""
+    base.id = await _item(db, ItemKind.BASE)
+    base.organization_id = db.organization_id
+    db.add(base)
+    await db.flush()
+    return base
+
+
 async def add_variation(db: WriteSession, variation: Variation) -> Variation:
     """Add ``variation`` to its product, as a new item."""
     variation.id = await _item(db, ItemKind.VARIATION)
@@ -101,7 +112,7 @@ async def add_product(db: WriteSession, product: Product) -> tuple[Product, Vari
 
 
 async def remove_item(db: WriteSession, item_id: int) -> None:
-    """Remove a material or variation with its lots, stock and adjustments.
+    """Remove a material, base or variation with its lots, stock and adjustments.
     One a purchase bought is kept: removing it raises the database's
     ``IntegrityError``."""
     await db.execute(delete(Item).where(col(Item.id) == item_id))

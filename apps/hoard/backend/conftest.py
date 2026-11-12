@@ -19,8 +19,8 @@ from hoard.app import create_app
 from hoard.core.config import Settings
 from hoard.db import upgrade
 from hoard.purchases import receive_line
-from hoard.records import Location, Material, Purchase, PurchaseLine, Unit
-from hoard.stock import add_material, main_location
+from hoard.records import Base, Location, Material, Purchase, PurchaseLine, Unit
+from hoard.stock import add_base, add_material, main_location
 from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
@@ -92,6 +92,16 @@ def material(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Material]]
         return await add_material(db, Material(name=name, tracking_unit_id=unit.id, **fields))
 
     return material
+
+
+@pytest.fixture
+def base(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Base]]:
+    """Add a base counted in ``unit``."""
+
+    async def base(name: str, **fields: Any) -> Base:
+        return await add_base(db, Base(name=name, tracking_unit_id=unit.id, **fields))
+
+    return base
 
 
 #: A line to buy: a material, its quantity and its unit cost.

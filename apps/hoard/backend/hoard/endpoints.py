@@ -5,13 +5,17 @@ widget or another plug-in. Each answers with the returns its declaration in
 token names.
 
 Initiative holds a reader to the permission an endpoint declares before it
-calls: what stock is worth is read only by a member who sees costs."""
+calls: what stock is worth is read only by a member who sees costs. Another
+plug-in calls only ``link-task``, which is public.
+
+The tracking writes are ``hoard.tracking``'s and the Drinks reads are
+``hoard.drinks``'s."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from hoard import plugin_manifest, reports
+from hoard import drinks, plugin_manifest, reports, tracking
 from seneschal_core.platform import EndpointCall, EndpointHandler, organization_session
 
 
@@ -36,4 +40,10 @@ async def _valuation(call: EndpointCall) -> dict[str, Any]:
 ENDPOINTS: dict[str, EndpointHandler] = {
     plugin_manifest.REORDER: _reorder,
     plugin_manifest.VALUATION: _valuation,
+    plugin_manifest.WASTE: drinks.waste,
+    plugin_manifest.YIELD: drinks.planned_against_actual,
+    plugin_manifest.ALLERGEN_MATRIX: drinks.allergen_matrix,
+    plugin_manifest.LINK_TASK: tracking.link_task,
+    plugin_manifest.COMPLETE_RUN: tracking.complete_run,
+    plugin_manifest.RECEIVE_PURCHASE: tracking.receive_purchase,
 }

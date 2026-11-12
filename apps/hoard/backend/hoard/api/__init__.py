@@ -7,7 +7,9 @@ from fastapi import APIRouter
 
 from hoard.api import (
     adjustments,
+    bases,
     contacts,
+    declarations,
     export,
     health,
     layouts,
@@ -16,9 +18,13 @@ from hoard.api import (
     products,
     properties,
     purchases,
+    recipes,
     reports,
+    runs,
     settings,
+    setups,
     stocktakes,
+    tracking,
 )
 from seneschal_core.auth import router as auth_router
 
@@ -38,5 +44,11 @@ for area in (
     members,
     properties,
     layouts,
+    bases,
+    recipes,
+    runs,
+    tracking,
+    declarations,
+    setups,
 ):
     router.include_router(area.router)
