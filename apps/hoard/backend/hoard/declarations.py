@@ -25,9 +25,9 @@ from decimal import Decimal
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard.events import item_name
 from hoard.records import (
     Allergen,
-    Base,
     Item,
     ItemKind,
     Lot,
@@ -118,17 +118,6 @@ class Declarations:
             mix.add(await self._item(line.item_id, seen), line.quantity / recipe.batch_quantity)
         return mix
 
-    async def _name(self, item: Item) -> str:
-        if item.kind is ItemKind.BASE:
-            base = await self.db.get(Base, item.id)
-            return base.name if base else ""
-        variation = await self.db.get(Variation, item.id)
-        product = await self.db.get(Product, variation.product_id) if variation else None
-        if product is None or variation is None:
-            return ""
-        attributes = ", ".join(variation.attributes.values())
-        return f"{product.name} ({attributes})" if attributes else product.name
-
     async def _item(self, item_id: int, seen: frozenset[int] = frozenset()) -> _Mix:
         """One unit of an item, as its recipe makes it."""
         if item_id in self._items:
@@ -145,7 +134,7 @@ class Declarations:
             column = Recipe.base_id if item.kind is ItemKind.BASE else Recipe.variation_id
             recipe = (await self.db.exec(select(Recipe).where(column == item_id))).first()
             if recipe is None:
-                mix.undeclared.add(await self._name(item))
+                mix.undeclared.add(await item_name(self.db, item_id))
             else:
                 mix = await self._recipe(recipe, seen | {item_id})
         self._items[item_id] = mix
