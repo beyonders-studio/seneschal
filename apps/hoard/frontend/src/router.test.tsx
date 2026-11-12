@@ -159,7 +159,10 @@ describe("Hoard's pages", () => {
     ["/orders", "Orders", "No orders yet"],
     ["/orders/listings", "Listings", "No listings yet"],
   ])("%s opens under Orders, on its tab", async (path, tab, empty) => {
-    await openSignedIn(path, signedIn(), { "GET /api/v1/orders": NONE });
+    await openSignedIn(path, signedIn(), {
+      "GET /api/v1/orders": NONE,
+      "GET /api/v1/listings": NONE,
+    });
     expect(await selectedTab("Orders")).toBe(tab);
     await screen.findByText(empty);
   });

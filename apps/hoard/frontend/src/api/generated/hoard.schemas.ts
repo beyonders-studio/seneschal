@@ -443,6 +443,16 @@ export const CategoryKind = {
   base: "base",
 } as const;
 
+/**
+ * A sales channel a store is on: each has its connector (``hoard.channels``).
+ */
+export type Channel = (typeof Channel)[keyof typeof Channel];
+
+export const Channel = {
+  shopify: "shopify",
+  woocommerce: "woocommerce",
+} as const;
+
 export interface ContactCreate {
   /**
    * @minLength 1
@@ -938,6 +948,42 @@ export interface HoardPropertyValuesSet {
 }
 
 /**
+ * The item a listing sells, or null to unlink it.
+ */
+export interface ListingLink {
+  item_id: number | null;
+}
+
+/**
+ * How a listing was linked to its item: by SKU, title or the store's id,
+ * in that order, or by hand.
+ */
+export type MatchedBy = (typeof MatchedBy)[keyof typeof MatchedBy];
+
+export const MatchedBy = {
+  sku: "sku",
+  title: "title",
+  external_id: "external_id",
+  hand: "hand",
+} as const;
+
+export interface ListingRead {
+  id: number;
+  store_id: number;
+  channel: Channel;
+  product_id: string;
+  variant_id: string | null;
+  inventory_item_id: string | null;
+  sku: string | null;
+  title: string | null;
+  item_id: number | null;
+  item_name: string | null;
+  item_kind: ItemKind | null;
+  item_product_id: number | null;
+  matched_by: MatchedBy | null;
+}
+
+/**
  * A material, with its stock and lots at each location.
  */
 export interface MaterialDetail {
@@ -1203,6 +1249,11 @@ export interface PageBaseRead {
   total: number;
 }
 
+export interface PageListingRead {
+  items: ListingRead[];
+  total: number;
+}
+
 export interface PageMaterialRead {
   items: MaterialRead[];
   total: number;
@@ -1346,6 +1397,40 @@ export interface StocktakeSummary {
 
 export interface PageStocktakeSummary {
   items: StocktakeSummary[];
+  total: number;
+}
+
+/**
+ * Where a stock push stands.
+ */
+export type PushStatus = (typeof PushStatus)[keyof typeof PushStatus];
+
+export const PushStatus = {
+  queued: "queued",
+  pushed: "pushed",
+  failed: "failed",
+} as const;
+
+/**
+ * One push of the push log.
+ */
+export interface StorePushRead {
+  id: number;
+  listing_id: number;
+  title: string | null;
+  sku: string | null;
+  location: string | null;
+  quantity: number;
+  compare_quantity: number | null;
+  status: PushStatus;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  pushed_at: string | null;
+}
+
+export interface PageStorePushRead {
+  items: StorePushRead[];
   total: number;
 }
 
@@ -1857,6 +1942,118 @@ export interface StocktakeRowConfirm {
   counted: number | string;
 }
 
+export interface StoreImageRead {
+  id: string | null;
+  url: string;
+  alt: string | null;
+}
+
+/**
+ * An image: one the store holds by its id, or a new one by its address.
+ */
+export interface StoreImageWrite {
+  id?: string | null;
+  /**
+   * @minLength 1
+   * @maxLength 2000
+   */
+  url: string;
+  alt?: string | null;
+}
+
+export interface StoreLocationRead {
+  id: number;
+  external_id: string;
+  name: string | null;
+  location_id: number | null;
+}
+
+/**
+ * The Hoard location whose stock a store location sells, or null for none.
+ */
+export interface StoreLocationWrite {
+  location_id: number | null;
+}
+
+/**
+ * The Hoard product to make in the store, with a variant per variation.
+ */
+export interface StoreProductCreate {
+  product_id: number;
+}
+
+export type StoreVariantReadOptions = { [key: string]: string };
+
+export interface StoreVariantRead {
+  id: string | null;
+  title: string;
+  sku: string | null;
+  price: string | null;
+  options: StoreVariantReadOptions;
+}
+
+/**
+ * A store's product, as the store keeps it now.
+ */
+export interface StoreProductRead {
+  store_id: number;
+  id: string;
+  title: string;
+  description: string | null;
+  status: string | null;
+  options: string[];
+  variants: StoreVariantRead[];
+  images: StoreImageRead[];
+  published_on: string[];
+  listings: ListingRead[];
+}
+
+/**
+ * A variant's edits, by the store's id for it. A price is taken only from
+ * a member who sees costs.
+ */
+export interface StoreVariantWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  id: string;
+  sku?: string | null;
+  price?: number | string | null;
+}
+
+/**
+ * A store product as an edit leaves it. Variants it does not name stay
+ * as they are; its images are the ones it lists, in order.
+ */
+export interface StoreProductWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  title: string;
+  description?: string | null;
+  status?: string | null;
+  variants?: StoreVariantWrite[];
+  images?: StoreImageWrite[];
+  published_on?: string[];
+}
+
+export interface StoreRead {
+  id: number;
+  channel: Channel;
+  shop_domain: string | null;
+  account_label: string | null;
+  connected: boolean;
+  last_check_error: string | null;
+  imported_at: string | null;
+  locations: StoreLocationRead[];
+  listings: number;
+  linked: number;
+  pushes_queued: number;
+  pushes_failed: number;
+}
+
 /**
  * What is tracked on Initiative's tasks, and what waits to be sent.
  */
@@ -1990,6 +2187,32 @@ export type ListRunsParams = {
 
 export type ListOrdersParams = {
   status?: OrderStatus | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListStorePushesParams = {
+  status?: PushStatus | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListListingsParams = {
+  q?: string | null;
+  store_id?: number | null;
+  linked?: boolean | null;
+  /** Only those selling one of this product's variations. */
+  product_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**
