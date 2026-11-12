@@ -9,37 +9,14 @@ calls: what stock is worth is read only by a member who sees costs."""
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import status
-
 from hoard import plugin_manifest, reports
-from seneschal_core import organizations
-from seneschal_core.api import ErrorCode, refuse
-from seneschal_core.db import OrganizationSession
-from seneschal_core.platform import EndpointCall, EndpointHandler
-
-
-@asynccontextmanager
-async def _organization(call: EndpointCall) -> AsyncIterator[OrganizationSession]:
-    """A session reading the organization of the call's community."""
-    if call.claims.community_status in organizations.UNAVAILABLE:
-        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_UNAVAILABLE)
-    async with call.plugin.database.session() as db:
-        organization_id = await organizations.organization_for(
-            db,
-            community_ref=call.claims.community_ref,
-            plugin_install_id=call.claims.plugin_install_id,
-        )
-        await db.commit()
-    async with call.plugin.database.organization_session(organization_id) as db:
-        yield db
+from seneschal_core.platform import EndpointCall, EndpointHandler, organization_session
 
 
 async def _reorder(call: EndpointCall) -> dict[str, Any]:
-    async with _organization(call) as db:
+    async with organization_session(call) as db:
         shortfalls = await reports.reorder(db)
     return {
         "kind": [shortfall.kind.value for shortfall in shortfalls],
@@ -51,7 +28,7 @@ async def _reorder(call: EndpointCall) -> dict[str, Any]:
 
 
 async def _valuation(call: EndpointCall) -> dict[str, Any]:
-    async with _organization(call) as db:
+    async with organization_session(call) as db:
         valuation = await reports.valuation(db)
     return {"total": str(valuation.total), "currency": valuation.currency}
 

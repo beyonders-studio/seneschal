@@ -6,8 +6,11 @@ call carries a token Initiative signed in ``Authorization``, and that token is
 the whole of its authentication: the community is the one the token names,
 never one the body does.
 
-Each app mounts :func:`platform_router` with its own handlers. A hook it does
-not handle is answered 404, and Initiative stops sending it. The community's
+Each app mounts :func:`platform_router` with its own handlers, and the ids of
+the endpoints it declares public: only those take a call another plug-in made
+through Initiative. A handler reads the call's organization through
+:func:`organization_session`, and changes it through :func:`write_session`.
+A hook it does not handle is answered 404, and Initiative stops sending it. The community's
 own hooks, which keep the organization registry, are :data:`ORGANIZATION_HOOKS`:
 
 * ``installed``: the organization, made on first sight;
@@ -21,7 +24,8 @@ own hooks, which keep the organization registry, are :data:`ORGANIZATION_HOOKS`:
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +33,7 @@ from fastapi import APIRouter, Request, Response, status
 
 from seneschal_core import organizations
 from seneschal_core.api import ErrorCode, Plugin, PluginDep, refuse
+from seneschal_core.db import OrganizationSession, WriteSession
 from seneschal_core.initiative import ContextClaims, StatementRefused, TokenRefused
 from seneschal_core.organizations import CommunityStatus
 
@@ -81,11 +86,51 @@ def _bearer(request: Request) -> str:
     return token
 
 
+async def _organization(call: EndpointCall) -> organizations.Organization:
+    """The organization of the call's community, made on first sight. An
+    unavailable community reads nothing."""
+    if call.claims.community_status in organizations.UNAVAILABLE:
+        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_UNAVAILABLE)
+    async with call.plugin.database.session() as db:
+        organization_id = await organizations.organization_for(
+            db,
+            community_ref=call.claims.community_ref,
+            plugin_install_id=call.claims.plugin_install_id,
+        )
+        await db.commit()
+        return await db.get_one(organizations.Organization, organization_id)
+
+
+@asynccontextmanager
+async def organization_session(call: EndpointCall) -> AsyncIterator[OrganizationSession]:
+    """A session reading the organization of the call's community."""
+    organization = await _organization(call)
+    async with call.plugin.database.organization_session(organization.id) as db:
+        yield db
+
+
+@asynccontextmanager
+async def write_session(call: EndpointCall) -> AsyncIterator[WriteSession]:
+    """A session changing the organization of the call's community, for the
+    member the call names (:attr:`~seneschal_core.initiative.ContextClaims.member_ref`).
+    A community that may not change is refused."""
+    organization = await _organization(call)
+    if organization.read_only or call.claims.community_status in organizations.READ_ONLY:
+        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.READ_ONLY)
+    async with call.plugin.database.write_session(
+        organization.id, actor=call.claims.member_ref
+    ) as db:
+        yield db
+
+
 def platform_router(
-    *, hooks: Mapping[str, HookHandler], endpoints: Mapping[str, EndpointHandler]
+    *,
+    hooks: Mapping[str, HookHandler],
+    endpoints: Mapping[str, EndpointHandler],
+    public: Collection[str] = frozenset(),
 ) -> APIRouter:
     """The plug-in platform's routes, answering ``hooks`` by name and
-    ``endpoints`` by endpoint id."""
+    ``endpoints`` by endpoint id. Another plug-in calls only those in ``public``."""
     router = APIRouter(include_in_schema=False)
 
     @router.post("/v1/hooks/{name}", status_code=status.HTTP_204_NO_CONTENT)
@@ -112,7 +157,7 @@ def platform_router(
     async def call_endpoint(request: Request, plugin: PluginDep) -> dict[str, Any]:
         body = await _body(request)
         try:
-            claims = await plugin.initiative.verify_context(_bearer(request))
+            claims = await plugin.initiative.verify_context(_bearer(request), public=public)
         except TokenRefused:
             raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.INVALID_TOKEN) from None
         params = body.get("params", {})

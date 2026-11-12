@@ -3,6 +3,7 @@ and endpoints."""
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from seneschal_core import organizations
@@ -204,3 +205,74 @@ async def test_a_body_too_large_is_refused_before_anything_else(client):
     answer = await client.post("/v1/hooks/installed", content=b"{" + b" " * (64 * 1024) + b"}")
 
     assert (answer.status_code, answer.json()) == (413, {"detail": "REQUEST_TOO_LARGE"})
+
+
+#: The core's own endpoints (``conftest.py``): one only Initiative calls, and
+#: one other plug-ins may call too.
+WHO = "plugin.beyonders-studio.core-test.who"
+PUBLIC_WHO = "plugin.beyonders-studio.core-test.public-who"
+
+
+async def _endpoint(client, initiative_stand_in, endpoint: str, community_ref: str, **claims):
+    token = initiative_stand_in.context(endpoint, community_ref=community_ref, **claims)
+    return await client.post(
+        "/v1/endpoints", json={"endpoint": endpoint}, headers={"Authorization": f"Bearer {token}"}
+    )
+
+
+@pytest.mark.parametrize(
+    ("claims", "who"),
+    [
+        ({}, {"caller": None, "actor": None}),
+        ({"viewer": "member-3"}, {"caller": None, "actor": "member-3"}),
+    ],
+)
+async def test_initiatives_own_call_acts_as_the_community_or_the_reader(
+    client, initiative_stand_in, community_ref, claims, who
+):
+    for endpoint in (WHO, PUBLIC_WHO):
+        answer = await _endpoint(client, initiative_stand_in, endpoint, community_ref, **claims)
+        assert (answer.status_code, answer.json()["result"]) == (200, who)
+
+
+async def test_another_plug_in_calls_only_a_public_endpoint_and_is_recorded(
+    client, initiative_stand_in, community_ref
+):
+    for_member = {
+        "act": {"sub": "beyonders-studio.automations"},
+        "actor": "member",
+        "member": "member-9",
+    }
+
+    refused = await _endpoint(client, initiative_stand_in, WHO, community_ref, **for_member)
+    as_member = await _endpoint(
+        client, initiative_stand_in, PUBLIC_WHO, community_ref, **for_member
+    )
+    as_community = await _endpoint(
+        client,
+        initiative_stand_in,
+        PUBLIC_WHO,
+        community_ref,
+        act={"sub": "beyonders-studio.automations"},
+        actor="installation",
+    )
+
+    assert (refused.status_code, refused.json()) == (401, {"detail": "INVALID_TOKEN"})
+    assert as_member.json()["result"] == {
+        "caller": "beyonders-studio.automations",
+        "actor": "member-9",
+    }
+    assert as_community.json()["result"] == {
+        "caller": "beyonders-studio.automations",
+        "actor": None,
+    }
+
+
+async def test_a_community_that_may_not_change_is_refused_a_write(
+    client, initiative_stand_in, community_ref
+):
+    answer = await _endpoint(
+        client, initiative_stand_in, WHO, community_ref, community_status="read_only"
+    )
+
+    assert (answer.status_code, answer.json()) == (403, {"detail": "READ_ONLY"})

@@ -12,6 +12,7 @@ from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 from seneschal_core.initiative import (
     CONTEXT_TYPE,
     HANDOFF_TYPE,
+    ContextSubject,
     Initiative,
     StatementRefused,
     TokenRefused,
@@ -142,13 +143,73 @@ async def test_tokens_are_not_taken_for_each_other(initiative, initiative_stand_
         await initiative.verify_handoff(context)
 
 
-async def test_a_call_another_plug_in_made_is_refused(initiative, initiative_stand_in):
+async def test_a_call_another_plug_in_made_is_taken_only_for_a_public_endpoint(
+    initiative, initiative_stand_in
+):
     token = initiative_stand_in.context(
-        "plugin.x.read", community_ref="c", act={"sub": "beyonders-studio.another"}
+        "plugin.x.write",
+        community_ref="c",
+        act={"sub": "beyonders-studio.another"},
+        actor="member",
+        member="member-7",
+        initiative_id=12,
     )
 
     with pytest.raises(TokenRefused, match="another plug-in"):
         await initiative.verify_context(token)
+    claims = await initiative.verify_context(token, public={"plugin.x.write"})
+    assert (claims.caller, claims.actor, claims.member_ref, claims.initiative_id) == (
+        "beyonders-studio.another",
+        "member-7",
+        "member-7",
+        12,
+    )
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        {"act": {"sub": "beyonders-studio.another"}},
+        {"act": {"sub": "beyonders-studio.another"}, "actor": "member"},
+        {"act": {"sub": "beyonders-studio.another"}, "actor": "installation", "member": "m"},
+        {"act": "beyonders-studio.another", "actor": "installation"},
+        {"actor": "member", "member": "member-7"},
+    ],
+)
+async def test_a_call_that_does_not_say_whom_it_acts_for_is_refused(
+    initiative, initiative_stand_in, claims
+):
+    token = initiative_stand_in.context("plugin.x.write", community_ref="c", **claims)
+
+    with pytest.raises(TokenRefused):
+        await initiative.verify_context(token, public={"plugin.x.write"})
+
+
+async def test_an_actions_call_names_its_reader_and_item(initiative, initiative_stand_in):
+    token = initiative_stand_in.context(
+        "plugin.x.write", community_ref="c", viewer="member-3", subject={"type": "task", "id": 41}
+    )
+
+    claims = await initiative.verify_context(token)
+
+    assert (claims.caller, claims.member_ref, claims.subject) == (
+        None,
+        "member-3",
+        ContextSubject(type="task", id=41),
+    )
+    with pytest.raises(TokenRefused, match="subject"):
+        await initiative.verify_context(
+            initiative_stand_in.context("plugin.x.write", community_ref="c", subject={"id": "41"})
+        )
+
+
+async def test_a_hook_is_not_called_by_another_plug_in(initiative, initiative_stand_in):
+    token = initiative_stand_in.lifecycle(
+        "erase", community_ref="c", act={"sub": "beyonders-studio.another"}
+    )
+
+    with pytest.raises(TokenRefused, match="another plug-in"):
+        await initiative.verify_lifecycle(token, hook="erase")
 
 
 async def test_a_statement_billing_signed_verifies_to_its_plan(initiative, initiative_stand_in):
