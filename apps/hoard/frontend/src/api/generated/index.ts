@@ -12,3 +12,4 @@ export * from "./purchases/purchases";
 export * from "./reports/reports";
 export * from "./settings/settings";
 export * from "./stocktakes/stocktakes";
+export * from "./tracking/tracking";
