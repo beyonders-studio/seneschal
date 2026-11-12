@@ -1,5 +1,21 @@
 {
   "section": {
-    "title": "Tasks"
+    "title": "Tasks",
+    "description": "A project can track each production run and purchase with a task. Your community's automations make the task when Hoard tells Initiative a run started or a purchase was placed, and link it to the record. Hoard then keeps its section on the task up to date, and its button completes the run or receives the purchase."
+  },
+  "tracked": "Tasks track {{runs}} and {{purchases}}.",
+  "runs_one": "{{count}} production run",
+  "runs_other": "{{count}} production runs",
+  "purchases_one": "{{count}} purchase",
+  "purchases_other": "{{count}} purchases",
+  "allSent": "Every event has reached Initiative.",
+  "waiting_one": "{{count}} event is waiting to be sent to Initiative.",
+  "waiting_other": "{{count}} events are waiting to be sent to Initiative.",
+  "retry": "Initiative couldn't take them, so Hoard tries again on {{time}}.",
+  "send": {
+    "action": "Send now",
+    "sent": "Every event has reached Initiative.",
+    "waiting": "Initiative still couldn't take every event. Hoard will keep trying.",
+    "failed": "Couldn't send the events."
   }
 }
