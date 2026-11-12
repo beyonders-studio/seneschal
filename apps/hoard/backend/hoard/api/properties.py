@@ -24,6 +24,7 @@ from hoard.api.deps import AdminDep
 from hoard.api.settings import found, refused_as
 from hoard.records import (
     CURRENCY_CODES,
+    Base,
     Lot,
     Material,
     Product,
@@ -49,6 +50,7 @@ RECORDS: dict[RecordKind, tuple[type[SQLModel], str]] = {
     RecordKind.MATERIAL: (Material, "material_id"),
     RecordKind.PRODUCT: (Product, "product_id"),
     RecordKind.LOT: (Lot, "lot_id"),
+    RecordKind.BASE: (Base, "base_id"),
 }
 
 _SELECTS = {PropertyType.SELECT, PropertyType.MULTI_SELECT}

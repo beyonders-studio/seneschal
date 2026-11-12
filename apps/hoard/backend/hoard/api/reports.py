@@ -25,13 +25,13 @@ class ReportError(StrEnum):
 
 
 class ReportReorderRow(BaseModel):
-    """A material or product at or below its low-stock limit."""
+    """A material, base or product at or below its low-stock limit."""
 
     kind: CategoryKind
-    #: The material's or the product's id.
+    #: The material's, the base's or the product's id.
     id: int
     name: str
-    #: The material's tracking unit; none for a product.
+    #: The material's or the base's tracking unit; none for a product.
     unit: str | None
     on_hand: Decimal
     low_stock_limit: Decimal
@@ -42,9 +42,9 @@ class ReportValuationRow(BaseModel):
 
     item_id: int
     kind: ItemKind
-    #: The material's name, or the variation's product's.
+    #: The material's or the base's name, or the variation's product's.
     name: str
-    #: A variation's attributes; none for a material.
+    #: A variation's attributes; none for a material or a base.
     attributes: dict[str, str]
     on_hand: Decimal
     average_cost: Decimal
@@ -61,7 +61,7 @@ class ReportValuation(BaseModel):
 
 @router.get("/reorder", responses={401: {"description": "NOT_AUTHENTICATED"}})
 async def read_reorder_report(db: OrganizationSessionDep) -> list[ReportReorderRow]:
-    """The materials and products at or below their low-stock limit, by name."""
+    """The materials, bases and products at or below their low-stock limit, by name."""
     return [
         ReportReorderRow.model_validate(shortfall, from_attributes=True)
         for shortfall in await reports.reorder(db)
