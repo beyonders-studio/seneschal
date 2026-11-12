@@ -39,6 +39,8 @@ class DeclarationError(StrEnum):
 
 
 class DeclarationRead(BaseModel):
+    #: Whether it records allergens of its own: a material, or a lot of one.
+    records_own: bool
     #: What a material or a lot records itself; null where nothing is
     #: recorded, and for a product.
     recorded_allergens: list[Allergen] | None
@@ -62,9 +64,13 @@ class DeclarationMaterialWrite(DeclarationLotWrite):
 
 
 def _read(
-    declared: Declaration, recorded: list[str] | None = None, ingredient_name: str | None = None
+    declared: Declaration,
+    records_own: bool = False,
+    recorded: list[str] | None = None,
+    ingredient_name: str | None = None,
 ) -> DeclarationRead:
     return DeclarationRead(
+        records_own=records_own,
         recorded_allergens=None if recorded is None else [Allergen(key) for key in recorded],
         ingredient_name=ingredient_name,
         ingredients=declared.ingredients,
@@ -89,12 +95,13 @@ async def read_declaration(
     if of == "material":
         material = await found(db, Material, record_id)
         return _read(
-            await declarations.item(material.id), material.allergens, material.ingredient_name
+            await declarations.item(material.id), True, material.allergens, material.ingredient_name
         )
     if of == "product":
         return _read(await declarations.product(await found(db, Product, record_id)))
     lot = await found(db, Lot, record_id)
-    return _read(await declarations.lot(lot), lot.allergens)
+    bought = await db.get(Material, lot.item_id) is not None
+    return _read(await declarations.lot(lot), bought, lot.allergens)
 
 
 @router.put("/material/{material_id}", responses=_CHANGE)

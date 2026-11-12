@@ -147,6 +147,7 @@ export interface DeclarationMaterialWrite {
 }
 
 export interface DeclarationRead {
+  records_own: boolean;
   recorded_allergens: Allergen[] | null;
   ingredient_name: string | null;
   ingredients: string[];

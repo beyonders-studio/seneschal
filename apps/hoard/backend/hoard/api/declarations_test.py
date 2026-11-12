@@ -23,6 +23,7 @@ async def test_a_material_records_what_its_supplier_declares(
 
     assert (unknown["recorded_allergens"], unknown["undeclared"]) == (None, ["Hazelnut syrup"])
     assert recorded.json() == {
+        "records_own": True,
         "recorded_allergens": ["milk", "tree_nuts"],
         "ingredient_name": "Hazelnut flavour syrup",
         "ingredients": ["Hazelnut flavour syrup"],
