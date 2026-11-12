@@ -40,7 +40,7 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * The materials and products at or below their low-stock limit, by name.
+ * The materials, bases and products at or below their low-stock limit, by name.
  * @summary Read Reorder Report
  */
 export const readReorderReport = (
@@ -84,7 +84,7 @@ export type ReadReorderReportQueryResult = NonNullable<
 export type ReadReorderReportQueryError = ErrorType<void>;
 
 /**
- * The materials and products at or below their low-stock limit, by name.
+ * The materials, bases and products at or below their low-stock limit, by name.
  * @summary Read Reorder Report
  */
 export function useReadReorderReport<
@@ -106,7 +106,7 @@ export function useReadReorderReport<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The materials and products at or below their low-stock limit, by name.
+ * The materials, bases and products at or below their low-stock limit, by name.
  * @summary Read Reorder Report
  */
 export function useReadReorderReport<
@@ -128,7 +128,7 @@ export function useReadReorderReport<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The materials and products at or below their low-stock limit, by name.
+ * The materials, bases and products at or below their low-stock limit, by name.
  * @summary Read Reorder Report
  */
 export function useReadReorderReport<
@@ -142,7 +142,7 @@ export function useReadReorderReport<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The materials and products at or below their low-stock limit, by name.
+ * The materials, bases and products at or below their low-stock limit, by name.
  * @summary Read Reorder Report
  */
 export function useReadReorderReport<

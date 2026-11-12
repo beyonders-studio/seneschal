@@ -109,150 +109,29 @@ export const Allergen = {
 } as const;
 
 /**
- * The kinds of record a category sorts, and a stocktake counts.
+ * What is on hand of an item at one location.
  */
-export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
+export interface ItemStockRead {
+  location_id: number;
+  quantity: string;
+}
 
-export const CategoryKind = {
-  material: "material",
-  product: "product",
-  base: "base",
-} as const;
-
-export interface ContactCreate {
+/**
+ * One of a select's options: its value, which records keep, and its label.
+ */
+export interface HoardPropertyOption {
   /**
    * @minLength 1
-   * @maxLength 255
+   * @maxLength 64
+   * @pattern ^[A-Za-z0-9][A-Za-z0-9_\-]*$
    */
-  name: string;
-  is_organization?: boolean;
-}
-
-/**
- * A contact, as a supplier picker shows it.
- */
-export interface ContactRead {
-  id: number;
-  name: string;
-  is_organization: boolean;
-}
-
-export interface DeclarationLotWrite {
-  allergens: Allergen[] | null;
-}
-
-export interface DeclarationMaterialWrite {
-  allergens: Allergen[] | null;
-  ingredient_name: string | null;
-}
-
-export interface DeclarationRead {
-  records_own: boolean;
-  recorded_allergens: Allergen[] | null;
-  ingredient_name: string | null;
-  ingredients: string[];
-  allergens: Allergen[];
-  undeclared: string[];
-}
-
-/**
- * The adjustment reasons an organization starts with, which people rename
- * or remove.
- */
-export type DefaultReason = (typeof DefaultReason)[keyof typeof DefaultReason];
-
-export const DefaultReason = {
-  correction: "correction",
-  damaged: "damaged",
-  expired: "expired",
-  lost: "lost",
-  personal_use: "personal_use",
-} as const;
-
-export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
-
-export const ExportFormat = {
-  csv: "csv",
-  json: "json",
-} as const;
-
-/**
- * The kinds of record that export.
- */
-export type ExportKind = (typeof ExportKind)[keyof typeof ExportKind];
-
-export const ExportKind = {
-  materials: "materials",
-  products: "products",
-  variations: "variations",
-  purchases: "purchases",
-  purchase_lines: "purchase_lines",
-  lots: "lots",
-  adjustments: "adjustments",
-  stocktakes: "stocktakes",
-  stocktake_rows: "stocktake_rows",
-} as const;
-
-export type ValidationErrorCtx = { [key: string]: unknown };
-
-export interface ValidationError {
-  loc: (string | number)[];
-  msg: string;
-  type: string;
-  input?: unknown;
-  ctx?: ValidationErrorCtx;
-}
-
-export interface HTTPValidationError {
-  detail?: ValidationError[];
-}
-
-export type HandoffExchangeTheme =
-  | (typeof HandoffExchangeTheme)[keyof typeof HandoffExchangeTheme]
-  | null;
-
-export const HandoffExchangeTheme = {
-  light: "light",
-  dark: "dark",
-} as const;
-
-/**
- * What the page sends: the handoff token and how Initiative is drawn.
- */
-export interface HandoffExchange {
+  value: string;
   /**
    * @minLength 1
-   * @maxLength 8192
+   * @maxLength 100
    */
-  handoff_token: string;
-  theme?: HandoffExchangeTheme;
-  locale?: string | null;
-}
-
-/**
- * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
- * and back to ``initial`` on a reset. A counter with no value holds
- * ``initial``.
- */
-export interface HoardCounterSettingsInput {
-  /** @exclusiveMinimum 0 */
-  step?: number;
-  min?: number | null;
-  max?: number | null;
-  initial?: number;
-}
-
-/**
- * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
- * and back to ``initial`` on a reset. A counter with no value holds
- * ``initial``.
- */
-export interface HoardCounterSettingsOutput {
-  /** @exclusiveMinimum 0 */
-  step: number;
-  min: number | null;
-  max: number | null;
-  initial: number;
+  label: string;
+  color?: string | null;
 }
 
 /**
@@ -417,6 +296,263 @@ export const HoardCurrency = {
   ZMW: "ZMW",
   ZWG: "ZWG",
 } as const;
+
+/**
+ * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
+ * and back to ``initial`` on a reset. A counter with no value holds
+ * ``initial``.
+ */
+export interface HoardCounterSettingsOutput {
+  /** @exclusiveMinimum 0 */
+  step: number;
+  min: number | null;
+  max: number | null;
+  initial: number;
+}
+
+/**
+ * What a property holds: the types the UI kit offers people.
+ */
+export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
+
+export const PropertyType = {
+  text: "text",
+  number: "number",
+  checkbox: "checkbox",
+  date: "date",
+  datetime: "datetime",
+  url: "url",
+  select: "select",
+  multi_select: "multi_select",
+  user_reference: "user_reference",
+  currency: "currency",
+  scale: "scale",
+  counter: "counter",
+  file: "file",
+  signature: "signature",
+} as const;
+
+/**
+ * A record's value of one property, as the UI kit draws it. The kit's
+ * summary names an owner and an install, which Hoard's properties never
+ * have.
+ */
+export interface HoardPropertySummary {
+  options: HoardPropertyOption[] | null;
+  currency: HoardCurrency | null;
+  counter: HoardCounterSettingsOutput | null;
+  property_id: number;
+  name: string;
+  type: PropertyType;
+  /** @nullable */
+  project_id: null;
+  /** @nullable */
+  collection_id: null;
+  /** @nullable */
+  install_id: null;
+  /** @nullable */
+  key: null;
+  value: unknown;
+}
+
+/**
+ * A lot of an item at a location, and what is left of it.
+ */
+export interface ItemLotRead {
+  id: number;
+  location_id: number;
+  number: string;
+  dated_on: string;
+  expires_on: string | null;
+  notes: string | null;
+  balance: string;
+  properties: HoardPropertySummary[];
+}
+
+/**
+ * A base, with its stock and lots at each location.
+ */
+export interface BaseDetail {
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  on_hand: string;
+  stock: ItemStockRead[];
+  lots: ItemLotRead[];
+  id: number;
+  name: string;
+  sku: string | null;
+  tracking_unit_id: number;
+  low_stock_limit: string | null;
+  category_id: number | null;
+  average_cost: string | null;
+  properties: HoardPropertySummary[];
+}
+
+export interface BaseRead {
+  id: number;
+  name: string;
+  sku: string | null;
+  tracking_unit_id: number;
+  low_stock_limit: string | null;
+  category_id: number | null;
+  on_hand: string;
+  average_cost: string | null;
+  properties: HoardPropertySummary[];
+}
+
+/**
+ * A base as it is added, or as an edit leaves it.
+ */
+export interface BaseWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  sku?: string | null;
+  tracking_unit_id: number;
+  low_stock_limit?: number | string | null;
+  category_id?: number | null;
+}
+
+/**
+ * The kinds of record a category sorts, and a stocktake counts.
+ */
+export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
+
+export const CategoryKind = {
+  material: "material",
+  product: "product",
+  base: "base",
+} as const;
+
+export interface ContactCreate {
+  /**
+   * @minLength 1
+   * @maxLength 255
+   */
+  name: string;
+  is_organization?: boolean;
+}
+
+/**
+ * A contact, as a supplier picker shows it.
+ */
+export interface ContactRead {
+  id: number;
+  name: string;
+  is_organization: boolean;
+}
+
+export interface DeclarationLotWrite {
+  allergens: Allergen[] | null;
+}
+
+export interface DeclarationMaterialWrite {
+  allergens: Allergen[] | null;
+  ingredient_name: string | null;
+}
+
+export interface DeclarationRead {
+  records_own: boolean;
+  recorded_allergens: Allergen[] | null;
+  ingredient_name: string | null;
+  ingredients: string[];
+  allergens: Allergen[];
+  undeclared: string[];
+}
+
+/**
+ * The adjustment reasons an organization starts with, which people rename
+ * or remove.
+ */
+export type DefaultReason = (typeof DefaultReason)[keyof typeof DefaultReason];
+
+export const DefaultReason = {
+  correction: "correction",
+  damaged: "damaged",
+  expired: "expired",
+  lost: "lost",
+  personal_use: "personal_use",
+} as const;
+
+export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
+
+export const ExportFormat = {
+  csv: "csv",
+  json: "json",
+} as const;
+
+/**
+ * The kinds of record that export.
+ */
+export type ExportKind = (typeof ExportKind)[keyof typeof ExportKind];
+
+export const ExportKind = {
+  materials: "materials",
+  bases: "bases",
+  products: "products",
+  variations: "variations",
+  purchases: "purchases",
+  purchase_lines: "purchase_lines",
+  lots: "lots",
+  adjustments: "adjustments",
+  stocktakes: "stocktakes",
+  stocktake_rows: "stocktake_rows",
+  recipes: "recipes",
+  recipe_lines: "recipe_lines",
+} as const;
+
+export type ValidationErrorCtx = { [key: string]: unknown };
+
+export interface ValidationError {
+  loc: (string | number)[];
+  msg: string;
+  type: string;
+  input?: unknown;
+  ctx?: ValidationErrorCtx;
+}
+
+export interface HTTPValidationError {
+  detail?: ValidationError[];
+}
+
+export type HandoffExchangeTheme =
+  | (typeof HandoffExchangeTheme)[keyof typeof HandoffExchangeTheme]
+  | null;
+
+export const HandoffExchangeTheme = {
+  light: "light",
+  dark: "dark",
+} as const;
+
+/**
+ * What the page sends: the handoff token and how Initiative is drawn.
+ */
+export interface HandoffExchange {
+  /**
+   * @minLength 1
+   * @maxLength 8192
+   */
+  handoff_token: string;
+  theme?: HandoffExchangeTheme;
+  locale?: string | null;
+}
+
+/**
+ * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
+ * and back to ``initial`` on a reset. A counter with no value holds
+ * ``initial``.
+ */
+export interface HoardCounterSettingsInput {
+  /** @exclusiveMinimum 0 */
+  step?: number;
+  min?: number | null;
+  max?: number | null;
+  initial?: number;
+}
 
 export type HoardStackPropsDirection =
   | (typeof HoardStackPropsDirection)[keyof typeof HoardStackPropsDirection]
@@ -729,46 +865,6 @@ export interface HoardOptionCreate {
   label: string;
 }
 
-/**
- * One of a select's options: its value, which records keep, and its label.
- */
-export interface HoardPropertyOption {
-  /**
-   * @minLength 1
-   * @maxLength 64
-   * @pattern ^[A-Za-z0-9][A-Za-z0-9_\-]*$
-   */
-  value: string;
-  /**
-   * @minLength 1
-   * @maxLength 100
-   */
-  label: string;
-  color?: string | null;
-}
-
-/**
- * What a property holds: the types the UI kit offers people.
- */
-export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
-
-export const PropertyType = {
-  text: "text",
-  number: "number",
-  checkbox: "checkbox",
-  date: "date",
-  datetime: "datetime",
-  url: "url",
-  select: "select",
-  multi_select: "multi_select",
-  user_reference: "user_reference",
-  currency: "currency",
-  scale: "scale",
-  counter: "counter",
-  file: "file",
-  signature: "signature",
-} as const;
-
 export interface HoardPropertyCreate {
   options?: HoardPropertyOption[] | null;
   currency?: HoardCurrency | null;
@@ -798,29 +894,6 @@ export interface HoardPropertyStep {
 }
 
 /**
- * A record's value of one property, as the UI kit draws it. The kit's
- * summary names an owner and an install, which Hoard's properties never
- * have.
- */
-export interface HoardPropertySummary {
-  options: HoardPropertyOption[] | null;
-  currency: HoardCurrency | null;
-  counter: HoardCounterSettingsOutput | null;
-  property_id: number;
-  name: string;
-  type: PropertyType;
-  /** @nullable */
-  project_id: null;
-  /** @nullable */
-  collection_id: null;
-  /** @nullable */
-  install_id: null;
-  /** @nullable */
-  key: null;
-  value: unknown;
-}
-
-/**
  * What changes: the name, and the shape its type has. Its type stays.
  */
 export interface HoardPropertyUpdate {
@@ -846,28 +919,6 @@ export interface HoardPropertyValuesSet {
   removed?: number[];
   /** @maxItems 100 */
   steps?: HoardPropertyStep[];
-}
-
-/**
- * A lot of an item at a location, and what is left of it.
- */
-export interface ItemLotRead {
-  id: number;
-  location_id: number;
-  number: string;
-  dated_on: string;
-  expires_on: string | null;
-  notes: string | null;
-  balance: string;
-  properties: HoardPropertySummary[];
-}
-
-/**
- * What is on hand of an item at one location.
- */
-export interface ItemStockRead {
-  location_id: number;
-  quantity: string;
 }
 
 /**
@@ -967,6 +1018,11 @@ export interface PageAdjustmentRead {
   total: number;
 }
 
+export interface PageBaseRead {
+  items: BaseRead[];
+  total: number;
+}
+
 export interface PageMaterialRead {
   items: MaterialRead[];
   total: number;
@@ -1009,6 +1065,45 @@ export interface PurchaseSummary {
 
 export interface PagePurchaseSummary {
   items: PurchaseSummary[];
+  total: number;
+}
+
+/**
+ * What a recipe makes.
+ */
+export type RecipeOutput = (typeof RecipeOutput)[keyof typeof RecipeOutput];
+
+export const RecipeOutput = {
+  variation: "variation",
+  base: "base",
+  bundle: "bundle",
+} as const;
+
+export interface RecipeLineRead {
+  item: AdjustmentItem;
+  unit_id: number | null;
+  quantity: string;
+  percent: string | null;
+}
+
+export type RecipeReadAttributes = { [key: string]: string };
+
+export interface RecipeRead {
+  id: number;
+  output: RecipeOutput;
+  output_id: number;
+  product_id: number | null;
+  name: string;
+  attributes: RecipeReadAttributes;
+  unit_id: number | null;
+  batch_quantity: string;
+  batches: string;
+  minutes: number | null;
+  lines: RecipeLineRead[];
+}
+
+export interface PageRecipeRead {
+  items: RecipeRead[];
   total: number;
 }
 
@@ -1232,8 +1327,36 @@ export interface PurchaseUpdate {
   tax?: number | string | null;
 }
 
+export interface RecipeLineWrite {
+  item_id: number;
+  quantity: number | string;
+}
+
 /**
- * A material or product at or below its low-stock limit.
+ * A recipe as it is added: of exactly one variation, base or bundle product.
+ */
+export interface RecipeCreate {
+  batch_quantity?: number | string;
+  minutes?: number | null;
+  /** @maxItems 200 */
+  lines: RecipeLineWrite[];
+  variation_id?: number | null;
+  base_id?: number | null;
+  product_id?: number | null;
+}
+
+/**
+ * A recipe as an edit leaves it: its lines, in their order.
+ */
+export interface RecipeWrite {
+  batch_quantity?: number | string;
+  minutes?: number | null;
+  /** @maxItems 200 */
+  lines: RecipeLineWrite[];
+}
+
+/**
+ * A material, base or product at or below its low-stock limit.
  */
 export interface ReportReorderRow {
   kind: CategoryKind;
@@ -1583,6 +1706,34 @@ export type SearchMemberNamesParams = {
 
 export type ListPropertiesParams = {
   kind: RecordKind;
+};
+
+export type ListBasesParams = {
+  q?: string | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListRecipesParams = {
+  q?: string | null;
+  product_id?: number | null;
+  base_id?: number | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ReadRecipeParams = {
+  quantity?: number | string | null;
 };
 
 export type ListRunsParams = {

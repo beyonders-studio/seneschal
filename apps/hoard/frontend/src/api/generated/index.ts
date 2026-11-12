@@ -1,5 +1,6 @@
 export * from "./adjustments/adjustments";
 export * from "./auth/auth";
+export * from "./bases/bases";
 export * from "./contacts/contacts";
 export * from "./declarations/declarations";
 export * from "./export/export";
@@ -10,6 +11,7 @@ export * from "./members/members";
 export * from "./products/products";
 export * from "./properties/properties";
 export * from "./purchases/purchases";
+export * from "./recipes/recipes";
 export * from "./reports/reports";
 export * from "./runs/runs";
 export * from "./settings/settings";

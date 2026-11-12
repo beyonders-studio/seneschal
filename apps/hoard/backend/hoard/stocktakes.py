@@ -20,6 +20,7 @@ from hoard import costing
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    Base,
     CategoryKind,
     Material,
     Product,
@@ -44,6 +45,10 @@ async def start_stocktake(db: WriteSession, stocktake: Stocktake) -> list[Stockt
         items = select(Material.id).where(col(Material.inventoriable))
         if stocktake.category_id is not None:
             items = items.where(Material.category_id == stocktake.category_id)
+    elif stocktake.kind == CategoryKind.BASE:
+        items = select(Base.id)
+        if stocktake.category_id is not None:
+            items = items.where(Base.category_id == stocktake.category_id)
     else:
         items = select(Variation.id).join(Product, col(Product.id) == col(Variation.product_id))
         if stocktake.category_id is not None:

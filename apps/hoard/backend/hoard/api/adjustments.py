@@ -28,6 +28,7 @@ from hoard.records import (
     Adjustment,
     AdjustmentKind,
     AdjustmentReason,
+    Base,
     ItemKind,
     Location,
     Material,
@@ -70,9 +71,10 @@ class AdjustmentItem(BaseModel):
 
     id: int
     kind: ItemKind
-    #: The material's name, or the variation's product's.
+    #: The material's or the base's name, or the variation's product's.
     name: str
-    #: A variation's attributes, such as ``{"size": "large"}``; none for a material.
+    #: A variation's attributes, such as ``{"size": "large"}``; none for a
+    #: material or a base.
     attributes: dict[str, str]
 
 
@@ -84,6 +86,7 @@ async def describe_items(
     if not ids:
         return {}
     materials = await db.exec(select(Material.id, Material.name).where(col(Material.id).in_(ids)))
+    bases = await db.exec(select(Base.id, Base.name).where(col(Base.id).in_(ids)))
     variations = await db.exec(
         select(Variation.id, Product.name, Variation.attributes)
         .join(Product, col(Product.id) == col(Variation.product_id))
@@ -93,6 +96,8 @@ async def describe_items(
         id_: AdjustmentItem(id=id_, kind=ItemKind.MATERIAL, name=name, attributes={})
         for id_, name in materials.all()
     }
+    for id_, name in bases.all():
+        described[id_] = AdjustmentItem(id=id_, kind=ItemKind.BASE, name=name, attributes={})
     for id_, name, attributes in variations.all():
         described[id_] = AdjustmentItem(
             id=id_, kind=ItemKind.VARIATION, name=name, attributes=attributes

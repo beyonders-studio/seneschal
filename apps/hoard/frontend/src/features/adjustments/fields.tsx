@@ -2,7 +2,8 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ProductDetail } from "@/api/generated/hoard.schemas";
+import { useListBases } from "@/api/generated/bases/bases";
+import type { ItemKind, ProductDetail } from "@/api/generated/hoard.schemas";
 import { useListMaterials } from "@/api/generated/materials/materials";
 import { readProduct, useListProducts } from "@/api/generated/products/products";
 import { useListSettingsLocations } from "@/api/generated/settings/settings";
@@ -16,7 +17,7 @@ import { Combobox, type ComboboxItem } from "@/ui/combobox";
 import { Field } from "@/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 
-/** The most materials, and the most products, the item picker lists for a search. */
+/** The most materials, bases and products the item picker lists, each, for a search. */
 const MATCHES = 50;
 
 /** The location a movement happens at: the main location until there are
@@ -54,11 +55,15 @@ export function LocationField({
   );
 }
 
+/** Every kind of item. */
+const EVERY_KIND: readonly ItemKind[] = ["material", "base", "variation"];
+
 /**
- * An item to move: a material or a product's variation, or any material with
- * `materials`. A product with several variations is picked first, then one of
- * them; a product with one is that one. `chosen` names `value` when the field
- * opens with it set; `clearLabel` offers picking none, as that button's name.
+ * An item to move: a material, a base or a product's variation, of `kinds`;
+ * or any material with `materials`, which keeps no stock included. A product
+ * with several variations is picked first, then one of them; a product with
+ * one is that one. `chosen` names `value` when the field opens with it set;
+ * `clearLabel` offers picking none, as that button's name.
  */
 export function ItemField({
   label,
@@ -66,6 +71,7 @@ export function ItemField({
   onChange,
   chosen = null,
   materials = false,
+  kinds = materials ? ["material"] : EVERY_KIND,
   clearLabel,
 }: {
   label: string;
@@ -73,6 +79,7 @@ export function ItemField({
   onChange: (itemId: number | null) => void;
   chosen?: string | null;
   materials?: boolean;
+  kinds?: readonly ItemKind[];
   clearLabel?: string;
 }) {
   const { t } = useTranslation("movements");
@@ -84,8 +91,13 @@ export function ItemField({
   );
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const params = { q: search || undefined, limit: MATCHES };
-  const found = useListMaterials(params, { query: { enabled: open } });
-  const products = useListProducts(params, { query: { enabled: open && !materials } });
+  const found = useListMaterials(params, {
+    query: { enabled: open && kinds.includes("material") },
+  });
+  const bases = useListBases(params, { query: { enabled: open && kinds.includes("base") } });
+  const products = useListProducts(params, {
+    query: { enabled: open && kinds.includes("variation") },
+  });
   const choices: ComboboxItem[] = [
     ...(found.data?.items ?? [])
       .filter((material) => materials || material.inventoriable)
@@ -94,6 +106,11 @@ export function ItemField({
         label: material.name,
         hint: t("item.kinds.material"),
       })),
+    ...(bases.data?.items ?? []).map((base) => ({
+      value: `b${base.id}`,
+      label: base.name,
+      hint: t("item.kinds.base"),
+    })),
     ...(products.data?.items ?? []).map((one) => ({
       value: `p${one.id}`,
       label: one.name,
@@ -107,7 +124,7 @@ export function ItemField({
     setPicked(choice);
     setProduct(null);
     const id = Number(next.slice(1));
-    if (next.startsWith("m")) return onChange(id);
+    if (!next.startsWith("p")) return onChange(id);
     onChange(null);
     try {
       const detail = await readProduct(id);
@@ -132,7 +149,7 @@ export function ItemField({
             items={choices}
             onSearchChange={setSearch}
             onOpenChange={setOpen}
-            loading={found.isLoading || products.isLoading}
+            loading={found.isLoading || bases.isLoading || products.isLoading}
             loadingLabel={t("hoard:common.loading")}
             value={picked?.value ?? null}
             selectedLabel={picked?.label ?? null}

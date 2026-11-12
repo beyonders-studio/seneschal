@@ -32,8 +32,8 @@ export function useItemSearch() {
 }
 
 /**
- * A list of items: its search, its button to add one while Hoard may change,
- * the table, and a pager. Until there is anything to list, `empty` shows in
+ * A list of items: its search, its button to add one while Hoard may change
+ * (when it has `onAdd`), the table, and a pager. Until there is anything to list, `empty` shows in
  * its place.
  */
 export function ItemList({
@@ -50,8 +50,8 @@ export function ItemList({
   search: ReturnType<typeof useItemSearch>;
   /** How many the list holds; undefined while it loads. */
   total: number | undefined;
-  addLabel: string;
-  onAdd: () => void;
+  addLabel?: string;
+  onAdd?: () => void;
   empty: { icon: ReactNode; title: string; description: string };
   failed: boolean;
   onRetry: () => void;
@@ -61,7 +61,7 @@ export function ItemList({
 }) {
   const { t } = useTranslation();
   const { read_only } = useSession();
-  const add = !read_only && (
+  const add = !read_only && onAdd && (
     <Button onClick={onAdd}>
       <Plus aria-hidden />
       {addLabel}

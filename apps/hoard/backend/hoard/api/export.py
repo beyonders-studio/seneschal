@@ -20,11 +20,14 @@ from sqlmodel import SQLModel, select
 from hoard.api.deps import SeesCostsDep
 from hoard.records import (
     Adjustment,
+    Base,
     Lot,
     Material,
     Product,
     Purchase,
     PurchaseLine,
+    Recipe,
+    RecipeLine,
     Stocktake,
     StocktakeRow,
     Variation,
@@ -38,6 +41,7 @@ class ExportKind(StrEnum):
     """The kinds of record that export."""
 
     MATERIALS = "materials"
+    BASES = "bases"
     PRODUCTS = "products"
     VARIATIONS = "variations"
     PURCHASES = "purchases"
@@ -46,6 +50,8 @@ class ExportKind(StrEnum):
     ADJUSTMENTS = "adjustments"
     STOCKTAKES = "stocktakes"
     STOCKTAKE_ROWS = "stocktake_rows"
+    RECIPES = "recipes"
+    RECIPE_LINES = "recipe_lines"
 
 
 class ExportFormat(StrEnum):
@@ -56,6 +62,7 @@ class ExportFormat(StrEnum):
 #: Each kind's records, and their columns of what something cost or sells for.
 KINDS: dict[ExportKind, tuple[type[SQLModel], frozenset[str]]] = {
     ExportKind.MATERIALS: (Material, frozenset()),
+    ExportKind.BASES: (Base, frozenset()),
     ExportKind.PRODUCTS: (Product, frozenset({"default_price"})),
     ExportKind.VARIATIONS: (Variation, frozenset({"price"})),
     ExportKind.PURCHASES: (Purchase, frozenset({"discount", "shipping", "tax"})),
@@ -64,6 +71,8 @@ KINDS: dict[ExportKind, tuple[type[SQLModel], frozenset[str]]] = {
     ExportKind.ADJUSTMENTS: (Adjustment, frozenset({"unit_cost"})),
     ExportKind.STOCKTAKES: (Stocktake, frozenset()),
     ExportKind.STOCKTAKE_ROWS: (StocktakeRow, frozenset()),
+    ExportKind.RECIPES: (Recipe, frozenset()),
+    ExportKind.RECIPE_LINES: (RecipeLine, frozenset()),
 }
 
 #: The characters a spreadsheet reads a cell starting with as a formula.

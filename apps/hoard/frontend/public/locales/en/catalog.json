@@ -19,6 +19,14 @@
     "saveFailed": "Couldn't save the material.",
     "loadFailed": "Couldn't load the material."
   },
+  "bases": {
+    "emptyTitle": "No bases yet",
+    "emptyBody": "What you make from materials and use in other recipes will be here, such as a spice blend or a syrup.",
+    "add": "Add base",
+    "edit": "Edit base",
+    "saveFailed": "Couldn't save the base.",
+    "loadFailed": "Couldn't load the base."
+  },
   "products": {
     "emptyTitle": "No products yet",
     "emptyBody": "The products you sell will be here, with their variations, pictures and stock.",
@@ -74,10 +82,16 @@
     "categories": {
       "title": "Categories",
       "material": "Material categories",
+      "base": "Base categories",
       "product": "Product categories",
       "materials": {
         "add": "Add material category",
         "empty": "No material categories yet.",
+        "name": "Category"
+      },
+      "bases": {
+        "add": "Add base category",
+        "empty": "No base categories yet.",
         "name": "Category"
       },
       "products": {

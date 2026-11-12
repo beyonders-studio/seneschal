@@ -7,11 +7,13 @@
   "tableHelp": "Each record in a row, its columns in the order shown.",
   "kinds": {
     "material": "materials",
+    "base": "bases",
     "product": "products",
     "lot": "lots"
   },
   "pages": {
     "material": "Material page",
+    "base": "Base page",
     "product": "Product page",
     "lot": "Lot"
   },
@@ -32,6 +34,7 @@
     "help": "What each kind of record holds beside its own fields. Add a property on a record's page.",
     "kinds": {
       "material": "Materials",
+      "base": "Bases",
       "product": "Products",
       "lot": "Lots"
     },

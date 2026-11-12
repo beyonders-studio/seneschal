@@ -6,6 +6,7 @@
     "loadFailed": "The product's variations couldn't be read.",
     "kinds": {
       "material": "Material",
+      "base": "Base",
       "variation": "Product"
     }
   },
@@ -94,6 +95,7 @@
     "kind": "What to count",
     "kinds": {
       "material": "Materials",
+      "base": "Bases",
       "product": "Products"
     },
     "allCategories": "Every category",

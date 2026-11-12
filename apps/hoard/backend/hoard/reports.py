@@ -1,8 +1,9 @@
 """Reports on stock: what to reorder, and what stock is worth.
 
-* :func:`reorder`: the materials and products whose stock is at or below their
-  low-stock limit. A product's stock is its variations' together. A material
-  that carries no stock, and an archived product, are not reordered.
+* :func:`reorder`: the materials, bases and products whose stock is at or
+  below their low-stock limit: to buy, or to make. A product's stock is its
+  variations' together. A material that carries no stock, and an archived
+  product, are not reordered.
 * :func:`valuation`: what the stock on hand is worth at each item's average
   unit cost (``hoard.costing``), per item and in total, in the organization's
   currency.
@@ -22,6 +23,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard.records import (
     DEFAULT_CURRENCY,
     PLACES,
+    Base,
     CategoryKind,
     Item,
     ItemKind,
@@ -37,13 +39,13 @@ from hoard.records import (
 
 @dataclass(frozen=True)
 class Shortfall:
-    """A material or product to reorder: what is on hand, against its limit."""
+    """A material, base or product to reorder: what is on hand, against its limit."""
 
     kind: CategoryKind
-    #: The material's or the product's id.
+    #: The material's, the base's or the product's id.
     id: int
     name: str
-    #: The material's tracking unit; a product counts in units of itself.
+    #: The material's or the base's tracking unit; a product counts in units of itself.
     unit: str | None
     on_hand: Decimal
     low_stock_limit: Decimal
@@ -55,9 +57,9 @@ class ItemValue:
 
     item_id: int
     kind: ItemKind
-    #: The material's name, or the variation's product's.
+    #: The material's or the base's name, or the variation's product's.
     name: str
-    #: A variation's attributes; none for a material.
+    #: A variation's attributes; none for a material or a base.
     attributes: dict[str, str]
     on_hand: Decimal
     average_cost: Decimal
@@ -89,7 +91,7 @@ def _stock():
 
 
 async def reorder(db: AsyncSession) -> list[Shortfall]:
-    """The materials and products at or below their low-stock limit, by name."""
+    """The materials, bases and products at or below their low-stock limit, by name."""
     stock = _stock()
     material_on_hand = func.coalesce(stock.c.on_hand, 0)
     materials = await db.exec(
@@ -101,6 +103,13 @@ async def reorder(db: AsyncSession) -> list[Shortfall]:
             col(Material.low_stock_limit).is_not(None),
             material_on_hand <= Material.low_stock_limit,
         )
+    )
+    base_on_hand = func.coalesce(stock.c.on_hand, 0)
+    bases = await db.exec(
+        select(Base, Unit.name, base_on_hand)
+        .join(Unit, col(Unit.id) == Base.tracking_unit_id)
+        .outerjoin(stock, stock.c.item_id == Base.id)
+        .where(col(Base.low_stock_limit).is_not(None), base_on_hand <= Base.low_stock_limit)
     )
     product_on_hand = func.coalesce(func.sum(stock.c.on_hand), 0)
     products = await db.exec(
@@ -121,7 +130,19 @@ async def reorder(db: AsyncSession) -> list[Shortfall]:
             Decimal(material.low_stock_limit or 0),
         )
         for material, unit, on_hand in materials
-    ] + [
+    ]
+    shortfalls += [
+        Shortfall(
+            CategoryKind.BASE,
+            base.id,
+            base.name,
+            unit,
+            Decimal(on_hand),
+            Decimal(base.low_stock_limit or 0),
+        )
+        for base, unit, on_hand in bases
+    ]
+    shortfalls += [
         Shortfall(
             CategoryKind.PRODUCT,
             product.id,
@@ -139,11 +160,12 @@ async def valuation(db: AsyncSession) -> Valuation:
     """What the stock on hand is worth: each item holding any, by name, and
     their total."""
     stock = _stock()
-    name = func.coalesce(Material.name, Product.name)
+    name = func.coalesce(Material.name, Base.name, Product.name)
     rows = await db.exec(
         select(Item, name, Variation.attributes, stock.c.on_hand)
         .join(stock, stock.c.item_id == Item.id)
         .outerjoin(Material, col(Material.id) == Item.id)
+        .outerjoin(Base, col(Base.id) == Item.id)
         .outerjoin(Variation, col(Variation.id) == Item.id)
         .outerjoin(Product, col(Product.id) == Variation.product_id)
         .where(stock.c.on_hand != 0)
