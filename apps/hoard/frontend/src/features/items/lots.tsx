@@ -73,7 +73,7 @@ export const LOTS: HoardKind<ItemLotRead, LotRead> = {
     builtin(
       "hold",
       "holds:section.title",
-      (lot) => lot.hold?.id,
+      (lot) => lot.id,
       ({ item }) => <HoldSection lot={item} />
     ),
     builtin(

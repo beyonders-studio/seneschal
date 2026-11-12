@@ -121,6 +121,11 @@
         "personal_use": "Personal use",
         "returned_damaged": "Returned damaged"
       }
+    },
+    "holdReasons": {
+      "add": "Add hold reason",
+      "empty": "No hold reasons yet.",
+      "name": "Reason"
     }
   },
   "errors": {
