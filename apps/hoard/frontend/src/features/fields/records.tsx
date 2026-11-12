@@ -55,7 +55,7 @@ import { listedValue, type PropertyDefinition } from "@/ui/properties/propertyHe
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
 /** Where the words of Hoard's fields are. */
-const NAMESPACES = ["fields", "catalog", "hoard", "layouts"] as const;
+const NAMESPACES = ["fields", "catalog", "hoard", "layouts", "recipes", "declarations"] as const;
 
 /** A record that holds properties: a material, a product or a lot. */
 export type HoardRecord = { id: number; properties: HoardPropertySummary[]; updated_at?: string };

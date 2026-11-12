@@ -60,15 +60,18 @@ const STOCK = {
   },
 };
 
-/** Waits for Stock's page, and answers which tab is selected. */
-const stockTab = async () => {
-  await screen.findByRole("heading", { level: 1, name: "Stock" });
+/** Waits for a page with tabs, and answers which tab is selected. */
+const selectedTab = async (page: string) => {
+  await screen.findByRole("heading", { level: 1, name: page });
   return screen.getByRole("tab", { selected: true }).textContent;
 };
+
+const stockTab = () => selectedTab("Stock");
 
 describe("Hoard's pages", () => {
   it.each([
     ["/stock/materials", "Materials", "No materials yet"],
+    ["/stock/bases", "Bases", "No bases yet"],
     ["/stock/products", "Products", "No products yet"],
     ["/stock/purchases", "Purchases", "No purchases yet"],
     ["/stock/adjustments", "Adjustments", "No adjustments yet"],
@@ -81,6 +84,7 @@ describe("Hoard's pages", () => {
 
   it.each([
     ["/stock/materials/3", "Materials", "Oolong"],
+    ["/stock/bases/3", "Bases", "Base"],
     ["/stock/products/3", "Products", "Chai"],
     ["/stock/purchases/3", "Purchases", /^Purchase P-0003/],
     ["/stock/stocktakes/3", "Stocktakes", /^Stocktake of/],
@@ -101,18 +105,39 @@ describe("Hoard's pages", () => {
   });
 
   it.each([
-    ["/production", "Production", "No production runs yet"],
-    ["/reports", "Reports", "Stock to reorder"],
-  ])("%s opens its page", async (path, title, empty) => {
+    ["/production", "Runs", "No production runs yet"],
+    ["/production/runs", "Runs", "No production runs yet"],
+    ["/production/recipes", "Recipes", "No recipes yet"],
+  ])("%s opens under Production, on its tab", async (path, tab, empty) => {
     await openSignedIn(path);
-    await screen.findByRole("heading", { level: 1, name: title });
+    expect(await selectedTab("Production")).toBe(tab);
     await screen.findByText(empty);
+  });
+
+  it("/production/runs/3 opens one run, under its tab", async () => {
+    await openSignedIn("/production/runs/3");
+    expect(await selectedTab("Production")).toBe("Runs");
+    await screen.findByRole("heading", { level: 2, name: "Production run" });
+  });
+
+  it("/reports opens its page", async () => {
+    await openSignedIn("/reports");
+    await screen.findByRole("heading", { level: 1, name: "Reports" });
+    await screen.findByText("Stock to reorder");
   });
 
   it("/settings opens with a section for each setting", async () => {
     await openSignedIn("/settings");
     await screen.findByRole("heading", { level: 1, name: "Settings" });
-    for (const section of ["Currency", "Units", "Categories", "Locations", "Adjustment reasons"]) {
+    for (const section of [
+      "Currency",
+      "Units",
+      "Categories",
+      "Locations",
+      "Adjustment reasons",
+      "Tasks",
+      "Starting setups",
+    ]) {
       await screen.findByRole("heading", { level: 2, name: section });
     }
   });

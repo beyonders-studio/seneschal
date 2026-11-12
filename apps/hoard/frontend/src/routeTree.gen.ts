@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ProductionRouteImport } from './routes/production'
+import { Route as ProductionRouteRouteImport } from './routes/production/route'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as StockRouteRouteImport } from './routes/stock/route'
+import { Route as ProductionIndexRouteImport } from './routes/production/index'
 import { Route as StockIndexRouteImport } from './routes/stock/index'
+import { Route as ProductionRecipesIndexRouteImport } from './routes/production/recipes/index'
+import { Route as ProductionRunsIndexRouteImport } from './routes/production/runs/index'
+import { Route as ProductionRunsRunIdRouteImport } from './routes/production/runs/$runId'
 import { Route as StockAdjustmentsIndexRouteImport } from './routes/stock/adjustments/index'
+import { Route as StockBasesIndexRouteImport } from './routes/stock/bases/index'
+import { Route as StockBasesBaseIdRouteImport } from './routes/stock/bases/$baseId'
 import { Route as StockMaterialsIndexRouteImport } from './routes/stock/materials/index'
 import { Route as StockMaterialsMaterialIdRouteImport } from './routes/stock/materials/$materialId'
 import { Route as StockProductsIndexRouteImport } from './routes/stock/products/index'
@@ -24,7 +30,7 @@ import { Route as StockPurchasesPurchaseIdRouteImport } from './routes/stock/pur
 import { Route as StockStocktakesIndexRouteImport } from './routes/stock/stocktakes/index'
 import { Route as StockStocktakesStocktakeIdRouteImport } from './routes/stock/stocktakes/$stocktakeId'
 
-const ProductionRoute = ProductionRouteImport.update({
+const ProductionRouteRoute = ProductionRouteRouteImport.update({
   id: '/production',
   path: '/production',
   getParentRoute: () => rootRouteImport,
@@ -44,14 +50,44 @@ const StockRouteRoute = StockRouteRouteImport.update({
   path: '/stock',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductionIndexRoute = ProductionIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ProductionRouteRoute,
+} as any)
 const StockIndexRoute = StockIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => StockRouteRoute,
 } as any)
+const ProductionRecipesIndexRoute = ProductionRecipesIndexRouteImport.update({
+  id: '/recipes/',
+  path: '/recipes/',
+  getParentRoute: () => ProductionRouteRoute,
+} as any)
+const ProductionRunsIndexRoute = ProductionRunsIndexRouteImport.update({
+  id: '/runs/',
+  path: '/runs/',
+  getParentRoute: () => ProductionRouteRoute,
+} as any)
+const ProductionRunsRunIdRoute = ProductionRunsRunIdRouteImport.update({
+  id: '/runs/$runId',
+  path: '/runs/$runId',
+  getParentRoute: () => ProductionRouteRoute,
+} as any)
 const StockAdjustmentsIndexRoute = StockAdjustmentsIndexRouteImport.update({
   id: '/adjustments/',
   path: '/adjustments/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockBasesIndexRoute = StockBasesIndexRouteImport.update({
+  id: '/bases/',
+  path: '/bases/',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockBasesBaseIdRoute = StockBasesBaseIdRouteImport.update({
+  id: '/bases/$baseId',
+  path: '/bases/$baseId',
   getParentRoute: () => StockRouteRoute,
 } as any)
 const StockMaterialsIndexRoute = StockMaterialsIndexRouteImport.update({
@@ -99,31 +135,42 @@ const StockStocktakesStocktakeIdRoute =
   } as any)
 
 export interface FileRoutesByFullPath {
+  '/production': typeof ProductionRouteRouteWithChildren
   '/stock': typeof StockRouteRouteWithChildren
-  '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/production/': typeof ProductionIndexRoute
   '/stock/': typeof StockIndexRoute
+  '/production/runs/$runId': typeof ProductionRunsRunIdRoute
+  '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
   '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/production/recipes/': typeof ProductionRecipesIndexRoute
+  '/production/runs/': typeof ProductionRunsIndexRoute
   '/stock/adjustments/': typeof StockAdjustmentsIndexRoute
+  '/stock/bases/': typeof StockBasesIndexRoute
   '/stock/materials/': typeof StockMaterialsIndexRoute
   '/stock/products/': typeof StockProductsIndexRoute
   '/stock/purchases/': typeof StockPurchasesIndexRoute
   '/stock/stocktakes/': typeof StockStocktakesIndexRoute
 }
 export interface FileRoutesByTo {
-  '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/production': typeof ProductionIndexRoute
   '/stock': typeof StockIndexRoute
+  '/production/runs/$runId': typeof ProductionRunsRunIdRoute
+  '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
   '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/production/recipes': typeof ProductionRecipesIndexRoute
+  '/production/runs': typeof ProductionRunsIndexRoute
   '/stock/adjustments': typeof StockAdjustmentsIndexRoute
+  '/stock/bases': typeof StockBasesIndexRoute
   '/stock/materials': typeof StockMaterialsIndexRoute
   '/stock/products': typeof StockProductsIndexRoute
   '/stock/purchases': typeof StockPurchasesIndexRoute
@@ -131,16 +178,22 @@ export interface FileRoutesByTo {
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
+  '/production': typeof ProductionRouteRouteWithChildren
   '/stock': typeof StockRouteRouteWithChildren
-  '/production': typeof ProductionRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
+  '/production/': typeof ProductionIndexRoute
   '/stock/': typeof StockIndexRoute
+  '/production/runs/$runId': typeof ProductionRunsRunIdRoute
+  '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
   '/stock/stocktakes/$stocktakeId': typeof StockStocktakesStocktakeIdRoute
+  '/production/recipes/': typeof ProductionRecipesIndexRoute
+  '/production/runs/': typeof ProductionRunsIndexRoute
   '/stock/adjustments/': typeof StockAdjustmentsIndexRoute
+  '/stock/bases/': typeof StockBasesIndexRoute
   '/stock/materials/': typeof StockMaterialsIndexRoute
   '/stock/products/': typeof StockProductsIndexRoute
   '/stock/purchases/': typeof StockPurchasesIndexRoute
@@ -149,47 +202,64 @@ export interface FileRoutesById {
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    | '/stock'
     | '/production'
+    | '/stock'
     | '/reports'
     | '/settings'
+    | '/production/'
     | '/stock/'
+    | '/production/runs/$runId'
+    | '/stock/bases/$baseId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
     | '/stock/stocktakes/$stocktakeId'
+    | '/production/recipes/'
+    | '/production/runs/'
     | '/stock/adjustments/'
+    | '/stock/bases/'
     | '/stock/materials/'
     | '/stock/products/'
     | '/stock/purchases/'
     | '/stock/stocktakes/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/production'
     | '/reports'
     | '/settings'
+    | '/production'
     | '/stock'
+    | '/production/runs/$runId'
+    | '/stock/bases/$baseId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
     | '/stock/stocktakes/$stocktakeId'
+    | '/production/recipes'
+    | '/production/runs'
     | '/stock/adjustments'
+    | '/stock/bases'
     | '/stock/materials'
     | '/stock/products'
     | '/stock/purchases'
     | '/stock/stocktakes'
   id:
     | '__root__'
-    | '/stock'
     | '/production'
+    | '/stock'
     | '/reports'
     | '/settings'
+    | '/production/'
     | '/stock/'
+    | '/production/runs/$runId'
+    | '/stock/bases/$baseId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
     | '/stock/stocktakes/$stocktakeId'
+    | '/production/recipes/'
+    | '/production/runs/'
     | '/stock/adjustments/'
+    | '/stock/bases/'
     | '/stock/materials/'
     | '/stock/products/'
     | '/stock/purchases/'
@@ -197,8 +267,8 @@ export interface FileRouteTypes {
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
+  ProductionRouteRoute: typeof ProductionRouteRouteWithChildren
   StockRouteRoute: typeof StockRouteRouteWithChildren
-  ProductionRoute: typeof ProductionRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
 }
@@ -209,7 +279,7 @@ declare module '@tanstack/react-router' {
       id: '/production'
       path: '/production'
       fullPath: '/production'
-      preLoaderRoute: typeof ProductionRouteImport
+      preLoaderRoute: typeof ProductionRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports': {
@@ -233,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StockRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/production/': {
+      id: '/production/'
+      path: '/'
+      fullPath: '/production/'
+      preLoaderRoute: typeof ProductionIndexRouteImport
+      parentRoute: typeof ProductionRouteRoute
+    }
     '/stock/': {
       id: '/stock/'
       path: '/'
@@ -240,11 +317,46 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StockIndexRouteImport
       parentRoute: typeof StockRouteRoute
     }
+    '/production/recipes/': {
+      id: '/production/recipes/'
+      path: '/recipes'
+      fullPath: '/production/recipes/'
+      preLoaderRoute: typeof ProductionRecipesIndexRouteImport
+      parentRoute: typeof ProductionRouteRoute
+    }
+    '/production/runs/': {
+      id: '/production/runs/'
+      path: '/runs'
+      fullPath: '/production/runs/'
+      preLoaderRoute: typeof ProductionRunsIndexRouteImport
+      parentRoute: typeof ProductionRouteRoute
+    }
+    '/production/runs/$runId': {
+      id: '/production/runs/$runId'
+      path: '/runs/$runId'
+      fullPath: '/production/runs/$runId'
+      preLoaderRoute: typeof ProductionRunsRunIdRouteImport
+      parentRoute: typeof ProductionRouteRoute
+    }
     '/stock/adjustments/': {
       id: '/stock/adjustments/'
       path: '/adjustments'
       fullPath: '/stock/adjustments/'
       preLoaderRoute: typeof StockAdjustmentsIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/bases/': {
+      id: '/stock/bases/'
+      path: '/bases'
+      fullPath: '/stock/bases/'
+      preLoaderRoute: typeof StockBasesIndexRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/bases/$baseId': {
+      id: '/stock/bases/$baseId'
+      path: '/bases/$baseId'
+      fullPath: '/stock/bases/$baseId'
+      preLoaderRoute: typeof StockBasesBaseIdRouteImport
       parentRoute: typeof StockRouteRoute
     }
     '/stock/materials/': {
@@ -306,13 +418,33 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ProductionRouteRouteChildren {
+  ProductionIndexRoute: typeof ProductionIndexRoute
+  ProductionRunsRunIdRoute: typeof ProductionRunsRunIdRoute
+  ProductionRecipesIndexRoute: typeof ProductionRecipesIndexRoute
+  ProductionRunsIndexRoute: typeof ProductionRunsIndexRoute
+}
+
+const ProductionRouteRouteChildren: ProductionRouteRouteChildren = {
+  ProductionIndexRoute: ProductionIndexRoute,
+  ProductionRunsRunIdRoute: ProductionRunsRunIdRoute,
+  ProductionRecipesIndexRoute: ProductionRecipesIndexRoute,
+  ProductionRunsIndexRoute: ProductionRunsIndexRoute,
+}
+
+const ProductionRouteRouteWithChildren = ProductionRouteRoute._addFileChildren(
+  ProductionRouteRouteChildren,
+)
+
 interface StockRouteRouteChildren {
   StockIndexRoute: typeof StockIndexRoute
+  StockBasesBaseIdRoute: typeof StockBasesBaseIdRoute
   StockMaterialsMaterialIdRoute: typeof StockMaterialsMaterialIdRoute
   StockProductsProductIdRoute: typeof StockProductsProductIdRoute
   StockPurchasesPurchaseIdRoute: typeof StockPurchasesPurchaseIdRoute
   StockStocktakesStocktakeIdRoute: typeof StockStocktakesStocktakeIdRoute
   StockAdjustmentsIndexRoute: typeof StockAdjustmentsIndexRoute
+  StockBasesIndexRoute: typeof StockBasesIndexRoute
   StockMaterialsIndexRoute: typeof StockMaterialsIndexRoute
   StockProductsIndexRoute: typeof StockProductsIndexRoute
   StockPurchasesIndexRoute: typeof StockPurchasesIndexRoute
@@ -321,11 +453,13 @@ interface StockRouteRouteChildren {
 
 const StockRouteRouteChildren: StockRouteRouteChildren = {
   StockIndexRoute: StockIndexRoute,
+  StockBasesBaseIdRoute: StockBasesBaseIdRoute,
   StockMaterialsMaterialIdRoute: StockMaterialsMaterialIdRoute,
   StockProductsProductIdRoute: StockProductsProductIdRoute,
   StockPurchasesPurchaseIdRoute: StockPurchasesPurchaseIdRoute,
   StockStocktakesStocktakeIdRoute: StockStocktakesStocktakeIdRoute,
   StockAdjustmentsIndexRoute: StockAdjustmentsIndexRoute,
+  StockBasesIndexRoute: StockBasesIndexRoute,
   StockMaterialsIndexRoute: StockMaterialsIndexRoute,
   StockProductsIndexRoute: StockProductsIndexRoute,
   StockPurchasesIndexRoute: StockPurchasesIndexRoute,
@@ -337,8 +471,8 @@ const StockRouteRouteWithChildren = StockRouteRoute._addFileChildren(
 )
 
 const rootRouteChildren: RootRouteChildren = {
+  ProductionRouteRoute: ProductionRouteRouteWithChildren,
   StockRouteRoute: StockRouteRouteWithChildren,
-  ProductionRoute: ProductionRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
 }

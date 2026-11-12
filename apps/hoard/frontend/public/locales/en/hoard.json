@@ -12,6 +12,7 @@
     "title": "Stock",
     "tabs": "Stock records",
     "materials": "Materials",
+    "bases": "Bases",
     "products": "Products",
     "purchases": "Purchases",
     "adjustments": "Adjustments",
@@ -19,8 +20,9 @@
   },
   "production": {
     "title": "Production",
-    "emptyTitle": "No production runs yet",
-    "emptyBody": "Your production runs will be here: what you make, from which recipe, and the lots each run produces."
+    "tabs": "Production records",
+    "runs": "Runs",
+    "recipes": "Recipes"
   },
   "reports": {
     "title": "Reports"

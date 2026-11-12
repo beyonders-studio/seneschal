@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ItemLotRead } from "@/api/generated/hoard.schemas";
+import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import {
   builtin,
   type HoardKind,
@@ -83,7 +84,14 @@ export const LOTS: HoardKind<ItemLotRead> = {
       ({ item }) => item.notes
     ),
   ],
-  pageFields: [],
+  pageFields: [
+    builtin(
+      "declarations",
+      "declarations:panel.title",
+      (lot) => lot.id,
+      ({ item }) => <DeclarationsPanel of="lot" id={item.id} />
+    ),
+  ],
   columns: ["number", "location", "dated_on", "expires_on", "balance", "notes"],
   spec: detailLayoutSpec({
     kind: "lot",
@@ -94,6 +102,7 @@ export const LOTS: HoardKind<ItemLotRead> = {
           type: "section",
           children: ["location", "dated_on", "expires_on", "balance", "notes"].map(field),
         }),
+        at(3, field("declarations")),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

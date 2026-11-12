@@ -2,11 +2,12 @@ import { Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SetupSuggestion } from "@/features/setups/SetupSuggestion";
 import { useSession } from "@/session";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 
-/** One of Hoard's pages: its title, a notice while Hoard is read-only, and
- *  what the page holds. */
+/** One of Hoard's pages: its title, a notice while Hoard is read-only, a
+ *  starting setup the first time Hoard is opened, and what the page holds. */
 export function HoardPage({ title, children }: { title: string; children: ReactNode }) {
   const { t } = useTranslation();
   const { read_only } = useSession();
@@ -20,6 +21,7 @@ export function HoardPage({ title, children }: { title: string; children: ReactN
           <AlertDescription>{t("readOnly.body")}</AlertDescription>
         </Alert>
       )}
+      <SetupSuggestion />
       {children}
     </div>
   );

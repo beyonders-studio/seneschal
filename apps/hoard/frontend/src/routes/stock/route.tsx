@@ -7,6 +7,7 @@ import { Tabs, TabsBar, TabsTrigger } from "@/ui/tabs";
 /** Each of Stock's tabs, and the page it opens. */
 const TABS = {
   materials: "/stock/materials",
+  bases: "/stock/bases",
   products: "/stock/products",
   purchases: "/stock/purchases",
   adjustments: "/stock/adjustments",
