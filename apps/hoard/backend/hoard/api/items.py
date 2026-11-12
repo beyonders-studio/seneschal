@@ -13,7 +13,8 @@ from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard.records import Lot, StockLevel
+from hoard.api.properties import HoardPropertySummary, values_of
+from hoard.records import Lot, RecordKind, StockLevel
 
 #: A name or code someone types.
 Text = Annotated[str, Field(min_length=1, max_length=200)]
@@ -51,6 +52,8 @@ class ItemLotRead(BaseModel):
     expires_on: date | None
     notes: str | None
     balance: Decimal
+    #: What it holds of the properties people add to lots.
+    properties: list[HoardPropertySummary]
 
 
 class ItemHoldings(BaseModel):
@@ -84,8 +87,14 @@ async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemH
         item = held[level.item_id]
         item.stock.append(ItemStockRead(location_id=level.location_id, quantity=level.quantity))
         item.on_hand += level.quantity
-    for lot in await db.exec(
-        select(Lot).where(col(Lot.item_id).in_(ids)).order_by(col(Lot.dated_on), col(Lot.id))
-    ):
-        held[lot.item_id].lots.append(ItemLotRead.model_validate(lot, from_attributes=True))
+    lots = (
+        await db.exec(
+            select(Lot).where(col(Lot.item_id).in_(ids)).order_by(col(Lot.dated_on), col(Lot.id))
+        )
+    ).all()
+    values = await values_of(db, RecordKind.LOT, [lot.id for lot in lots])
+    for lot in lots:
+        held[lot.item_id].lots.append(
+            ItemLotRead.model_validate({**lot.model_dump(), "properties": values[lot.id]})
+        )
     return held

@@ -25,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import stock
 from hoard.api import items
 from hoard.api.deps import HoardError, SeesCostsDep
+from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import found, require_references
 from hoard.api.shapes import Page, PageDep
 from hoard.records import (
@@ -35,6 +36,7 @@ from hoard.records import (
     Product,
     ProductImage,
     ProductStatus,
+    RecordKind,
     StockLevel,
     Variation,
 )
@@ -83,6 +85,8 @@ class ProductRead(BaseModel):
     on_hand: Decimal
     #: The price of a variation without its own; null without ``costs``.
     default_price: Decimal | None
+    #: What it holds of the properties people add to products.
+    properties: list[HoardPropertySummary]
 
 
 class ProductVariationRead(items.ItemHoldings):
@@ -150,10 +154,16 @@ async def _on_hand(db: AsyncSession, product_ids: Sequence[int]) -> dict[int, De
     return {product_id: Decimal(total) for product_id, total in totals}
 
 
-def _read(product: Product, on_hand: Decimal, sees_costs: bool) -> dict[str, Any]:
+def _read(
+    product: Product,
+    on_hand: Decimal,
+    sees_costs: bool,
+    properties: list[HoardPropertySummary],
+) -> dict[str, Any]:
     return {
         **product.model_dump(),
         "on_hand": on_hand,
+        "properties": properties,
         **dict.fromkeys(_hidden(sees_costs, "default_price")),
     }
 
@@ -183,8 +193,9 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
         for variation, item in rows
     ]
     on_hand = sum((variation.on_hand for variation in variations), Decimal(0))
+    values = (await values_of(db, RecordKind.PRODUCT, [product_id]))[product_id]
     return ProductDetail.model_validate(
-        {**_read(product, on_hand, sees_costs), "variations": variations}
+        {**_read(product, on_hand, sees_costs, values), "variations": variations}
     )
 
 
@@ -212,11 +223,13 @@ async def list_products(
             query.order_by(col(Product.name), col(Product.id)).offset(page.offset).limit(page.limit)
         )
     ).all()
-    totals = await _on_hand(db, [product.id for product in products])
+    ids = [product.id for product in products]
+    totals = await _on_hand(db, ids)
+    values = await values_of(db, RecordKind.PRODUCT, ids)
     return Page(
         items=[
             ProductRead.model_validate(
-                _read(product, totals.get(product.id, Decimal(0)), sees_costs)
+                _read(product, totals.get(product.id, Decimal(0)), sees_costs, values[product.id])
             )
             for product in products
         ],

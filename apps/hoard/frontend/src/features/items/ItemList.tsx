@@ -44,6 +44,7 @@ export function ItemList({
   empty,
   failed,
   onRetry,
+  more,
   children,
 }: {
   search: ReturnType<typeof useItemSearch>;
@@ -54,6 +55,8 @@ export function ItemList({
   empty: { icon: ReactNode; title: string; description: string };
   failed: boolean;
   onRetry: () => void;
+  /** What else can be done with the list, before adding to it. */
+  more?: ReactNode;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -84,7 +87,10 @@ export function ItemList({
             onChange={(event) => search.setSearch(event.target.value)}
           />
         </div>
-        {add}
+        <div className="flex gap-2">
+          {more}
+          {add}
+        </div>
       </div>
       {total === undefined ? (
         <p className="text-sm text-muted-foreground">{t("common.loading")}</p>

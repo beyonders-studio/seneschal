@@ -21,6 +21,10 @@
   variances become adjustments.
 * **Settings**: the organization's one row of them, such as its currency.
 * **Product images**: pictures of a product, which Hoard keeps itself.
+* **Properties** people add to a kind of record, in the UI kit's shapes, and
+  each record's **values** of them.
+* **Layouts**: how a kind of record is listed and shown on its own page, once
+  someone changes it from how Hoard ships it, in the UI kit's shapes.
 
 Quantities, costs and prices are exact decimals to six places. A supplier is an
 Initiative contact, named by its id. Every record says who made it and when,
@@ -65,6 +69,20 @@ DEFAULT_CURRENCY = "USD"
 IMAGE_TYPES = frozenset({"image/gif", "image/jpeg", "image/png", "image/webp"})
 #: The most one product image may hold, in bytes.
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+#: The currencies a money property can be kept in: ISO 4217's codes for the
+#: currencies in circulation, as the UI kit offers them.
+CURRENCY_CODES = tuple(
+    """
+    AED AFN ALL AMD AOA ARS AUD AWG AZN BAM BBD BDT BHD BIF BMD BND BOB BRL BSD BTN BWP BYN
+    BZD CAD CDF CHF CLP CNY COP CRC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP
+    GEL GHS GIP GMD GNF GTQ GYD HKD HNL HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS
+    KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR
+    MVR MWK MXN MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD
+    RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP
+    TRY TTD TWD TZS UAH UGX USD UYU UZS VED VES VND VUV WST XAF XCD XCG XOF XPF YER ZAR ZMW
+    ZWG
+    """.split()
+)
 
 
 def amount(default: Decimal | None = Decimal(0)) -> Any:
@@ -103,6 +121,46 @@ class AdjustmentKind(StrEnum):
     STOCKTAKE = "stocktake"
     #: A change made by hand, with its reason.
     MANUAL = "manual"
+
+
+class RecordKind(StrEnum):
+    """The kinds of record people add their own properties to and lay out. A
+    later revision adds a kind to the ``record_kind`` type, and a member here."""
+
+    MATERIAL = "material"
+    PRODUCT = "product"
+    LOT = "lot"
+
+
+class PropertyType(StrEnum):
+    """What a property holds: the types the UI kit offers people."""
+
+    TEXT = "text"
+    NUMBER = "number"
+    CHECKBOX = "checkbox"
+    DATE = "date"
+    DATETIME = "datetime"
+    URL = "url"
+    SELECT = "select"
+    MULTI_SELECT = "multi_select"
+    #: A member, by their reference.
+    USER_REFERENCE = "user_reference"
+    #: Money, in the property's currency.
+    CURRENCY = "currency"
+    #: A figure from 0 to 100.
+    SCALE = "scale"
+    COUNTER = "counter"
+    #: An Initiative file, by its id.
+    FILE = "file"
+    #: Who signed, the name they typed, and when.
+    SIGNATURE = "signature"
+
+
+class LayoutView(StrEnum):
+    """How a layout shows a kind of record: listed in a table, or on its own page."""
+
+    TABLE = "table"
+    DETAIL = "detail"
 
 
 class Unit(OrganizationRow, Stamped, table=True):
@@ -505,3 +563,74 @@ class ProductImage(OrganizationRow, Stamped, table=True):
     position: int = 0
     content_type: str
     content: bytes = Field(sa_type=LargeBinary)
+
+
+class PropertyDefinition(OrganizationRow, Stamped, table=True):
+    """A property people add to a kind of record. A select's ``options``, a
+    money property's ``currency`` and a counter's ``counter`` settings are in
+    the UI kit's shapes; every other type has none."""
+
+    __tablename__ = "property_definitions"
+    __table_args__ = (
+        referable("property_definitions"),
+        UniqueConstraint("organization_id", "kind", "name", name="uq_property_definitions_name"),
+        CheckConstraint(
+            "(type = 'currency') = (currency IS NOT NULL)",
+            name="ck_property_definitions_currency",
+        ),
+    )
+
+    id: int = identity()
+    kind: RecordKind = Field(sa_column=enum_column(RecordKind, "record_kind"))
+    name: str
+    type: PropertyType = Field(sa_column=enum_column(PropertyType, "property_type"))
+    options: list[dict[str, Any]] | None = Field(default=None, sa_column=Column(JSONB))
+    currency: str | None = None
+    counter: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB))
+
+
+class PropertyValue(OrganizationRow, Stamped, table=True):
+    """What one record holds of a property: a material, a product or a lot,
+    whichever its definition's kind is. A record holding nothing of it has no
+    row."""
+
+    __tablename__ = "property_values"
+    __table_args__ = (
+        reference("property_values", "definition_id", "property_definitions", ondelete="CASCADE"),
+        reference("property_values", "material_id", "materials", ondelete="CASCADE"),
+        reference("property_values", "product_id", "products", ondelete="CASCADE"),
+        reference("property_values", "lot_id", "lots", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "material_id", "definition_id", name="uq_property_values_material"
+        ),
+        UniqueConstraint(
+            "organization_id", "product_id", "definition_id", name="uq_property_values_product"
+        ),
+        UniqueConstraint(
+            "organization_id", "lot_id", "definition_id", name="uq_property_values_lot"
+        ),
+        CheckConstraint(
+            "num_nonnulls(material_id, product_id, lot_id) = 1", name="ck_property_values_record"
+        ),
+    )
+
+    id: int = identity()
+    definition_id: int = Field(sa_type=BigInteger)
+    material_id: int | None = Field(default=None, sa_type=BigInteger)
+    product_id: int | None = Field(default=None, sa_type=BigInteger)
+    lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    value: Any = Field(sa_column=Column(JSONB, nullable=False))
+
+
+class Layout(OrganizationRow, Stamped, table=True):
+    """How a kind of record is listed or shown on its own page, in the UI
+    kit's layout shapes. Until it is changed it has no row, and pages draw it
+    as Hoard ships it."""
+
+    __tablename__ = "layouts"
+    __table_args__ = (UniqueConstraint("organization_id", "kind", "view", name="uq_layouts_view"),)
+
+    id: int = identity()
+    kind: RecordKind = Field(sa_column=enum_column(RecordKind, "record_kind"))
+    view: LayoutView = Field(sa_column=enum_column(LayoutView, "layout_view"))
+    definition: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))

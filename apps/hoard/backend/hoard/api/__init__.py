@@ -10,9 +10,11 @@ from hoard.api import (
     contacts,
     export,
     health,
+    layouts,
     materials,
     members,
     products,
+    properties,
     purchases,
     reports,
     settings,
@@ -34,5 +36,7 @@ for area in (
     reports,
     export,
     members,
+    properties,
+    layouts,
 ):
     router.include_router(area.router)

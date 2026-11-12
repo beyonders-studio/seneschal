@@ -17,7 +17,12 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HTTPValidationError, ListMemberNamesParams, MemberName } from "../hoard.schemas";
+import type {
+  HTTPValidationError,
+  ListMemberNamesParams,
+  MemberName,
+  SearchMemberNamesParams,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType } from "../../mutator";
@@ -162,6 +167,149 @@ export function useListMemberNames<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getListMemberNamesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * The members whose handle matches ``search``, closest first, or the
+ * community's first members for no ``search``: whom a person-valued property
+ * may name.
+ * @summary Search Member Names
+ */
+export const searchMemberNames = (
+  params?: SearchMemberNamesParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<MemberName[]>(
+    { url: `/api/v1/members/search`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getSearchMemberNamesQueryKey = (params?: SearchMemberNamesParams) => {
+  return [`/api/v1/members/search`, ...(params ? [params] : [])] as const;
+};
+
+export const getSearchMemberNamesQueryOptions = <
+  TData = Awaited<ReturnType<typeof searchMemberNames>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: SearchMemberNamesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMemberNames>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getSearchMemberNamesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof searchMemberNames>>> = ({ signal }) =>
+    searchMemberNames(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof searchMemberNames>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type SearchMemberNamesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof searchMemberNames>>
+>;
+export type SearchMemberNamesQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The members whose handle matches ``search``, closest first, or the
+ * community's first members for no ``search``: whom a person-valued property
+ * may name.
+ * @summary Search Member Names
+ */
+export function useSearchMemberNames<
+  TData = Awaited<ReturnType<typeof searchMemberNames>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: undefined | SearchMemberNamesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMemberNames>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMemberNames>>,
+          TError,
+          Awaited<ReturnType<typeof searchMemberNames>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The members whose handle matches ``search``, closest first, or the
+ * community's first members for no ``search``: whom a person-valued property
+ * may name.
+ * @summary Search Member Names
+ */
+export function useSearchMemberNames<
+  TData = Awaited<ReturnType<typeof searchMemberNames>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: SearchMemberNamesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMemberNames>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof searchMemberNames>>,
+          TError,
+          Awaited<ReturnType<typeof searchMemberNames>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The members whose handle matches ``search``, closest first, or the
+ * community's first members for no ``search``: whom a person-valued property
+ * may name.
+ * @summary Search Member Names
+ */
+export function useSearchMemberNames<
+  TData = Awaited<ReturnType<typeof searchMemberNames>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: SearchMemberNamesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMemberNames>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The members whose handle matches ``search``, closest first, or the
+ * community's first members for no ``search``: whom a person-valued property
+ * may name.
+ * @summary Search Member Names
+ */
+export function useSearchMemberNames<
+  TData = Awaited<ReturnType<typeof searchMemberNames>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: SearchMemberNamesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof searchMemberNames>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getSearchMemberNamesQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

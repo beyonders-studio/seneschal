@@ -185,6 +185,623 @@ export interface HandoffExchange {
 }
 
 /**
+ * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
+ * and back to ``initial`` on a reset. A counter with no value holds
+ * ``initial``.
+ */
+export interface HoardCounterSettingsInput {
+  /** @exclusiveMinimum 0 */
+  step?: number;
+  min?: number | null;
+  max?: number | null;
+  initial?: number;
+}
+
+/**
+ * How a counter moves: by ``step`` a tap, never past ``min`` or ``max``,
+ * and back to ``initial`` on a reset. A counter with no value holds
+ * ``initial``.
+ */
+export interface HoardCounterSettingsOutput {
+  /** @exclusiveMinimum 0 */
+  step: number;
+  min: number | null;
+  max: number | null;
+  initial: number;
+}
+
+/**
+ * The ISO 4217 code a money property's amounts are in.
+ */
+export type HoardCurrency = (typeof HoardCurrency)[keyof typeof HoardCurrency];
+
+export const HoardCurrency = {
+  AED: "AED",
+  AFN: "AFN",
+  ALL: "ALL",
+  AMD: "AMD",
+  AOA: "AOA",
+  ARS: "ARS",
+  AUD: "AUD",
+  AWG: "AWG",
+  AZN: "AZN",
+  BAM: "BAM",
+  BBD: "BBD",
+  BDT: "BDT",
+  BHD: "BHD",
+  BIF: "BIF",
+  BMD: "BMD",
+  BND: "BND",
+  BOB: "BOB",
+  BRL: "BRL",
+  BSD: "BSD",
+  BTN: "BTN",
+  BWP: "BWP",
+  BYN: "BYN",
+  BZD: "BZD",
+  CAD: "CAD",
+  CDF: "CDF",
+  CHF: "CHF",
+  CLP: "CLP",
+  CNY: "CNY",
+  COP: "COP",
+  CRC: "CRC",
+  CUP: "CUP",
+  CVE: "CVE",
+  CZK: "CZK",
+  DJF: "DJF",
+  DKK: "DKK",
+  DOP: "DOP",
+  DZD: "DZD",
+  EGP: "EGP",
+  ERN: "ERN",
+  ETB: "ETB",
+  EUR: "EUR",
+  FJD: "FJD",
+  FKP: "FKP",
+  GBP: "GBP",
+  GEL: "GEL",
+  GHS: "GHS",
+  GIP: "GIP",
+  GMD: "GMD",
+  GNF: "GNF",
+  GTQ: "GTQ",
+  GYD: "GYD",
+  HKD: "HKD",
+  HNL: "HNL",
+  HTG: "HTG",
+  HUF: "HUF",
+  IDR: "IDR",
+  ILS: "ILS",
+  INR: "INR",
+  IQD: "IQD",
+  IRR: "IRR",
+  ISK: "ISK",
+  JMD: "JMD",
+  JOD: "JOD",
+  JPY: "JPY",
+  KES: "KES",
+  KGS: "KGS",
+  KHR: "KHR",
+  KMF: "KMF",
+  KPW: "KPW",
+  KRW: "KRW",
+  KWD: "KWD",
+  KYD: "KYD",
+  KZT: "KZT",
+  LAK: "LAK",
+  LBP: "LBP",
+  LKR: "LKR",
+  LRD: "LRD",
+  LSL: "LSL",
+  LYD: "LYD",
+  MAD: "MAD",
+  MDL: "MDL",
+  MGA: "MGA",
+  MKD: "MKD",
+  MMK: "MMK",
+  MNT: "MNT",
+  MOP: "MOP",
+  MRU: "MRU",
+  MUR: "MUR",
+  MVR: "MVR",
+  MWK: "MWK",
+  MXN: "MXN",
+  MYR: "MYR",
+  MZN: "MZN",
+  NAD: "NAD",
+  NGN: "NGN",
+  NIO: "NIO",
+  NOK: "NOK",
+  NPR: "NPR",
+  NZD: "NZD",
+  OMR: "OMR",
+  PAB: "PAB",
+  PEN: "PEN",
+  PGK: "PGK",
+  PHP: "PHP",
+  PKR: "PKR",
+  PLN: "PLN",
+  PYG: "PYG",
+  QAR: "QAR",
+  RON: "RON",
+  RSD: "RSD",
+  RUB: "RUB",
+  RWF: "RWF",
+  SAR: "SAR",
+  SBD: "SBD",
+  SCR: "SCR",
+  SDG: "SDG",
+  SEK: "SEK",
+  SGD: "SGD",
+  SHP: "SHP",
+  SLE: "SLE",
+  SOS: "SOS",
+  SRD: "SRD",
+  SSP: "SSP",
+  STN: "STN",
+  SVC: "SVC",
+  SYP: "SYP",
+  SZL: "SZL",
+  THB: "THB",
+  TJS: "TJS",
+  TMT: "TMT",
+  TND: "TND",
+  TOP: "TOP",
+  TRY: "TRY",
+  TTD: "TTD",
+  TWD: "TWD",
+  TZS: "TZS",
+  UAH: "UAH",
+  UGX: "UGX",
+  USD: "USD",
+  UYU: "UYU",
+  UZS: "UZS",
+  VED: "VED",
+  VES: "VES",
+  VND: "VND",
+  VUV: "VUV",
+  WST: "WST",
+  XAF: "XAF",
+  XCD: "XCD",
+  XCG: "XCG",
+  XOF: "XOF",
+  XPF: "XPF",
+  YER: "YER",
+  ZAR: "ZAR",
+  ZMW: "ZMW",
+  ZWG: "ZWG",
+} as const;
+
+export type HoardStackPropsDirection =
+  | (typeof HoardStackPropsDirection)[keyof typeof HoardStackPropsDirection]
+  | null;
+
+export const HoardStackPropsDirection = {
+  column: "column",
+  row: "row",
+} as const;
+
+export type HoardStackPropsGap =
+  | (typeof HoardStackPropsGap)[keyof typeof HoardStackPropsGap]
+  | null;
+
+export const HoardStackPropsGap = {
+  xs: "xs",
+  sm: "sm",
+} as const;
+
+export interface HoardStackProps {
+  direction?: HoardStackPropsDirection;
+  gap?: HoardStackPropsGap;
+  wrap?: boolean | null;
+  align?: "start" | null;
+  tone?: "muted" | null;
+}
+
+export interface HoardSectionProps {
+  title?: string | null;
+  collapsed?: boolean | null;
+}
+
+export interface HoardFieldProps {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  field: string;
+  required?: boolean | null;
+}
+
+export interface HoardFieldPart {
+  type: "field";
+  props: HoardFieldProps;
+}
+
+/**
+ * Every property the record holds, but for those placed on their own.
+ */
+export const HoardPropertiesPartValue = {
+  type: "properties",
+} as const;
+export type HoardPropertiesPart = typeof HoardPropertiesPartValue;
+
+export interface HoardPluginPartProps {
+  /** @exclusiveMinimum 0 */
+  plugin: number;
+  part: string;
+}
+
+/**
+ * A plug-in's part, as the UI kit's layouts may hold one. Hoard draws
+ * none, so a layout holding one is refused.
+ */
+export interface HoardPluginPart {
+  type: "plugin";
+  props: HoardPluginPartProps;
+}
+
+export type HoardOwnPartType = (typeof HoardOwnPartType)[keyof typeof HoardOwnPartType];
+
+export const HoardOwnPartType = {
+  status: "status",
+  dates: "dates",
+  byline: "byline",
+  notice: "notice",
+  actions: "actions",
+  relations: "relations",
+  case: "case",
+  comments: "comments",
+  rsvp: "rsvp",
+  count: "count",
+  body: "body",
+  schedule: "schedule",
+  reactions: "reactions",
+  poll: "poll",
+} as const;
+
+export interface HoardOwnPartProps {
+  required?: boolean | null;
+}
+
+export interface HoardOwnPart {
+  type: HoardOwnPartType;
+  props?: HoardOwnPartProps | null;
+}
+
+/**
+ * A bordered group of a detail's parts.
+ */
+export interface HoardSectionPartInput {
+  type: "section";
+  props?: HoardSectionProps | null;
+  /** @maxItems 200 */
+  children?: (
+    | HoardStackPartInput
+    | HoardSectionPartInput
+    | HoardFieldPart
+    | HoardPropertiesPart
+    | HoardPluginPart
+    | HoardOwnPart
+  )[];
+}
+
+export interface HoardStackPartInput {
+  type: "stack";
+  props?: HoardStackProps | null;
+  /** @maxItems 200 */
+  children?: (
+    | HoardStackPartInput
+    | HoardSectionPartInput
+    | HoardFieldPart
+    | HoardPropertiesPart
+    | HoardPluginPart
+    | HoardOwnPart
+  )[];
+}
+
+/**
+ * A record's page in three regions, each its parts in order. A region it
+ * leaves out is drawn as shipped; what it places nowhere is not shown.
+ */
+export interface HoardDetailLayoutDefinitionInput {
+  header?:
+    | (
+        | HoardStackPartInput
+        | HoardSectionPartInput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+  main?:
+    | (
+        | HoardStackPartInput
+        | HoardSectionPartInput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+  side?:
+    | (
+        | HoardStackPartInput
+        | HoardSectionPartInput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+}
+
+/**
+ * A bordered group of a detail's parts.
+ */
+export interface HoardSectionPartOutput {
+  type: "section";
+  props?: HoardSectionProps | null;
+  /** @maxItems 200 */
+  children?: (
+    | HoardStackPartOutput
+    | HoardSectionPartOutput
+    | HoardFieldPart
+    | HoardPropertiesPart
+    | HoardPluginPart
+    | HoardOwnPart
+  )[];
+}
+
+export interface HoardStackPartOutput {
+  type: "stack";
+  props?: HoardStackProps | null;
+  /** @maxItems 200 */
+  children?: (
+    | HoardStackPartOutput
+    | HoardSectionPartOutput
+    | HoardFieldPart
+    | HoardPropertiesPart
+    | HoardPluginPart
+    | HoardOwnPart
+  )[];
+}
+
+/**
+ * A record's page in three regions, each its parts in order. A region it
+ * leaves out is drawn as shipped; what it places nowhere is not shown.
+ */
+export interface HoardDetailLayoutDefinitionOutput {
+  header?:
+    | (
+        | HoardStackPartOutput
+        | HoardSectionPartOutput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+  main?:
+    | (
+        | HoardStackPartOutput
+        | HoardSectionPartOutput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+  side?:
+    | (
+        | HoardStackPartOutput
+        | HoardSectionPartOutput
+        | HoardFieldPart
+        | HoardPropertiesPart
+        | HoardPluginPart
+        | HoardOwnPart
+      )[]
+    | null;
+}
+
+/**
+ * The kinds of record people add their own properties to and lay out. A
+ * later revision adds a kind to the ``record_kind`` type, and a member here.
+ */
+export type RecordKind = (typeof RecordKind)[keyof typeof RecordKind];
+
+export const RecordKind = {
+  material: "material",
+  product: "product",
+  lot: "lot",
+} as const;
+
+export interface HoardDetailLayoutRead {
+  kind: RecordKind;
+  definition: HoardDetailLayoutDefinitionOutput;
+  updated_at: string | null;
+}
+
+export interface HoardDetailLayoutWrite {
+  kind: string;
+  definition: HoardDetailLayoutDefinitionInput;
+}
+
+export type HoardListLayoutDefinitionDisplays = {
+  [key: string]: "number" | "stars" | "bar" | "clock";
+} | null;
+
+/**
+ * How a table draws the records it lists: its columns, by field, and how
+ * it draws each scale or counter. What it leaves out is drawn as shipped.
+ */
+export interface HoardListLayoutDefinition {
+  columns?: string[] | null;
+  displays?: HoardListLayoutDefinitionDisplays;
+}
+
+export interface HoardListLayoutRead {
+  kind: "table";
+  is_default: boolean;
+  hidden: boolean;
+  definition: HoardListLayoutDefinition;
+  updated_at: string | null;
+}
+
+/**
+ * A kind's table, then its detail.
+ */
+export interface HoardLayoutSet {
+  layouts: (HoardListLayoutRead | HoardDetailLayoutRead)[];
+}
+
+export type HoardListLayoutWriteKind =
+  (typeof HoardListLayoutWriteKind)[keyof typeof HoardListLayoutWriteKind];
+
+export const HoardListLayoutWriteKind = {
+  table: "table",
+  board: "board",
+  gantt: "gantt",
+  calendar: "calendar",
+  masonry: "masonry",
+  grid: "grid",
+  timeline: "timeline",
+} as const;
+
+export interface HoardListLayoutWrite {
+  kind: HoardListLayoutWriteKind;
+  definition: HoardListLayoutDefinition;
+}
+
+export interface HoardOptionCreate {
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  label: string;
+}
+
+/**
+ * One of a select's options: its value, which records keep, and its label.
+ */
+export interface HoardPropertyOption {
+  /**
+   * @minLength 1
+   * @maxLength 64
+   * @pattern ^[A-Za-z0-9][A-Za-z0-9_\-]*$
+   */
+  value: string;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  label: string;
+  color?: string | null;
+}
+
+/**
+ * What a property holds: the types the UI kit offers people.
+ */
+export type PropertyType = (typeof PropertyType)[keyof typeof PropertyType];
+
+export const PropertyType = {
+  text: "text",
+  number: "number",
+  checkbox: "checkbox",
+  date: "date",
+  datetime: "datetime",
+  url: "url",
+  select: "select",
+  multi_select: "multi_select",
+  user_reference: "user_reference",
+  currency: "currency",
+  scale: "scale",
+  counter: "counter",
+  file: "file",
+  signature: "signature",
+} as const;
+
+export interface HoardPropertyCreate {
+  options?: HoardPropertyOption[] | null;
+  currency?: HoardCurrency | null;
+  counter?: HoardCounterSettingsInput | null;
+  kind: RecordKind;
+  /**
+   * @minLength 1
+   * @maxLength 100
+   */
+  name: string;
+  type: PropertyType;
+}
+
+export interface HoardPropertyRead {
+  options: HoardPropertyOption[] | null;
+  currency: HoardCurrency | null;
+  counter: HoardCounterSettingsOutput | null;
+  id: number;
+  kind: RecordKind;
+  name: string;
+  type: PropertyType;
+}
+
+export interface HoardPropertyStep {
+  property_id: number;
+  up: boolean;
+}
+
+/**
+ * A record's value of one property, as the UI kit draws it. The kit's
+ * summary names an owner and an install, which Hoard's properties never
+ * have.
+ */
+export interface HoardPropertySummary {
+  options: HoardPropertyOption[] | null;
+  currency: HoardCurrency | null;
+  counter: HoardCounterSettingsOutput | null;
+  property_id: number;
+  name: string;
+  type: PropertyType;
+  /** @nullable */
+  project_id: null;
+  /** @nullable */
+  collection_id: null;
+  /** @nullable */
+  install_id: null;
+  /** @nullable */
+  key: null;
+  value: unknown;
+}
+
+/**
+ * What changes: the name, and the shape its type has. Its type stays.
+ */
+export interface HoardPropertyUpdate {
+  options?: HoardPropertyOption[] | null;
+  currency?: HoardCurrency | null;
+  counter?: HoardCounterSettingsInput | null;
+  name?: string | null;
+}
+
+export interface HoardPropertyValueInput {
+  property_id: number;
+  value?: unknown;
+}
+
+/**
+ * The values a change sets, takes off and steps. Those it leaves out stay
+ * as they are.
+ */
+export interface HoardPropertyValuesSet {
+  /** @maxItems 100 */
+  values?: HoardPropertyValueInput[];
+  /** @maxItems 100 */
+  removed?: number[];
+  /** @maxItems 100 */
+  steps?: HoardPropertyStep[];
+}
+
+/**
  * A lot of an item at a location, and what is left of it.
  */
 export interface ItemLotRead {
@@ -195,6 +812,7 @@ export interface ItemLotRead {
   expires_on: string | null;
   notes: string | null;
   balance: string;
+  properties: HoardPropertySummary[];
 }
 
 /**
@@ -228,6 +846,7 @@ export interface MaterialDetail {
   supplier_contact_id: number | null;
   supplier_code: string | null;
   average_cost: string | null;
+  properties: HoardPropertySummary[];
 }
 
 export interface MaterialRead {
@@ -244,6 +863,7 @@ export interface MaterialRead {
   supplier_code: string | null;
   on_hand: string;
   average_cost: string | null;
+  properties: HoardPropertySummary[];
 }
 
 /**
@@ -320,6 +940,7 @@ export interface ProductRead {
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
+  properties: HoardPropertySummary[];
 }
 
 export interface PageProductRead {
@@ -394,6 +1015,7 @@ export interface ProductDetail {
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
+  properties: HoardPropertySummary[];
   variations: ProductVariationRead[];
 }
 
@@ -749,4 +1371,13 @@ export type ListMemberNamesParams = {
    * @maxItems 100
    */
   member_ref: string[];
+};
+
+export type SearchMemberNamesParams = {
+  /** @maxLength 100 */
+  search?: string;
+};
+
+export type ListPropertiesParams = {
+  kind: RecordKind;
 };

@@ -1,0 +1,53 @@
+{
+  "layouts": "Layouts",
+  "layoutsTitle": "Lay out {{kind}}",
+  "properties": "Properties",
+  "adminOnly": "Only a community admin adds properties.",
+  "saveFailed": "That change wasn't saved.",
+  "tableHelp": "Each record in a row, its columns in the order shown.",
+  "kinds": {
+    "material": "materials",
+    "product": "products",
+    "lot": "lots"
+  },
+  "pages": {
+    "material": "Material page",
+    "product": "Product page",
+    "lot": "Lot"
+  },
+  "pageHelp": "What a record shows on its own, and where.",
+  "shipped": "This page is shown as Hoard ships it.",
+  "titleHelp": "Its name heads the page, and always shows.",
+  "hiddenHelp": "A field placed nowhere is not shown.",
+  "parts": {
+    "actions": "Actions",
+    "byline": "Made and changed"
+  },
+  "partHelp": {
+    "actions": "Editing and removing the record.",
+    "byline": "Who made the record and last changed it, and when."
+  },
+  "lot": "Lot {{number}}",
+  "settings": {
+    "help": "What each kind of record holds beside its own fields. Add a property on a record's page.",
+    "kinds": {
+      "material": "Materials",
+      "product": "Products",
+      "lot": "Lots"
+    },
+    "empty": "None yet.",
+    "rename": "Rename",
+    "options": "Options",
+    "optionsTitle": "Options of {{name}}",
+    "removeTitle": "Delete {{name}}?",
+    "removeBody": "Every record's value of it goes with it.",
+    "removeFailed": "That property wasn't deleted."
+  },
+  "errors": {
+    "NAME_TAKEN": "Another property already has that name.",
+    "PROPERTY_INVALID": "A choice needs its options, and money its currency.",
+    "PROPERTY_UNKNOWN": "That property isn't one this record has.",
+    "VALUE_INVALID": "That value doesn't fit the property.",
+    "LAYOUT_UNKNOWN": "Hoard doesn't draw that layout."
+  }
+}

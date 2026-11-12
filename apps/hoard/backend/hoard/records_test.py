@@ -16,6 +16,10 @@ from hoard.records import (
     Material,
     Product,
     ProductImage,
+    PropertyDefinition,
+    PropertyType,
+    PropertyValue,
+    RecordKind,
     Stocktake,
     Unit,
 )
@@ -92,6 +96,22 @@ async def test_erasing_an_organization_takes_its_stock_with_it(
     )
     [row] = await start_stocktake(db, stocktake)
     await confirm_row(db, row, Decimal(7))
+    origin = PropertyDefinition(
+        organization_id=db.organization_id,
+        kind=RecordKind.MATERIAL,
+        name="Origin",
+        type=PropertyType.TEXT,
+    )
+    db.add(origin)
+    await db.flush()
+    db.add(
+        PropertyValue(
+            organization_id=db.organization_id,
+            definition_id=origin.id,
+            material_id=flour.id,
+            value="Kansas",
+        )
+    )
     await db.commit()
 
     async with serving_database.session() as session:
@@ -101,7 +121,15 @@ async def test_erasing_an_organization_takes_its_stock_with_it(
     engine = create_async_engine(database.superuser_url)
     try:
         async with engine.connect() as connection:
-            for table in ("items", "lots", "stock_levels", "adjustments", "purchases"):
+            for table in (
+                "items",
+                "lots",
+                "stock_levels",
+                "adjustments",
+                "purchases",
+                "property_definitions",
+                "property_values",
+            ):
                 remaining = await connection.execute(
                     text(f"SELECT count(*) FROM {table} WHERE organization_id = :org"),
                     {"org": db.organization_id},

@@ -5,6 +5,7 @@ import { HoardPage } from "@/components/HoardPage";
 import { CategoriesSection } from "@/features/settings/CategoriesSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
+import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
 import { UnitsSection } from "@/features/settings/UnitsSection";
 
@@ -22,6 +23,7 @@ function SettingsPage() {
         <CategoriesSection />
         <LocationsSection />
         <ReasonsSection />
+        <PropertiesSection />
       </div>
     </HoardPage>
   );
