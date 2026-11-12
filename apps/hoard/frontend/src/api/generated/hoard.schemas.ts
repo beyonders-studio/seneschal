@@ -509,6 +509,37 @@ export const DefaultReason = {
   returned_damaged: "returned_damaged",
 } as const;
 
+/**
+ * How long the organization's rules ask for records to be kept.
+ */
+export interface DocumentBackupPeriod {
+  months: number | null;
+}
+
+/**
+ * A file to link, and the one lot, product, material or base it is
+ * linked to.
+ */
+export interface DocumentCreate {
+  file_id: number;
+  lot_id?: number | null;
+  product_id?: number | null;
+  material_id?: number | null;
+  base_id?: number | null;
+}
+
+/**
+ * A linked file.
+ */
+export interface DocumentRead {
+  id: number;
+  file_id: number;
+  name: string | null;
+  file_type: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
 export type ExportFormat = (typeof ExportFormat)[keyof typeof ExportFormat];
 
 export const ExportFormat = {
@@ -535,6 +566,24 @@ export const ExportKind = {
   recipes: "recipes",
   recipe_lines: "recipe_lines",
 } as const;
+
+/**
+ * Where the member's consent stands: ``pending`` until they answer in
+ * Initiative, then ``granted`` or ``denied``.
+ */
+export interface FileConsentRead {
+  status: string;
+}
+
+/**
+ * An Initiative file, as a picker lists it.
+ */
+export interface FileFound {
+  id: number;
+  name: string;
+  file_type: string | null;
+  initiative_name: string | null;
+}
 
 export type ValidationErrorCtx = { [key: string]: unknown };
 
@@ -2524,4 +2573,16 @@ export type ExportRecallParams = {
   item_id?: number | null;
   since?: string | null;
   until?: string | null;
+};
+
+export type ListDocumentsParams = {
+  lot_id?: number | null;
+  product_id?: number | null;
+  material_id?: number | null;
+  base_id?: number | null;
+};
+
+export type SearchFilesParams = {
+  /** @maxLength 200 */
+  search?: string;
 };
