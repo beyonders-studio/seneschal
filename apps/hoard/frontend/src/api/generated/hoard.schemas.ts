@@ -382,6 +382,7 @@ export interface ItemLotRead {
   expires_on: string | null;
   notes: string | null;
   balance: string;
+  on_hold: boolean;
   properties: HoardPropertySummary[];
 }
 
@@ -402,6 +403,7 @@ export interface BaseDetail {
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
+  cure_days: number | null;
   average_cost: string | null;
   properties: HoardPropertySummary[];
 }
@@ -413,6 +415,7 @@ export interface BaseRead {
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
+  cure_days: number | null;
   on_hand: string;
   average_cost: string | null;
   properties: HoardPropertySummary[];
@@ -431,6 +434,7 @@ export interface BaseWrite {
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
+  cure_days?: number | null;
 }
 
 /**
@@ -985,6 +989,44 @@ export interface ListingRead {
 }
 
 /**
+ * A lot's open hold.
+ */
+export interface LotHoldRead {
+  id: number;
+  reason_id: number;
+  ready_on: string | null;
+  notes: string | null;
+  run_id: number | null;
+  order_id: number | null;
+  from_hold_id: number | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+/**
+ * A lot, with what it is a lot of and its open hold.
+ */
+export interface LotRead {
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+  id: number;
+  location_id: number;
+  number: string;
+  dated_on: string;
+  expires_on: string | null;
+  notes: string | null;
+  balance: string;
+  on_hold: boolean;
+  properties: HoardPropertySummary[];
+  item: AdjustmentItem;
+  product_id: number | null;
+  purchase_line_id: number | null;
+  hold: LotHoldRead | null;
+}
+
+/**
  * A material, with its stock and lots at each location.
  */
 export interface MaterialDetail {
@@ -1281,6 +1323,9 @@ export interface ProductRead {
   on_hand: string;
   default_price: string | null;
   auto_manufacture: AutoManufacture | null;
+  cure_days: number | null;
+  traceability_list: boolean;
+  rinse_off: boolean;
   properties: HoardPropertySummary[];
 }
 
@@ -1435,6 +1480,19 @@ export interface PageStorePushRead {
   total: number;
 }
 
+/**
+ * Which lot of a category's items goes first: the lot pickers are steered
+ * to, and the lot a draw nobody recorded is assumed to take.
+ */
+export type Picking = (typeof Picking)[keyof typeof Picking];
+
+export const Picking = {
+  earliest_expiry: "earliest_expiry",
+  first_in: "first_in",
+  last_in: "last_in",
+  recorded: "recorded",
+} as const;
+
 export type ProductVariationReadAttributes = { [key: string]: string };
 
 export interface ProductVariationRead {
@@ -1466,6 +1524,9 @@ export interface ProductDetail {
   on_hand: string;
   default_price: string | null;
   auto_manufacture: AutoManufacture | null;
+  cure_days: number | null;
+  traceability_list: boolean;
+  rinse_off: boolean;
   properties: HoardPropertySummary[];
   variations: ProductVariationRead[];
 }
@@ -1507,6 +1568,9 @@ export interface ProductWrite {
   low_stock_limit?: number | string | null;
   default_price?: number | string | null;
   auto_manufacture?: AutoManufacture | null;
+  cure_days?: number | null;
+  traceability_list?: boolean;
+  rinse_off?: boolean;
 }
 
 export interface PurchaseLineCreate {
@@ -1630,6 +1694,22 @@ export interface RecipeWrite {
   /** @maxItems 200 */
   lines: RecipeLineWrite[];
 }
+
+/**
+ * The rules an organization keeps records for, which an admin ticks in
+ * its settings. Each sets how long its records are kept (``hoard.backups``).
+ */
+export type Regime = (typeof Regime)[keyof typeof Regime];
+
+export const Regime = {
+  us_one_up_one_back: "us_one_up_one_back",
+  us_food_traceability: "us_food_traceability",
+  us_organic: "us_organic",
+  us_cosmetics: "us_cosmetics",
+  eu_food: "eu_food",
+  eu_cosmetics: "eu_cosmetics",
+  canada_food: "canada_food",
+} as const;
 
 export type ReportBalanceRowAttributes = { [key: string]: string };
 
@@ -1806,20 +1886,22 @@ export interface SettingsCategoryCreate {
    * @maxLength 200
    */
   name: string;
+  picking?: Picking;
 }
 
 export interface SettingsCategoryRead {
   id: number;
   kind: CategoryKind;
   name: string;
+  picking: Picking;
 }
 
+/**
+ * The category's name and picking rule: each left as it is unless sent.
+ */
 export interface SettingsCategoryUpdate {
-  /**
-   * @minLength 1
-   * @maxLength 200
-   */
-  name: string;
+  name?: string | null;
+  picking?: Picking | null;
 }
 
 export interface SettingsLocationCreate {
@@ -1828,21 +1910,25 @@ export interface SettingsLocationCreate {
    * @maxLength 200
    */
   name: string;
+  contact_id?: number | null;
 }
 
 export interface SettingsLocationRead {
   id: number;
   name: string | null;
   main: boolean;
+  contact_id: number | null;
 }
 
 export interface SettingsLocationUpdate {
   name: string | null;
+  contact_id?: number | null;
 }
 
 export interface SettingsRead {
   currency: string;
   auto_manufacture: AutoManufacture;
+  regimes: Regime[];
 }
 
 export interface SettingsReasonRead {
@@ -1878,6 +1964,7 @@ export interface SettingsUnitWrite {
 export interface SettingsUpdate {
   currency?: string | null;
   auto_manufacture?: AutoManufacture | null;
+  regimes?: Regime[] | null;
 }
 
 export type SetupAddWords = { [key: string]: string };
