@@ -15,7 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 
 from hoard import channels, listings, shipments, sync
-from hoard.channels import StoreFulfillment, StoreLine, StoreOrder, StoreProduct
+from hoard.channels import StoreFulfillment, StoreLine, StoreOrder, StoreProduct, StoreVariant
 from hoard.channels.fake import FakeConnector
 from hoard.orders import committed
 from hoard.records import (
@@ -215,6 +215,29 @@ async def test_a_store_order_commits_once_paid_and_ships_with_its_fulfillment(
     [shipment] = await _shipments(db, order)
     assert (order.status, shipment.status) == (OrderStatus.OPEN, ShipmentStatus.CANCELLED)
     assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (10, 2)
+
+
+async def test_a_line_of_an_unlisted_product_waits_for_its_listing(
+    db: WriteSession, store: Store, fake: FakeConnector, sold: Sold
+):
+    tea = await sold("Tea", "v-tea")
+    fake.shop_products["p-v-mug"] = StoreProduct(
+        id="p-v-mug", title="Mug", variants=[StoreVariant(id="v-mug", title="Mug", sku="MUG")]
+    )
+    found = _order(_line("l-1", "v-tea", "1"), _line("l-2", "v-mug", "2"), paid=True)
+
+    # The mug matches nothing: the order is copied without it, and its listing
+    # waits to be linked.
+    order = await sync.copy_order(db, store, fake, found)
+    assert [line.item_id for line in await _lines(db, order)] == [tea.id]
+    mug = (await db.exec(select(Listing).where(Listing.variant_id == "v-mug"))).one()
+    assert mug.item_id is None
+
+    # Linked, the next copy of the order brings the line in.
+    _, made = await add_product(db, Product(name="Mug"))
+    await listings.link(db, mug, made.id)
+    order = await sync.copy_order(db, store, fake, found)
+    assert [line.item_id for line in await _lines(db, order)] == [tea.id, made.id]
 
 
 async def test_a_bundle_is_split_into_its_parts(
