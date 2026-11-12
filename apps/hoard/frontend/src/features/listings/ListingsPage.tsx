@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Store } from "lucide-react";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ListingRead } from "@/api/generated/hoard.schemas";
@@ -218,12 +218,9 @@ function LinkForm({ listing, onDone }: { listing: ListingRead; onDone: () => voi
       onError: (error) => toast.error(errorMessage(error, t, "listings.saveFailed")),
     },
   });
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    link.mutate({ listingId: listing.id, data: { item_id: item } });
-  };
+  // Not a form: the item field's own buttons would submit one.
   return (
-    <form onSubmit={submit}>
+    <>
       <DialogHeader>
         <DialogTitle>
           {t("listings.linkTitle", { title: listing.title ?? listing.product_id })}
@@ -240,10 +237,13 @@ function LinkForm({ listing, onDone }: { listing: ListingRead; onDone: () => voi
         />
       </DialogBody>
       <DialogFooter>
-        <Button type="submit" pending={link.isPending}>
+        <Button
+          pending={link.isPending}
+          onClick={() => link.mutate({ listingId: listing.id, data: { item_id: item } })}
+        >
           {t("hoard:common.save")}
         </Button>
       </DialogFooter>
-    </form>
+    </>
   );
 }
