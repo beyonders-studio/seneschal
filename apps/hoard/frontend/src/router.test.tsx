@@ -2,6 +2,7 @@ import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { baseDetail, materialDetail, productDetail, SETTINGS } from "@/features/items/testing";
+import { orderRead } from "@/features/orders/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
 const NONE = { status: 200, data: { items: [], total: 0 } };
@@ -158,15 +159,17 @@ describe("Hoard's pages", () => {
     ["/orders", "Orders", "No orders yet"],
     ["/orders/listings", "Listings", "No listings yet"],
   ])("%s opens under Orders, on its tab", async (path, tab, empty) => {
-    await openSignedIn(path);
+    await openSignedIn(path, signedIn(), { "GET /api/v1/orders": NONE });
     expect(await selectedTab("Orders")).toBe(tab);
     await screen.findByText(empty);
   });
 
   it("/orders/3 opens one order, under its tab", async () => {
-    await openSignedIn("/orders/3");
+    await openSignedIn("/orders/3", signedIn(), {
+      "GET /api/v1/orders/3": { status: 200, data: orderRead({ id: 3, code: "O-0003" }) },
+    });
     expect(await selectedTab("Orders")).toBe("Orders");
-    await screen.findByRole("heading", { level: 2, name: "Order" });
+    await screen.findByRole("heading", { level: 2, name: /Order O-0003/ });
   });
 
   it("/reports opens its page", async () => {

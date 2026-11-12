@@ -1029,6 +1029,170 @@ export interface MemberName {
   name: string | null;
 }
 
+export interface OrderLineCreate {
+  item_id: number;
+  quantity: number | string;
+  price?: number | string | null;
+}
+
+export interface OrderCreate {
+  code?: string | null;
+  ordered_on?: string | null;
+  due_on?: string | null;
+  customer_contact_id: number;
+  location_id?: number | null;
+  paid?: boolean;
+  shipping?: number | string | null;
+  tax?: number | string | null;
+  discount?: number | string | null;
+  delivery_address?: string | null;
+  /** @maxItems 500 */
+  lines?: OrderLineCreate[];
+}
+
+export interface OrderLineRead {
+  id: number;
+  item: AdjustmentItem;
+  quantity: string;
+  price: string;
+  bundle_line_id: number | null;
+  held: string;
+  shipped: string;
+  production_run_id: number | null;
+  selling_plan: string | null;
+}
+
+/**
+ * A change to a line: only what is sent.
+ */
+export interface OrderLineUpdate {
+  quantity?: number | string | null;
+  price?: number | string | null;
+}
+
+/**
+ * A lot a shipment line draws, or may.
+ */
+export interface OrderLot {
+  id: number;
+  number: string;
+  expires_on: string | null;
+  balance: string;
+}
+
+/**
+ * Where an order stands. Only an open order commits stock.
+ */
+export type OrderStatus = (typeof OrderStatus)[keyof typeof OrderStatus];
+
+export const OrderStatus = {
+  pending: "pending",
+  open: "open",
+  shipped: "shipped",
+  cancelled: "cancelled",
+} as const;
+
+/**
+ * Where a shipment stands. Only a shipped one has moved stock.
+ */
+export type ShipmentStatus = (typeof ShipmentStatus)[keyof typeof ShipmentStatus];
+
+export const ShipmentStatus = {
+  pending: "pending",
+  shipped: "shipped",
+  cancelled: "cancelled",
+} as const;
+
+/**
+ * What came back of a shipment line.
+ */
+export interface OrderReturnRead {
+  id: number;
+  quantity: string;
+  dated_on: string;
+  damaged: boolean;
+}
+
+export interface OrderShipmentLineRead {
+  id: number;
+  order_line_id: number;
+  item: AdjustmentItem;
+  quantity: string;
+  lot: OrderLot | null;
+  assumed: boolean;
+  lots: OrderLot[];
+  returns: OrderReturnRead[];
+}
+
+export interface OrderShipmentRead {
+  id: number;
+  location_id: number;
+  status: ShipmentStatus;
+  shipped_on: string | null;
+  external_id: string | null;
+  carrier_contact_id: number | null;
+  tracking: string | null;
+  delivery_address: string | null;
+  reference: string | null;
+  lines: OrderShipmentLineRead[];
+}
+
+export interface OrderRead {
+  id: number;
+  code: string;
+  store_id: number | null;
+  external_number: string | null;
+  customer_contact_id: number | null;
+  location_id: number;
+  ordered_on: string;
+  due_on: string | null;
+  paid: boolean;
+  status: OrderStatus;
+  total: string;
+  external_id: string | null;
+  initiative_id: number | null;
+  shipping: string;
+  tax: string;
+  discount: string;
+  delivery_address: string | null;
+  lines: OrderLineRead[];
+  shipments: OrderShipmentRead[];
+  created_at: string;
+  created_by: string | null;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export interface OrderSummary {
+  id: number;
+  code: string;
+  store_id: number | null;
+  external_number: string | null;
+  customer_contact_id: number | null;
+  location_id: number;
+  ordered_on: string;
+  due_on: string | null;
+  paid: boolean;
+  status: OrderStatus;
+  total: string;
+}
+
+/**
+ * A change to an order: only what is sent.
+ */
+export interface OrderUpdate {
+  code?: string | null;
+  ordered_on?: string | null;
+  due_on?: string | null;
+  customer_contact_id?: number | null;
+  location_id?: number | null;
+  paid?: boolean | null;
+  shipping?: number | string | null;
+  tax?: number | string | null;
+  discount?: number | string | null;
+  delivery_address?: string | null;
+}
+
 export interface PageAdjustmentRead {
   items: AdjustmentRead[];
   total: number;
@@ -1041,6 +1205,11 @@ export interface PageBaseRead {
 
 export interface PageMaterialRead {
   items: MaterialRead[];
+  total: number;
+}
+
+export interface PageOrderSummary {
+  items: OrderSummary[];
   total: number;
 }
 
@@ -1603,6 +1772,53 @@ export interface SetupsRead {
   started: boolean;
 }
 
+export interface ShipmentLineCreate {
+  order_line_id: number;
+  quantity?: number | string | null;
+  lot_id?: number | null;
+}
+
+export interface ShipmentCreate {
+  order_id: number;
+  location_id?: number | null;
+  /** @maxItems 500 */
+  lines?: ShipmentLineCreate[];
+  carrier_contact_id?: number | null;
+  tracking?: string | null;
+  delivery_address?: string | null;
+  reference?: string | null;
+}
+
+/**
+ * A change to a pending shipment's line: only what is sent.
+ */
+export interface ShipmentLineUpdate {
+  quantity?: number | string | null;
+  lot_id?: number | null;
+}
+
+export interface ShipmentReturnCreate {
+  quantity: number | string;
+  dated_on?: string | null;
+  damaged?: boolean;
+}
+
+export interface ShipmentShip {
+  shipped_on?: string | null;
+}
+
+/**
+ * A change to a shipment: only what is sent. Its location changes only
+ * while it is pending; the rest, whenever.
+ */
+export interface ShipmentUpdate {
+  location_id?: number | null;
+  carrier_contact_id?: number | null;
+  tracking?: string | null;
+  delivery_address?: string | null;
+  reference?: string | null;
+}
+
 export interface StocktakeCreate {
   kind: CategoryKind;
   location_id?: number | null;
@@ -1763,6 +1979,17 @@ export type ReadRecipeParams = {
 
 export type ListRunsParams = {
   status?: RunStatus | null;
+  /** @minimum 0 */
+  offset?: number;
+  /**
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+};
+
+export type ListOrdersParams = {
+  status?: OrderStatus | null;
   /** @minimum 0 */
   offset?: number;
   /**
