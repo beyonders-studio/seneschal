@@ -1,6 +1,18 @@
 {
   "autoManufacture": {
     "title": "Auto-manufacture",
-    "inherits": "Store orders make this product as your settings say."
+    "description": "When a store order is paid, Hoard can make what it sells at once, from its recipe, by a production run that completes as it opens.",
+    "storeOrders": "Store orders",
+    "inherit": {
+      "settings": "As your settings say: {{choice}}",
+      "product": "As the product says: {{choice}}"
+    },
+    "choices": {
+      "off": "Make nothing",
+      "always": "Always make what is sold",
+      "out_of_stock": "Make only what is out of stock"
+    },
+    "saved": "Auto-manufacture saved.",
+    "saveFailed": "Couldn't save auto-manufacture."
   }
 }
