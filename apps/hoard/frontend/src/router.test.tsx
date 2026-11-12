@@ -29,6 +29,7 @@ const STOCK = {
   "GET /api/v1/products/3": { status: 200, data: productDetail({ id: 3 }) },
   "GET /api/v1/products/3/images": { status: 200, data: [] },
   "GET /api/v1/lots/3": { status: 200, data: lotRead() },
+  "GET /api/v1/trace/lots/3": { status: 200, data: { back: [], forward: [] } },
   "GET /api/v1/purchases/3": {
     status: 200,
     data: {
