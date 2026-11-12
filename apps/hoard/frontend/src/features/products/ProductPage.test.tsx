@@ -13,6 +13,7 @@ const variation = (fields: Partial<ProductVariationRead>): ProductVariationRead 
   is_default: true,
   price: null,
   average_cost: null,
+  auto_manufacture: null,
   on_hand: "0",
   stock: [],
   lots: [],

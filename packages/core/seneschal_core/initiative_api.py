@@ -177,6 +177,17 @@ class InitiativeApi:
             {"event_type": event_type, "payload": dict(payload), "initiative_id": initiative_id},
         )
 
+    async def installation_config(self, community_ref: str) -> dict[str, Any]:
+        """The install's configuration in the community, as Initiative hands it
+        over: ``connections``, each static connection's values by its id, the
+        secrets among them decrypted, beside the community's reference, the
+        install, its ``config_state`` and each member's connections. Never a
+        flow's tokens."""
+        answer = await self._request(
+            (community_ref, None), "GET", f"{INSTALLATION_PREFIX}/config", None, None
+        )
+        return answer if isinstance(answer, dict) else {}
+
     async def write_metadata(
         self,
         community_ref: str,

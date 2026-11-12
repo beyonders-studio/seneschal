@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { ExportFormat, ExportKind } from "@/api/generated/hoard.schemas";
 import { useReadReorderReport, useReadValuationReport } from "@/api/generated/reports/reports";
+import { CostOfGoodsSection } from "@/features/reports/CostOfGoodsSection";
 import { errorMessage } from "@/lib/errors";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
@@ -32,6 +33,7 @@ export function ReportsPage() {
     <div className="flex flex-col gap-6">
       <ReorderReport />
       {seesCosts && <ValuationReport />}
+      {seesCosts && <CostOfGoodsSection />}
       <ExportLinks />
     </div>
   );

@@ -1,0 +1,9 @@
+{
+  "list": {
+    "emptyTitle": "No orders yet",
+    "emptyBody": "Your orders will be here: those you make for a customer, and those your stores send, with what each has shipped."
+  },
+  "order": {
+    "pageTitle": "Order"
+  }
+}

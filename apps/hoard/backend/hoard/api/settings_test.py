@@ -11,12 +11,19 @@ from seneschal_core.db import WriteSession
 
 async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db: WriteSession):
     await sign_in(client)
-    assert (await client.get("/api/v1/settings")).json() == {"currency": "USD"}
+    assert (await client.get("/api/v1/settings")).json() == {
+        "currency": "USD",
+        "auto_manufacture": "off",
+    }
 
     db.add(OrganizationSettings(organization_id=db.organization_id, currency="EUR"))
     await db.commit()
+    assert (await client.get("/api/v1/settings")).json()["currency"] == "EUR"
 
-    assert (await client.get("/api/v1/settings")).json() == {"currency": "EUR"}
+    # A change leaves what it does not send as it is.
+    await sign_in(client, admin=True)
+    changed = await client.put("/api/v1/settings", json={"auto_manufacture": "out_of_stock"})
+    assert changed.json() == {"currency": "EUR", "auto_manufacture": "out_of_stock"}
 
 
 #: A change to each kind of setting, as a method, path and body.

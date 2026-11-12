@@ -44,5 +44,8 @@
   },
   "errors": {
     "COSTS_ONLY": "Only members who can see costs can see what stock is worth."
+  },
+  "costOfGoods": {
+    "title": "Cost of goods"
   }
 }

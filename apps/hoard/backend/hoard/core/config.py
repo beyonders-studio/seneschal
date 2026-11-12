@@ -34,6 +34,10 @@ class Settings(DatabaseSettings):
     #: Initiative's API, where its plug-in platform publishes its keys:
     #: ``https://initiative.example.com/api/v1``, or its address inside the deployment.
     initiative_api_url: str
+    #: Initiative's API as stores reach it, under which Initiative receives
+    #: Hoard's webhooks: ``https://initiative.example.com/api/v1``. Unset, it
+    #: is :attr:`initiative_api_url`.
+    initiative_public_url: str | None = None
     #: Where people's browsers load Hoard's pages. An ``https`` origin marks the
     #: session cookie secure and sends it to the pages Initiative frames.
     app_origin: str = "http://localhost:8300"
@@ -60,10 +64,20 @@ class Settings(DatabaseSettings):
             load_private_key(value)
         return value
 
-    @field_validator("plugin_private_key_pem", "entitlement_issuer_key_pem", mode="before")
+    @field_validator(
+        "plugin_private_key_pem",
+        "entitlement_issuer_key_pem",
+        "initiative_public_url",
+        mode="before",
+    )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         return value.strip() or None if isinstance(value, str) else value
+
+    @property
+    def public_api_url(self) -> str:
+        """Initiative's API as stores reach it."""
+        return self.initiative_public_url or self.initiative_api_url
 
     @property
     def cookie_secure(self) -> bool:

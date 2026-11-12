@@ -1,0 +1,21 @@
+{
+  "section": {
+    "title": "Stores"
+  },
+  "product": {
+    "title": "In your stores",
+    "empty": "This product isn't listed in a connected store."
+  },
+  "listings": {
+    "emptyTitle": "No listings yet",
+    "emptyBody": "Once a store is connected, its products will be here, each with the product or variation it sells."
+  },
+  "errors": {
+    "STORE_ADDRESS_INVALID": "That isn't the store's own address. Use the one ending in myshopify.com.",
+    "STORE_CREDENTIALS_REFUSED": "The store didn't accept the client ID and secret.",
+    "STORE_SCOPES_MISSING": "The store's app is missing permissions Hoard needs: {{detail}}.",
+    "STORE_UNREACHABLE": "The store couldn't be reached. Try saving the connection again in a moment.",
+    "STORE_SUBSCRIPTION_REFUSED": "The store didn't let Hoard hear about its orders and products.",
+    "CHANNEL_UNSUPPORTED": "Hoard can't connect to this kind of store yet."
+  }
+}

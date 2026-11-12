@@ -25,6 +25,7 @@ from hoard.stock import (
     add_material,
     add_product,
     adjust,
+    draw_lots,
     main_location,
     on_hand,
 )
@@ -105,3 +106,21 @@ async def test_a_simple_product_has_its_one_default_variation(db: WriteSession):
     product, variation = await add_product(db, Product(name="Chai"))
     variations = (await db.exec(select(Variation).where(Variation.product_id == product.id))).all()
     assert [(v.id, v.is_default, v.attributes) for v in variations] == [(variation.id, True, {})]
+
+
+async def test_lots_are_drawn_by_earliest_expiry_then_first_in_and_no_further_than_they_hold(
+    db: WriteSession, main: Location, material, lot
+):
+    flour = await material("Flour")
+    late = await lot(flour.id, "A", "3", date(2026, 11, 1), expires_on=date(2026, 12, 10))
+    soon = await lot(flour.id, "B", "2", date(2026, 11, 2), expires_on=date(2026, 12, 5))
+    lasting = await lot(flour.id, "C", "2", date(2026, 10, 1))
+    drawn: dict[int, Decimal] = {}
+
+    first = await draw_lots(db, flour.id, main.id, Decimal(4), drawn)
+    rest = await draw_lots(db, flour.id, main.id, Decimal(5), drawn)
+
+    assert first == [(soon.id, 2), (late.id, 2)]
+    # What was drawn already is not drawn again; what no lot holds draws on none.
+    assert rest == [(late.id, 1), (lasting.id, 2), (None, 2)]
+    assert drawn == {soon.id: 2, late.id: 3, lasting.id: 2}

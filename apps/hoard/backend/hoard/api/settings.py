@@ -23,8 +23,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import stock
 from hoard.api.deps import AdminDep, HoardError
 from hoard.records import (
-    DEFAULT_CURRENCY,
     AdjustmentReason,
+    AutoManufacture,
     Category,
     CategoryKind,
     DefaultReason,
@@ -77,10 +77,15 @@ Name = Annotated[str, Field(min_length=1, max_length=200)]
 class SettingsRead(BaseModel):
     #: The ISO 4217 code every cost and price is in.
     currency: str
+    #: Whether a store order makes what it sells, where its product says nothing.
+    auto_manufacture: AutoManufacture
 
 
 class SettingsUpdate(BaseModel):
-    currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")]
+    """The settings to change: each left as it is unless sent."""
+
+    currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
+    auto_manufacture: AutoManufacture | None = None
 
 
 class SettingsUnitRead(BaseModel):
@@ -207,7 +212,7 @@ async def _made_by_hoard(
 async def read_settings(db: OrganizationSessionDep) -> SettingsRead:
     """The organization's settings, each its default until it is changed."""
     settings = (await db.exec(select(OrganizationSettings))).first()
-    return SettingsRead(currency=settings.currency if settings else DEFAULT_CURRENCY)
+    return _settings(settings or OrganizationSettings())
 
 
 @router.put("", responses=_CHANGE)
@@ -218,10 +223,14 @@ async def update_settings(
     settings = (await db.exec(select(OrganizationSettings))).first() or OrganizationSettings(
         organization_id=db.organization_id
     )
-    settings.currency = body.currency
+    settings.sqlmodel_update(body.model_dump(exclude_none=True))
     db.add(settings)
     await db.commit()
-    return SettingsRead(currency=settings.currency)
+    return _settings(settings)
+
+
+def _settings(settings: OrganizationSettings) -> SettingsRead:
+    return SettingsRead(currency=settings.currency, auto_manufacture=settings.auto_manufacture)
 
 
 @router.get("/units", responses=_READ)

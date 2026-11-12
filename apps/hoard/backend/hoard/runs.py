@@ -38,7 +38,7 @@ from hoard.records import (
     RecipeLine,
     RunStatus,
 )
-from hoard.stock import StockError
+from hoard.stock import StockError, draw_lots
 from seneschal_core.db import WriteSession
 
 
@@ -184,28 +184,14 @@ async def _assume_lots(db: WriteSession, run: ProductionRun) -> list[ProductionR
         if line.lot_id is not None:
             picked.append(line)
             continue
-        lots = await db.exec(
-            select(Lot)
-            .where(Lot.item_id == line.item_id, Lot.location_id == run.location_id)
-            .order_by(col(Lot.expires_on).asc().nulls_last(), col(Lot.dated_on), col(Lot.id))
-            .execution_options(populate_existing=True)
-        )
-        need, current = line.quantity, line
-        for lot in lots.all():
-            take = min(need, lot.balance - drawn[lot.id])
-            if take <= 0:
-                continue
+        current: ProductionRunLine | None = line
+        for lot_id, take in await draw_lots(
+            db, line.item_id, run.location_id, line.quantity, drawn
+        ):
             current = current or _line(db, run, line)
-            current.lot_id, current.quantity, current.assumed = lot.id, take, True
+            current.lot_id, current.quantity, current.assumed = lot_id, take, lot_id is not None
             picked.append(current)
-            drawn[lot.id] += take
-            need -= take
             current = None
-        if need > 0:
-            # More than its lots hold: the rest draws on no lot.
-            current = current or _line(db, run, line)
-            current.quantity = need
-            picked.append(current)
     await db.flush()
     return picked
 

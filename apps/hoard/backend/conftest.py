@@ -19,8 +19,21 @@ from hoard.app import create_app
 from hoard.core.config import Settings
 from hoard.db import upgrade
 from hoard.purchases import receive_line
-from hoard.records import Base, Location, Material, Purchase, PurchaseLine, Unit
-from hoard.stock import add_base, add_material, main_location
+from hoard.records import (
+    Adjustment,
+    AdjustmentKind,
+    Base,
+    Location,
+    Lot,
+    Material,
+    Order,
+    OrderLine,
+    OrderStatus,
+    Purchase,
+    PurchaseLine,
+    Unit,
+)
+from hoard.stock import add_base, add_material, adjust, main_location
 from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
@@ -138,6 +151,86 @@ def buy(db: WriteSession, main: Location) -> Callable[..., Awaitable[Purchase]]:
         return purchase
 
     return buy
+
+
+@pytest.fixture
+def lot(db: WriteSession, main: Location) -> Callable[..., Awaitable[Lot]]:
+    """Add a lot of an item at the main location, unless another is named,
+    starting with ``quantity`` at ``unit_cost`` each."""
+
+    async def lot(
+        item_id: int,
+        number: str,
+        quantity: str,
+        dated_on: date = date(2026, 11, 1),
+        *,
+        expires_on: date | None = None,
+        unit_cost: str = "1",
+        location: Location | None = None,
+    ) -> Lot:
+        made = Lot(
+            organization_id=db.organization_id,
+            item_id=item_id,
+            location_id=(location or main).id,
+            number=number,
+            dated_on=dated_on,
+            expires_on=expires_on,
+        )
+        db.add(made)
+        await db.flush()
+        await adjust(
+            db,
+            Adjustment(
+                item_id=item_id,
+                location_id=made.location_id,
+                lot_id=made.id,
+                kind=AdjustmentKind.STARTING,
+                dated_on=dated_on,
+                change=Decimal(quantity),
+                unit_cost=Decimal(unit_cost),
+            ),
+        )
+        await db.refresh(made)
+        return made
+
+    return lot
+
+
+#: A line to sell: the item, its quantity and its price.
+Sale = tuple[int, str, str]
+
+
+@pytest.fixture
+def sell(db: WriteSession, main: Location) -> Callable[..., Awaitable[Order]]:
+    """Add an order by hand from the main location, open unless another
+    status is named, with ``lines``."""
+
+    async def sell(*lines: Sale, status: OrderStatus = OrderStatus.OPEN, **fields: Any) -> Order:
+        order = Order(
+            organization_id=db.organization_id,
+            code=f"O-{secrets.token_hex(3)}",
+            customer_contact_id=fields.pop("customer_contact_id", 1),
+            location_id=fields.pop("location_id", main.id),
+            ordered_on=fields.pop("ordered_on", date(2026, 11, 2)),
+            status=status,
+            **fields,
+        )
+        db.add(order)
+        await db.flush()
+        for item_id, quantity, price in lines:
+            db.add(
+                OrderLine(
+                    organization_id=db.organization_id,
+                    order_id=order.id,
+                    item_id=item_id,
+                    quantity=Decimal(quantity),
+                    price=Decimal(price),
+                )
+            )
+        await db.flush()
+        return order
+
+    return sell
 
 
 @pytest.fixture

@@ -79,7 +79,9 @@
       "purchase": "Purchase",
       "stocktake": "Stocktake",
       "manual": "By hand",
-      "production": "Production run"
+      "production": "Production run",
+      "shipment": "Shipment",
+      "return": "Return"
     }
   },
   "stocktakes": {

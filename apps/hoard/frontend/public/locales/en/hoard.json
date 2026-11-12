@@ -24,6 +24,12 @@
     "runs": "Runs",
     "recipes": "Recipes"
   },
+  "orders": {
+    "title": "Orders",
+    "tabs": "Order records",
+    "orders": "Orders",
+    "listings": "Listings"
+  },
   "reports": {
     "title": "Reports"
   },

@@ -3,12 +3,12 @@
 An item's average is derived from its adjustments, in date order:
 
 * stock coming in at a cost, a purchase's landed cost, a starting
-  adjustment's, or a production run's output, moves the average toward that
-  cost by quantity;
+  adjustment's, a production run's output, or a return at what it shipped
+  at, moves the average toward that cost by quantity;
 * stock coming in by any other adjustment, a stocktake's included, comes in at
   zero cost and lowers the average;
-* stock going out leaves the average as it is, and records it as what went out
-  cost at the time;
+* stock going out, a shipment's included, leaves the average as it is, and
+  records it as what went out cost at the time;
 * stock reaching zero starts the average again from zero cost.
 
 A completed production run costs what it consumed at each item's average on
@@ -19,7 +19,8 @@ is flagged ``uncosted``.
 A cost is never typed in except on a starting adjustment. Editing a purchase or
 a starting adjustment re-derives everything after it, and on through the runs
 that consumed the item to what they made, so any service that changes an
-item's adjustments ends with :func:`rederive`.
+item's adjustments ends with :func:`rederive`, which also notes that the
+item's stock changed, for its listings (``hoard.listings``).
 """
 
 from __future__ import annotations
@@ -41,7 +42,12 @@ from seneschal_core.db import WriteSession
 
 #: The kinds whose incoming stock brings its own unit cost.
 COSTED_KINDS = frozenset(
-    {AdjustmentKind.STARTING, AdjustmentKind.PURCHASE, AdjustmentKind.PRODUCTION}
+    {
+        AdjustmentKind.STARTING,
+        AdjustmentKind.PURCHASE,
+        AdjustmentKind.PRODUCTION,
+        AdjustmentKind.RETURN,
+    }
 )
 
 
@@ -131,7 +137,8 @@ async def rederive(
     """Re-derive an item's average unit cost, and the unit cost at the time on
     each adjustment that does not bring its own, from all its adjustments; then
     each run that consumed it, and what that run made, in turn. Records the
-    item's stock falling low. Answers the average."""
+    item's stock falling low, and notes that it changed for the item's
+    listings. Answers the average."""
     average, runs = await _derive(db, item_id)
     # The items this cascade is deriving, which a run making one again does not re-enter.
     made = _made | {item_id}
@@ -139,10 +146,11 @@ async def rederive(
         output = await _cost_run(db, run_id)
         if output is not None and output not in made:
             await rederive(db, output, _made=made)
-    # Imported here: ``hoard.events`` reads stock through ``hoard.stock``, which costs through this.
-    from hoard import events
+    # Imported here: each reads stock through ``hoard.stock``, which costs through this.
+    from hoard import events, listings
 
     await events.record_if_low(db, item_id)
+    await listings.note_changed(db, item_id)
     return average
 
 

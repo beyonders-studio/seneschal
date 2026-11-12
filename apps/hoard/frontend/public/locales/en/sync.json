@@ -1,0 +1,6 @@
+{
+  "autoManufacture": {
+    "title": "Auto-manufacture",
+    "inherits": "Store orders make this product as your settings say."
+  }
+}
