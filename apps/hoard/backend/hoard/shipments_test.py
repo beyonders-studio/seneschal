@@ -106,20 +106,21 @@ async def test_shipping_draws_lots_and_unshipping_takes_it_back(
         await shipments.unpost(db, shipment)
     assert refused.value.code is shipments.ShipmentError.SHIPMENT_RETURNED
 
-    # What comes back comes in at its own cost, not at none.
-    db.add(
-        Adjustment(
-            organization_id=db.organization_id,
-            item_id=chai.id,
-            location_id=main.id,
-            kind=AdjustmentKind.RETURN,
-            dated_on=returned.dated_on,
-            change=Decimal(1),
-            unit_cost=Decimal(10),
-            return_line_id=returned.id,
-        )
+    # What comes back comes in at what its shipment went out at, not at none
+    # and not at what it was recorded at.
+    came_back = Adjustment(
+        organization_id=db.organization_id,
+        item_id=chai.id,
+        location_id=main.id,
+        kind=AdjustmentKind.RETURN,
+        dated_on=returned.dated_on,
+        change=Decimal(1),
+        unit_cost=Decimal(10),
+        return_line_id=returned.id,
     )
-    assert await costing.rederive(db, chai.id) == Decimal("4.696969")
+    db.add(came_back)
+    assert await costing.rederive(db, chai.id) == Decimal("3.636363")
+    assert came_back.unit_cost == Decimal("3.636363")
 
 
 async def _refused(making) -> shipments.ShipmentError | orders.OrderError:

@@ -6,10 +6,11 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
+from sqlmodel import select
 
-from hoard import costing, listings
-from hoard.records import Adjustment, AdjustmentKind, Item, Location
-from hoard.stock import adjust
+from hoard import costing, listings, shipments
+from hoard.records import Adjustment, AdjustmentKind, Item, Location, Product
+from hoard.stock import add_product, adjust
 from seneschal_core.db import WriteSession
 
 
@@ -77,6 +78,26 @@ async def test_a_starting_cost_is_corrected_by_editing_it(
     starting.unit_cost = Decimal(5)
     await costing.rederive(db, sugar.id)
     assert (await _average(db, sugar.id), used.unit_cost) == (5, 5)
+
+
+async def test_a_return_follows_what_its_shipment_went_out_at(
+    db: WriteSession, main: Location, lot, sell
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    await lot(chai.id, "C-1", "10", unit_cost="3")
+    shipment = await shipments.add(db, await sell((chai.id, "4", "9")), main.id, [])
+    await shipments.ship(db, shipment, date(2026, 11, 5))
+    [line] = await shipments.lines(db, shipment.id)
+    back = await shipments.record_return(db, line, Decimal(1), date(2026, 11, 7), damaged=False)
+    returned = await db.exec(select(Adjustment).where(Adjustment.return_line_id == back.id))
+    came_back = returned.one()
+    assert came_back.unit_cost == 3
+
+    starting = await db.exec(select(Adjustment).where(Adjustment.kind == AdjustmentKind.STARTING))
+    starting.one().unit_cost = Decimal(5)
+    await costing.rederive(db, chai.id)
+    await db.refresh(came_back)
+    assert (came_back.unit_cost, await _average(db, chai.id)) == (5, 5)
 
 
 async def test_each_item_re_derived_is_noted_for_its_listings(

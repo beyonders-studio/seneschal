@@ -3,8 +3,8 @@
 An item's average is derived from its adjustments, in date order:
 
 * stock coming in at a cost, a purchase's landed cost, a starting
-  adjustment's, a production run's output, or a return at what it shipped
-  at, moves the average toward that cost by quantity;
+  adjustment's, a production run's output, or a return at what its shipment
+  went out at, moves the average toward that cost by quantity;
 * stock coming in by any other adjustment, a stocktake's included, comes in at
   zero cost and lowers the average;
 * stock going out, a shipment's included, leaves the average as it is, and
@@ -17,7 +17,8 @@ A run that consumed an item with no cost on its date, such as one out of stock,
 is flagged ``uncosted``.
 
 A cost is never typed in except on a starting adjustment. Editing a purchase or
-a starting adjustment re-derives everything after it, and on through the runs
+a starting adjustment re-derives everything after it, what comes back of a
+shipment following what the shipment now went out at, and on through the runs
 that consumed the item to what they made, so any service that changes an
 item's adjustments ends with :func:`rederive`, which also notes that the
 item's stock changed, for its listings (``hoard.listings``).
@@ -37,6 +38,8 @@ from hoard.records import (
     Item,
     ProductionRun,
     ProductionRunLine,
+    ReturnLine,
+    ShipmentLine,
 )
 from seneschal_core.db import WriteSession
 
@@ -71,12 +74,25 @@ async def _derive(db: WriteSession, item_id: int) -> tuple[Decimal, set[int]]:
         .order_by(col(Adjustment.dated_on), col(Adjustment.id))
         .execution_options(populate_existing=True)
     )
+    # The shipment line each of the item's returns came back from.
+    returned = await db.exec(
+        select(ReturnLine.id, ReturnLine.shipment_line_id)
+        .join(ShipmentLine, col(ShipmentLine.id) == ReturnLine.shipment_line_id)
+        .where(ShipmentLine.item_id == item_id)
+    )
+    shipped_from = dict(returned.all())
+    went_out: dict[int, Decimal] = {}
     quantity = average = Decimal(0)
     runs: set[int] = set()
     for adjustment in adjustments.all():
         if adjustment.change > 0:
             if adjustment.kind not in COSTED_KINDS:
                 adjustment.unit_cost = Decimal(0)
+            elif adjustment.kind is AdjustmentKind.RETURN:
+                # Back at what its shipment went out at, once that is derived.
+                shipped = shipped_from.get(adjustment.return_line_id or 0)
+                if shipped in went_out:
+                    adjustment.unit_cost = went_out[shipped]
             held = max(quantity, Decimal(0))
             average = (
                 (held * average + adjustment.change * adjustment.unit_cost)
@@ -86,6 +102,8 @@ async def _derive(db: WriteSession, item_id: int) -> tuple[Decimal, set[int]]:
             if adjustment.production_run_id is not None and adjustment.unit_cost != average:
                 runs.add(adjustment.production_run_id)
             adjustment.unit_cost = average
+            if adjustment.shipment_line_id is not None:
+                went_out[adjustment.shipment_line_id] = average
         quantity += adjustment.change
         if quantity <= 0:
             average = Decimal(0)
