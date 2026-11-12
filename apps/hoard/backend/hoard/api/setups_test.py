@@ -1,4 +1,5 @@
-"""Starting setups: offered to everyone, added by a community admin."""
+"""Starting setups: offered to everyone, added by a community admin, who may
+start blank instead."""
 
 from __future__ import annotations
 
@@ -22,9 +23,21 @@ async def test_an_admin_adds_a_setup_in_their_own_words(client, sign_in):
     assert {"g", "fl_oz", "bottle_750ml"} <= {unit["name"] for unit in units}
 
 
-async def test_a_member_does_not_add_a_setup(client, sign_in):
+async def test_a_member_neither_adds_a_setup_nor_starts_blank(client, sign_in):
     await sign_in(client)
 
     answer = await client.post("/api/v1/setups/drinks/add", json={"words": {}})
+    blank = await client.post("/api/v1/setups/blank")
 
     assert (answer.status_code, answer.json()) == (403, {"detail": "ADMIN_ONLY"})
+    assert (blank.status_code, blank.json()) == (403, {"detail": "ADMIN_ONLY"})
+
+
+async def test_an_admin_starts_blank(client, sign_in):
+    await sign_in(client, admin=True)
+
+    blank = await client.post("/api/v1/setups/blank")
+
+    assert (blank.status_code, blank.json()["started"]) == (200, True)
+    assert (await client.get("/api/v1/setups")).json()["started"] is True
+    assert (await client.get("/api/v1/settings/units")).json() == []

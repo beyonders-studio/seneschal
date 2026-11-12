@@ -1,6 +1,7 @@
 """Starting setups (``hoard.setups``): which Hoard offers and which the
 organization has added. Every member reads them; only a community admin adds
-one, sending the words its keys take in the admin's language."""
+one, sending the words its keys take in the admin's language, or starts
+blank."""
 
 from __future__ import annotations
 
@@ -17,9 +18,12 @@ from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 router = APIRouter(prefix="/setups", tags=["setups"])
 
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
-_CHANGE: dict[int | str, dict[str, Any]] = {
+_BLANK: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "ADMIN_ONLY, READ_ONLY"},
+}
+_CHANGE: dict[int | str, dict[str, Any]] = {
+    **_BLANK,
     404: {"description": "NOT_FOUND"},
     422: {"description": "WORDS_MISSING"},
 }
@@ -38,8 +42,8 @@ class SetupRead(BaseModel):
 
 class SetupsRead(BaseModel):
     setups: list[SetupRead]
-    #: Whether the organization has begun on its own, so a setup is no longer
-    #: suggested to it.
+    #: Whether the organization has begun on its own (an admin chose to start
+    #: blank, or it has a unit), so it is no longer asked for a setup.
     started: bool
 
 
@@ -52,13 +56,25 @@ async def _read(db: AsyncSession, setup: setups.Setup) -> SetupRead:
     return SetupRead(key=setup.key, added=await setups.added(db, setup), words=setup.words())
 
 
-@router.get("", responses=_READ)
-async def list_setups(db: OrganizationSessionDep) -> SetupsRead:
-    """The setups Hoard offers, and whether the organization has added each."""
+async def _read_all(db: AsyncSession) -> SetupsRead:
     return SetupsRead(
         setups=[await _read(db, setup) for setup in setups.setups().values()],
         started=await setups.started(db),
     )
+
+
+@router.get("", responses=_READ)
+async def list_setups(db: OrganizationSessionDep) -> SetupsRead:
+    """The setups Hoard offers, and whether the organization has added each."""
+    return await _read_all(db)
+
+
+@router.post("/blank", responses=_BLANK)
+async def start_blank(_admin: AdminDep, db: WriteSessionDep) -> SetupsRead:
+    """Start without a setup: the business is none Hoard has one for."""
+    await setups.start_blank(db)
+    await db.commit()
+    return await _read_all(db)
 
 
 @router.post("/{setup_key}/add", responses=_CHANGE)

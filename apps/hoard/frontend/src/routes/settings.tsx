@@ -8,7 +8,6 @@ import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
 import { UnitsSection } from "@/features/settings/UnitsSection";
-import { SetupSection } from "@/features/setups/SetupSection";
 import { TrackingSection } from "@/features/tracking/TrackingSection";
 
 /** Settings, opened at community level, which Initiative opens only to the
@@ -27,7 +26,6 @@ function SettingsPage() {
         <ReasonsSection />
         <PropertiesSection />
         <TrackingSection />
-        <SetupSection />
       </div>
     </HoardPage>
   );
