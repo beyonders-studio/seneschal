@@ -10,8 +10,7 @@
   "suggestion": {
     "title": "Start from a setup?",
     "body": "Pick the kind of business closest to yours and Hoard adds what it needs. You can add one later in Settings.",
-    "blank": "Start blank",
-    "adminOnly": "A community admin can add a starting setup in Settings."
+    "blank": "Start blank"
   },
   "setups": {
     "drinks": {
