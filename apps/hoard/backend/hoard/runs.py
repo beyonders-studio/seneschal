@@ -7,17 +7,22 @@ recipe leaves them as they are; changing the planned batches scales them.
 
 A line consumes the lot someone recorded on it. Completing a run assumes a lot
 for each line that names none: the item's lots at the run's location that hold
-stock, the earliest expiry first, then the first in. A line drawing on more
-than one lot is split, one line per lot, each marked assumed.
+stock and are not on hold, in the order its category's picking rule takes them
+(``hoard.stock.draw_lots``). A line drawing on more than one lot is split, one
+line per lot, each marked assumed. A lot on hold is never consumed, and an
+item whose category records every lot is consumed only from a lot a line
+names (``hoard.holds``).
 
 Only completing a run moves stock: each line out, and the quantity made in,
 into its output lot, numbered with the run's code. ``hoard.costing`` costs it.
+When what it made cures, its lot goes on hold, curing, until its cure time
+has passed.
 A completed run can be reopened, which takes those adjustments and the output
 lot back and returns its assumed lines to naming no lot.
 
 A run can also be made at once (:func:`make`), opened and completed together,
 as auto-manufacture makes what a store order sells. Such a run records no
-events.
+events, and names no lot of what it consumes.
 """
 
 from __future__ import annotations
@@ -30,7 +35,8 @@ from enum import StrEnum
 from sqlalchemy import delete, func
 from sqlmodel import col, or_, select
 
-from hoard import costing, events
+from hoard import costing, events, holds
+from hoard.holds import HoldError
 from hoard.records import (
     PLACES,
     Adjustment,
@@ -64,7 +70,7 @@ class RunError(StrEnum):
 
 
 class RunRefused(Exception):
-    def __init__(self, code: RunError | StockError) -> None:
+    def __init__(self, code: RunError | StockError | HoldError) -> None:
         super().__init__(code.value)
         self.code = code
 
@@ -150,6 +156,8 @@ async def record_lot(
         lot = await db.get_one(Lot, lot_id)
         if (lot.item_id, lot.location_id) != (line.item_id, run.location_id):
             raise RunRefused(RunError.RUN_LOT_MISMATCH)
+        if await holds.refusal(db, [(lot.item_id, lot.id)]):
+            raise RunRefused(HoldError.LOT_ON_HOLD)
     line.lot_id = lot_id
     line.assumed = False
     await db.flush()
@@ -209,9 +217,15 @@ async def complete(
     quiet: bool = False,
 ) -> None:
     """Complete ``run``, having made ``actual_quantity`` on ``completed_on``:
-    its lines out, from their lots, and what it made into its output lot. A
-    ``quiet`` run records no event."""
+    its lines out, from their lots, and what it made into its output lot,
+    on hold while it cures. Refused while a line names a lot on hold, or names
+    none of an item whose every lot is recorded. A ``quiet`` run records no
+    event, and its lines need name no lot."""
     not_completed(run)
+    draws = [(line.item_id, line.lot_id) for line in await lines(db, run.id)]
+    refused = await holds.refusal(db, draws, named=not quiet)
+    if refused is not None:
+        raise RunRefused(refused)
     for line in await _assume_lots(db, run):
         db.add(
             Adjustment(
@@ -257,6 +271,7 @@ async def complete(
     await costing.rederive_run(db, run)
     if not quiet:
         await events.record(db, await events.run_event(db, events.EventName.RUN_COMPLETED, run))
+    await holds.cure(db, run, quiet=quiet)
 
 
 async def make(

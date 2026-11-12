@@ -11,13 +11,20 @@ import pytest
 from sqlmodel import col, select
 
 from hoard import purchases, runs
+from hoard.holds import HoldError
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    Category,
+    CategoryKind,
+    DefaultHoldReason,
+    Hold,
+    HoldReason,
     Item,
     Location,
     Lot,
     OutboxEvent,
+    Picking,
     Product,
     ProductionRun,
     ProductionRunLine,
@@ -378,3 +385,68 @@ async def test_a_run_made_at_once_moves_stock_and_records_no_events(
     assert recorded.all() == []
     # Without a recipe, nothing is made.
     assert await runs.make(db, flour.id, main.id, Decimal(1), date(2026, 11, 5)) is None
+
+
+async def test_a_run_draws_no_lot_on_hold_and_names_a_recorded_one(
+    db: WriteSession, main: Location, material, base, hold
+):
+    jars = Category(organization_id=db.organization_id, kind=CategoryKind.MATERIAL, name="Jars")
+    jars.picking = Picking.RECORDED
+    db.add(jars)
+    await db.flush()
+    flour, jar = await material("Flour"), await material("Jar", category_id=jars.id)
+    held = await _lot(db, flour.id, main, "F-1", "5", date(2026, 10, 1))
+    free = await _lot(db, flour.id, main, "F-2", "5", date(2026, 11, 1))
+    jar_lot = await _lot(db, jar.id, main, "J-1", "9", date(2026, 11, 1))
+    await hold(held)
+    jam = await base("Jam")
+    await _recipe(db, (flour, "2"), (jar, "1"), base_id=jam.id)
+    run = await _open(db, jam.id, main)
+    flour_line, jar_line = await runs.lines(db, run.id)
+
+    with pytest.raises(runs.RunRefused) as refused:
+        await runs.record_lot(db, run, flour_line, held.id)
+    assert refused.value.code is HoldError.LOT_ON_HOLD
+    with pytest.raises(runs.RunRefused) as refused:
+        await runs.complete(db, run, Decimal(1), date(2026, 11, 3))
+    assert refused.value.code is HoldError.LOT_REQUIRED
+
+    await runs.record_lot(db, run, jar_line, jar_lot.id)
+    await _complete(db, run, "1", 3)
+    assert sorted(await _lines(db, run)) == sorted(
+        [(flour.id, 2, free.id, True), (jar.id, 1, jar_lot.id, False)]
+    )
+    # A lot put on hold after it was named is refused when the run completes.
+    again = await _open(db, jam.id, main)
+    flour_line, jar_line = await runs.lines(db, again.id)
+    await runs.record_lot(db, again, jar_line, jar_lot.id)
+    await hold(jar_lot)
+    with pytest.raises(runs.RunRefused) as refused:
+        await runs.complete(db, again, Decimal(1), date(2026, 11, 4))
+    assert refused.value.code is HoldError.LOT_ON_HOLD
+
+
+async def test_what_cures_goes_on_hold_until_its_cure_time_has_passed(
+    db: WriteSession, main: Location, material, base
+):
+    lye = await material("Lye")
+    await _lot(db, lye.id, main, "L-1", "10", date(2026, 11, 1))
+    soap = await base("Soap", cure_days=28)
+    await _recipe(db, (lye, "1"), base_id=soap.id)
+
+    run = await _complete(db, await _open(db, soap.id, main), "4", 3)
+
+    cure = (await db.exec(select(Hold).where(Hold.lot_id == run.output_lot_id))).one()
+    reason = await db.get_one(HoldReason, cure.reason_id)
+    assert (reason.key, cure.ready_on, cure.run_id, cure.ended) == (
+        DefaultHoldReason.CURING.value,
+        date(2026, 12, 1),
+        run.id,
+        None,
+    )
+    placed = await db.exec(select(OutboxEvent).where(OutboxEvent.name == "hold-placed"))
+    assert [event.payload["lot_id"] for event in placed] == [run.output_lot_id]
+
+    # Reopening the run takes its lot, and its hold, back.
+    await runs.reopen(db, run)
+    assert (await db.exec(select(Hold))).all() == []

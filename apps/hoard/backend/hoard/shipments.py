@@ -7,7 +7,10 @@ production run does (``hoard.stock.draw_lots``), the line split over as many
 lots as it takes and marked assumed. Only shipping it moves stock: each line
 out of its lot, costed at the item's average on the day it shipped
 (``hoard.costing``). Unshipping it takes those adjustments back and returns
-its assumed lines to naming no lot.
+its assumed lines to naming no lot. A lot on hold is never shipped, and a
+shipment by hand of an item whose category records every lot ships only from
+a lot each line names (``hoard.holds``); a store's fulfillment, which names no
+lot, ships what it sent.
 
 A shipment is planned while pending: its lines, no more of each order line
 than the order's other shipments leave, and the lot each draws. Shipping or
@@ -31,7 +34,8 @@ from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 
-from hoard import costing, orders
+from hoard import costing, holds, orders
+from hoard.holds import HoldError
 from hoard.orders import OrderError
 from hoard.records import (
     Adjustment,
@@ -78,7 +82,7 @@ class ShipmentError(StrEnum):
 
 
 class ShipmentRefused(Exception):
-    def __init__(self, code: ShipmentError | OrderError) -> None:
+    def __init__(self, code: ShipmentError | OrderError | HoldError) -> None:
         super().__init__(code.value)
         self.code = code
 
@@ -128,9 +132,14 @@ async def _assume_lots(db: WriteSession, shipment: Shipment) -> list[ShipmentLin
 
 async def post(db: WriteSession, shipment: Shipment, shipped_on: date) -> None:
     """Ship ``shipment`` on ``shipped_on``: each line out of its lot, assuming
-    a lot for each that names none, and each item's cost re-derived."""
+    a lot for each that names none, and each item's cost re-derived. Refused
+    while a line names a lot on hold."""
     if shipment.status is ShipmentStatus.SHIPPED:
         raise ShipmentRefused(ShipmentError.SHIPMENT_SHIPPED)
+    draws = [(line.item_id, line.lot_id) for line in await lines(db, shipment.id)]
+    refused = await holds.refusal(db, draws, named=False)
+    if refused is not None:
+        raise ShipmentRefused(refused)
     shipped = await _assume_lots(db, shipment)
     for line in shipped:
         db.add(
@@ -214,6 +223,8 @@ async def _check_lot(
     lot = await db.get(Lot, lot_id)
     if lot is None or (lot.item_id, lot.location_id) != (item_id, shipment.location_id):
         raise ShipmentRefused(ShipmentError.SHIPMENT_LOT_MISMATCH)
+    if await holds.refusal(db, [(item_id, lot_id)]):
+        raise ShipmentRefused(HoldError.LOT_ON_HOLD)
 
 
 async def _left(db: WriteSession, shipment: Shipment, line: ShipmentLine) -> Decimal:
@@ -318,13 +329,18 @@ async def remove(db: WriteSession, shipment: Shipment) -> None:
 
 async def ship(db: WriteSession, shipment: Shipment, shipped_on: date) -> None:
     """Ship a pending shipment of an order that is not cancelled, on
-    ``shipped_on``, and mark the order shipped once nothing is left."""
+    ``shipped_on``, and mark the order shipped once nothing is left. Refused
+    while a line names no lot of an item whose every lot is recorded."""
     _pending(shipment)
     order = await db.get_one(Order, shipment.order_id)
     if order.status is OrderStatus.CANCELLED:
         raise ShipmentRefused(OrderError.ORDER_CANCELLED)
-    if not await lines(db, shipment.id):
+    sending = await lines(db, shipment.id)
+    if not sending:
         raise ShipmentRefused(ShipmentError.SHIPMENT_EMPTY)
+    refused = await holds.refusal(db, [(line.item_id, line.lot_id) for line in sending])
+    if refused is not None:
+        raise ShipmentRefused(refused)
     await post(db, shipment, shipped_on)
     await orders.settle(db, order)
 

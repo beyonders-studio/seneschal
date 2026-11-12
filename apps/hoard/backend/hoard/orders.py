@@ -6,7 +6,9 @@ An open order **commits** what its lines have not yet shipped, at its
 location: a pending, shipped or cancelled one commits nothing, and a bundle's
 own line commits nothing, since its parts are lines of their own. What is
 **available** is what is on hand less what is committed and what is on hold
-(``hoard.holds``), which is what Hoard tells each store it may sell.
+(``hoard.holds``), which is what Hoard tells each store it may sell. Where
+less is available than nothing, the open orders are **short**: each of their
+lines, by as much as the item lacks, up to what the line has left to ship.
 
 An order is made by hand, with its lines, or copied in from a store
 (``hoard.sync``), whose lines change only there. A bundle sold by hand is
@@ -30,6 +32,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import holds, recipes
 from hoard.records import (
+    Hold,
     Order,
     OrderLine,
     OrderStatus,
@@ -106,6 +109,28 @@ async def available(db: AsyncSession, item_id: int, location_id: int | None = No
         - await committed(db, item_id, location_id)
         - await holds.on_hold(db, item_id, location_id)
     )
+
+
+async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
+    """How short each of an open order's lines is, by line id: as much of
+    what it has left to ship as its item lacks at the order's location once
+    every open order's commitments and the lots on hold are counted. A line
+    that is not short, and every line of an order that is not open, is none."""
+    lacking: dict[int, Decimal] = {}
+    found: dict[int, Decimal] = defaultdict(Decimal)
+    if order.status is not OrderStatus.OPEN:
+        return found
+    shipped = await held(db, order.id, shipped_only=True)
+    for line in shippable(await lines(db, order.id)):
+        left = line.quantity - shipped[line.id]
+        if left <= 0:
+            continue
+        if line.item_id not in lacking:
+            free = await available(db, line.item_id, order.location_id)
+            lacking[line.item_id] = max(-free, Decimal(0))
+        if lacking[line.item_id] > 0:
+            found[line.id] = min(left, lacking[line.item_id])
+    return found
 
 
 async def lines(db: AsyncSession, order_id: int) -> list[OrderLine]:
@@ -320,7 +345,8 @@ async def reopen(db: WriteSession, order: Order) -> None:
 
 
 async def delete(db: WriteSession, order: Order) -> None:
-    """Delete a hand order with its shipments, while none of them has shipped."""
+    """Delete a hand order with its shipments, while none of them has shipped.
+    A hold placed from it stays, naming no order."""
     if order.store_id is not None:
         raise OrderRefused(OrderError.ORDER_FROM_STORE)
     shipped = await db.exec(
@@ -331,6 +357,7 @@ async def delete(db: WriteSession, order: Order) -> None:
     if shipped.one():
         raise OrderRefused(OrderError.ORDER_SHIPPED)
     items = await _items(db, order)
+    await db.execute(update(Hold).where(col(Hold.order_id) == order.id).values(order_id=None))
     await db.delete(order)
     await db.flush()
     await _note(db, items)
