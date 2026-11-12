@@ -1,7 +1,7 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { materialDetail, productDetail, SETTINGS } from "@/features/items/testing";
+import { baseDetail, materialDetail, productDetail, SETTINGS } from "@/features/items/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
 const NONE = { status: 200, data: { items: [], total: 0 } };
@@ -16,11 +16,14 @@ const STAMPS = {
 const STOCK = {
   ...SETTINGS,
   "GET /api/v1/materials": NONE,
+  "GET /api/v1/bases": NONE,
+  "GET /api/v1/recipes": NONE,
   "GET /api/v1/products": NONE,
   "GET /api/v1/purchases": NONE,
   "GET /api/v1/adjustments": NONE,
   "GET /api/v1/stocktakes": NONE,
   "GET /api/v1/materials/3": { status: 200, data: materialDetail({ id: 3 }) },
+  "GET /api/v1/bases/3": { status: 200, data: baseDetail({ id: 3 }) },
   "GET /api/v1/products/3": { status: 200, data: productDetail({ id: 3 }) },
   "GET /api/v1/products/3/images": { status: 200, data: [] },
   "GET /api/v1/purchases/3": {
@@ -115,7 +118,7 @@ describe("Hoard's pages", () => {
 
   it.each([
     ["/stock/materials/3", "Materials", "Oolong"],
-    ["/stock/bases/3", "Bases", "Base"],
+    ["/stock/bases/3", "Bases", "Chai spice"],
     ["/stock/products/3", "Products", "Chai"],
     ["/stock/purchases/3", "Purchases", /^Purchase P-0003/],
     ["/stock/stocktakes/3", "Stocktakes", /^Stocktake of/],
@@ -140,7 +143,7 @@ describe("Hoard's pages", () => {
     ["/production/runs", "Runs", "No production runs yet"],
     ["/production/recipes", "Recipes", "No recipes yet"],
   ])("%s opens under Production, on its tab", async (path, tab, empty) => {
-    await openSignedIn(path, signedIn(), PRODUCTION);
+    await openSignedIn(path, signedIn(), { ...PRODUCTION, "GET /api/v1/recipes": NONE });
     expect(await selectedTab("Production")).toBe(tab);
     await screen.findByText(empty);
   });
