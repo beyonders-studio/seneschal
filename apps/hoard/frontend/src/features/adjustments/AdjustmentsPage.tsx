@@ -167,8 +167,18 @@ function AdjustmentsTable({
           {t("adjustments.kinds.stocktake")}
         </Link>
       );
-    const why = reason(adjustment.reason_id);
-    return why || t(`adjustments.kinds.${adjustment.kind}`);
+    const why = reason(adjustment.reason_id) || t(`adjustments.kinds.${adjustment.kind}`);
+    if (adjustment.order_id !== null)
+      return (
+        <Link
+          to="/orders/$orderId"
+          params={{ orderId: String(adjustment.order_id) }}
+          className="underline-offset-4 hover:underline"
+        >
+          {why}
+        </Link>
+      );
+    return why;
   };
 
   const deleteAdjustment = async (adjustment: AdjustmentRead) => {
@@ -198,7 +208,10 @@ function AdjustmentsTable({
       </TableHeader>
       <TableBody>
         {adjustments.map((adjustment) => {
-          const editable = adjustment.kind === "manual" || adjustment.kind === "starting";
+          // A damaged return's write-off is manual, but changes through its order.
+          const editable =
+            (adjustment.kind === "manual" || adjustment.kind === "starting") &&
+            adjustment.order_id === null;
           return (
             <TableRow key={adjustment.id}>
               <TableCell>{date(adjustment.dated_on)}</TableCell>

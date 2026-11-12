@@ -128,7 +128,7 @@
     "PURCHASE_CODE_TAKEN": "Another purchase has that code.",
     "PURCHASE_LINE_RECEIVED": "That line is received already.",
     "PURCHASE_LINE_NOT_RECEIVED": "That line hasn't been received.",
-    "ADJUSTMENT_FROM_RECORD": "Change this adjustment through the purchase or stocktake that made it.",
+    "ADJUSTMENT_FROM_RECORD": "Change this adjustment through the purchase, stocktake or order that made it.",
     "ADJUSTMENT_COST_DERIVED": "Only starting stock takes a cost; Hoard works out the rest.",
     "ADJUSTMENT_CHANGE_ZERO": "A change can't be nothing.",
     "STOCKTAKE_CATEGORY_KIND": "That category sorts the other kind of record."

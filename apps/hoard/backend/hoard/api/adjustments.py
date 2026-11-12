@@ -1,7 +1,8 @@
 """Adjustments: every change to stock, and the changes made by hand.
 
 A manual adjustment changes an item's stock at a location, with a reason. One
-that a purchase or a stocktake made is changed through that record. Editing or
+that a purchase, a stocktake or an order's shipment or return made, a damaged
+return's write-off included, is changed through that record. Editing or
 deleting a manual or starting adjustment re-derives its item's cost
 (``hoard.costing``). A starting adjustment's unit cost is typed in; every other
 one's is derived. Without :data:`~hoard.api.deps.SeesCostsDep` no unit cost is
@@ -34,6 +35,9 @@ from hoard.records import (
     Material,
     Product,
     PurchaseLine,
+    ReturnLine,
+    Shipment,
+    ShipmentLine,
     StocktakeRow,
     Variation,
 )
@@ -58,7 +62,7 @@ class AdjustmentError(StrEnum):
 
     #: A cost was sent by a member who does not see costs.
     COSTS_HIDDEN = "COSTS_HIDDEN"
-    #: A purchase or a stocktake made it, and is where it changes.
+    #: A purchase, a stocktake or an order made it, and is where it changes.
     ADJUSTMENT_FROM_RECORD = "ADJUSTMENT_FROM_RECORD"
     #: Only a starting adjustment's unit cost is typed in.
     ADJUSTMENT_COST_DERIVED = "ADJUSTMENT_COST_DERIVED"
@@ -145,6 +149,8 @@ class AdjustmentRead(BaseModel):
     purchase_id: int | None
     #: The stocktake whose row made it.
     stocktake_id: int | None
+    #: The order whose shipment, or what came back of it, made it.
+    order_id: int | None
     created_at: datetime
     created_by: str | None
     updated_at: datetime
@@ -153,9 +159,16 @@ class AdjustmentRead(BaseModel):
 
 def _adjustments() -> Any:
     return (
-        select(Adjustment, PurchaseLine.purchase_id, StocktakeRow.stocktake_id)
+        select(Adjustment, PurchaseLine.purchase_id, StocktakeRow.stocktake_id, Shipment.order_id)
         .outerjoin(PurchaseLine, col(PurchaseLine.id) == col(Adjustment.purchase_line_id))
         .outerjoin(StocktakeRow, col(StocktakeRow.id) == col(Adjustment.stocktake_row_id))
+        .outerjoin(ReturnLine, col(ReturnLine.id) == col(Adjustment.return_line_id))
+        .outerjoin(
+            ShipmentLine,
+            col(ShipmentLine.id)
+            == func.coalesce(Adjustment.shipment_line_id, ReturnLine.shipment_line_id),
+        )
+        .outerjoin(Shipment, col(Shipment.id) == col(ShipmentLine.shipment_id))
     )
 
 
@@ -174,13 +187,14 @@ async def _read(db: OrganizationSession, rows: list[Any], sees_costs: bool) -> l
             notes=adjustment.notes,
             purchase_id=purchase_id,
             stocktake_id=stocktake_id,
+            order_id=order_id,
             created_at=adjustment.created_at,
             created_by=adjustment.created_by,
             updated_at=adjustment.updated_at,
             updated_by=adjustment.updated_by,
             **({"unit_cost": adjustment.unit_cost} if sees_costs else {}),
         )
-        for adjustment, purchase_id, stocktake_id in rows
+        for adjustment, purchase_id, stocktake_id, order_id in rows
     ]
 
 
@@ -291,7 +305,9 @@ class AdjustmentUpdate(BaseModel):
 
 async def _editable(db: WriteSession, adjustment_id: int) -> Adjustment:
     adjustment = await known(db, Adjustment, adjustment_id)
-    if adjustment.kind not in (AdjustmentKind.MANUAL, AdjustmentKind.STARTING):
+    by_hand = adjustment.kind in (AdjustmentKind.MANUAL, AdjustmentKind.STARTING)
+    # A damaged return's write-off is manual, but its return made it.
+    if not by_hand or adjustment.return_line_id is not None:
         raise refuse(status.HTTP_409_CONFLICT, AdjustmentError.ADJUSTMENT_FROM_RECORD)
     return adjustment
 
