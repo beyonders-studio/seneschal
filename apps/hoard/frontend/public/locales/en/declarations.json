@@ -1,6 +1,41 @@
 {
   "panel": {
     "title": "Allergens and ingredients",
-    "empty": "No allergens or ingredients recorded yet."
+    "empty": "No allergens or ingredients recorded yet.",
+    "contains": "Contains",
+    "noAllergens": "No allergens declared",
+    "undeclared": "Allergens aren't recorded for {{names}}.",
+    "ingredients": "Ingredients, heaviest first:",
+    "fromMaterial": "This lot declares what its material does.",
+    "edit": "Edit allergens",
+    "saved": "Allergens saved",
+    "saveFailed": "Couldn't save the allergens."
+  },
+  "form": {
+    "ingredientName": "Name on ingredient lists",
+    "ingredientNameHint": "Leave it empty to use the material's name.",
+    "known": "Its supplier declares its allergens",
+    "lotKnown": "This lot's supplier declares allergens of its own",
+    "allergens": "It contains"
+  },
+  "allergens": {
+    "celery": "Celery",
+    "crustaceans": "Crustaceans",
+    "eggs": "Eggs",
+    "fish": "Fish",
+    "gluten": "Cereals containing gluten",
+    "lupin": "Lupin",
+    "milk": "Milk",
+    "molluscs": "Molluscs",
+    "mustard": "Mustard",
+    "peanuts": "Peanuts",
+    "sesame": "Sesame",
+    "soybeans": "Soybeans",
+    "sulphites": "Sulphites",
+    "tree_nuts": "Tree nuts",
+    "wheat": "Wheat"
+  },
+  "errors": {
+    "NOT_BOUGHT": "Only a bought lot records allergens of its own."
   }
 }

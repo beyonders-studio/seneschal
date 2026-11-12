@@ -85,6 +85,30 @@ export interface AdjustmentUpdate {
 }
 
 /**
+ * The food allergens a material or a lot may contain: the US's nine and
+ * the EU's fourteen, by one key each where they name the same thing.
+ */
+export type Allergen = (typeof Allergen)[keyof typeof Allergen];
+
+export const Allergen = {
+  celery: "celery",
+  crustaceans: "crustaceans",
+  eggs: "eggs",
+  fish: "fish",
+  gluten: "gluten",
+  lupin: "lupin",
+  milk: "milk",
+  molluscs: "molluscs",
+  mustard: "mustard",
+  peanuts: "peanuts",
+  sesame: "sesame",
+  soybeans: "soybeans",
+  sulphites: "sulphites",
+  tree_nuts: "tree_nuts",
+  wheat: "wheat",
+} as const;
+
+/**
  * The kinds of record a category sorts, and a stocktake counts.
  */
 export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
@@ -111,6 +135,24 @@ export interface ContactRead {
   id: number;
   name: string;
   is_organization: boolean;
+}
+
+export interface DeclarationLotWrite {
+  allergens: Allergen[] | null;
+}
+
+export interface DeclarationMaterialWrite {
+  allergens: Allergen[] | null;
+  ingredient_name: string | null;
+}
+
+export interface DeclarationRead {
+  records_own: boolean;
+  recorded_allergens: Allergen[] | null;
+  ingredient_name: string | null;
+  ingredients: string[];
+  allergens: Allergen[];
+  undeclared: string[];
 }
 
 /**
@@ -1394,6 +1436,23 @@ export interface SettingsUnitWrite {
 export interface SettingsUpdate {
   /** @pattern ^[A-Z]{3}$ */
   currency: string;
+}
+
+export type SetupAddWords = { [key: string]: string };
+
+export interface SetupAdd {
+  words: SetupAddWords;
+}
+
+export interface SetupRead {
+  key: string;
+  added: boolean;
+  words: string[];
+}
+
+export interface SetupsRead {
+  setups: SetupRead[];
+  started: boolean;
 }
 
 export interface StocktakeCreate {

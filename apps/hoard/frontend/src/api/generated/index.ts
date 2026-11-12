@@ -1,6 +1,7 @@
 export * from "./adjustments/adjustments";
 export * from "./auth/auth";
 export * from "./contacts/contacts";
+export * from "./declarations/declarations";
 export * from "./export/export";
 export * from "./health/health";
 export * from "./layouts/layouts";
@@ -12,5 +13,6 @@ export * from "./purchases/purchases";
 export * from "./reports/reports";
 export * from "./runs/runs";
 export * from "./settings/settings";
+export * from "./setups/setups";
 export * from "./stocktakes/stocktakes";
 export * from "./tracking/tracking";
