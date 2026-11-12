@@ -82,6 +82,22 @@ async def test_a_product_keeps_its_last_variation(client, sign_in, db: WriteSess
     assert (await client.get(f"/api/v1/products/{product.id}")).status_code == 404
 
 
+async def test_auto_manufacture_is_changed_only_when_sent(client, sign_in, db: WriteSession, main):
+    product = await _product(db, main, "1")
+    await sign_in(client)
+    path = f"/api/v1/products/{product.id}"
+    variation = (await client.get(path)).json()["variations"][0]["id"]
+
+    always = await client.put(path, json={"name": "Chai", "auto_manufacture": "always"})
+    renamed = await client.put(path, json={"name": "Masala chai"})
+    made = await client.put(
+        f"{path}/variations/{variation}", json={"auto_manufacture": "out_of_stock"}
+    )
+
+    assert always.json()["auto_manufacture"] == renamed.json()["auto_manufacture"] == "always"
+    assert made.json()["variations"][0]["auto_manufacture"] == "out_of_stock"
+
+
 async def test_product_images_are_kept_by_type_and_size(
     client, sign_in, db: WriteSession, main: Location
 ):

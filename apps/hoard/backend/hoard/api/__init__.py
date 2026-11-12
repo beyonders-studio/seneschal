@@ -13,8 +13,10 @@ from hoard.api import (
     export,
     health,
     layouts,
+    listings,
     materials,
     members,
+    orders,
     products,
     properties,
     purchases,
@@ -23,7 +25,9 @@ from hoard.api import (
     runs,
     settings,
     setups,
+    shipments,
     stocktakes,
+    stores,
     tracking,
 )
 from seneschal_core.auth import router as auth_router
@@ -50,5 +54,9 @@ for area in (
     tracking,
     declarations,
     setups,
+    orders,
+    shipments,
+    stores,
+    listings,
 ):
     router.include_router(area.router)

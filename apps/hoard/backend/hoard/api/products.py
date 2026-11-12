@@ -31,6 +31,7 @@ from hoard.api.shapes import Page, PageDep
 from hoard.records import (
     IMAGE_TYPES,
     MAX_IMAGE_BYTES,
+    AutoManufacture,
     CategoryKind,
     Item,
     Product,
@@ -85,6 +86,8 @@ class ProductRead(BaseModel):
     on_hand: Decimal
     #: The price of a variation without its own; null without ``costs``.
     default_price: Decimal | None
+    #: Whether a store order makes it; null takes the organization's.
+    auto_manufacture: AutoManufacture | None
     #: What it holds of the properties people add to products.
     properties: list[HoardPropertySummary]
 
@@ -100,6 +103,8 @@ class ProductVariationRead(items.ItemHoldings):
     price: Decimal | None
     #: The moving average cost of one; null without ``costs``.
     average_cost: Decimal | None
+    #: Whether a store order makes it; null takes its product's.
+    auto_manufacture: AutoManufacture | None
 
 
 class ProductDetail(ProductRead, items.ItemStamps):
@@ -117,6 +122,8 @@ class ProductWrite(BaseModel):
     category_id: int | None = None
     low_stock_limit: items.Amount | None = None
     default_price: items.Amount | None = None
+    #: Left as it is unless sent; null takes the organization's.
+    auto_manufacture: AutoManufacture | None = None
 
 
 class ProductVariationWrite(BaseModel):
@@ -126,6 +133,8 @@ class ProductVariationWrite(BaseModel):
     attributes: dict[items.Text, items.Text] = Field(default_factory=dict)
     sku: items.OptionalText = None
     price: items.Amount | None = None
+    #: Left as it is unless sent; null takes its product's.
+    auto_manufacture: AutoManufacture | None = None
 
 
 class ProductImageRead(BaseModel):
@@ -142,6 +151,13 @@ class ProductImageRead(BaseModel):
 def _hidden(sees_costs: bool, *fields: str) -> set[str]:
     """The fields a member who does not see costs neither sends nor takes."""
     return set() if sees_costs else set(fields)
+
+
+def _written(body: ProductWrite | ProductVariationWrite, sees_costs: bool, price: str) -> dict:
+    """What a write changes: its price only from a member who sees costs, and
+    auto-manufacture only when it is sent."""
+    unsent = {"auto_manufacture"} - body.model_fields_set
+    return body.model_dump(exclude=_hidden(sees_costs, price) | unsent)
 
 
 async def _on_hand(db: AsyncSession, product_ids: Sequence[int]) -> dict[int, Decimal]:
@@ -252,7 +268,7 @@ async def create_product(
     """Add a product with its default variation."""
     await require_references(db, kind=CategoryKind.PRODUCT, category_id=body.category_id)
     product = Product(name=body.name)
-    product.sqlmodel_update(body.model_dump(exclude=_hidden(sees_costs, "default_price")))
+    product.sqlmodel_update(_written(body, sees_costs, "default_price"))
     product, _ = await stock.add_product(db, product)
     await db.commit()
     return await _detail(db, product.id, sees_costs)
@@ -264,7 +280,7 @@ async def update_product(
 ) -> ProductDetail:
     product = await found(db, Product, product_id)
     await require_references(db, kind=CategoryKind.PRODUCT, category_id=body.category_id)
-    product.sqlmodel_update(body.model_dump(exclude=_hidden(sees_costs, "default_price")))
+    product.sqlmodel_update(_written(body, sees_costs, "default_price"))
     db.add(product)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
@@ -284,7 +300,7 @@ async def create_product_variation(
 ) -> ProductDetail:
     await found(db, Product, product_id)
     variation = Variation(product_id=product_id)
-    variation.sqlmodel_update(body.model_dump(exclude=_hidden(sees_costs, "price")))
+    variation.sqlmodel_update(_written(body, sees_costs, "price"))
     await stock.add_variation(db, variation)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
@@ -299,7 +315,7 @@ async def update_product_variation(
     sees_costs: SeesCostsDep,
 ) -> ProductDetail:
     variation = await _product_variation(db, product_id, variation_id)
-    variation.sqlmodel_update(body.model_dump(exclude=_hidden(sees_costs, "price")))
+    variation.sqlmodel_update(_written(body, sees_costs, "price"))
     db.add(variation)
     await db.commit()
     return await _detail(db, product_id, sees_costs)

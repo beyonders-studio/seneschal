@@ -14,6 +14,7 @@ var WORDS = {
       expired: "Expired",
       lost: "Lost",
       personal_use: "Personal use",
+      returned_damaged: "Returned damaged",
     },
   },
 };
