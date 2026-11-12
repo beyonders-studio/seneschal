@@ -399,9 +399,7 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
     return order
 
 
-async def _refetch(
-    db: WriteSession, store: Store, connector: Connector, nudge: StoreNudge
-) -> None:
+async def _refetch(db: WriteSession, store: Store, connector: Connector, nudge: StoreNudge) -> None:
     """Read again from the store the record a nudge names, and keep what it says."""
     if nudge.topic == NudgeTopic.ORDER:
         found = await connector.order(nudge.external_id)

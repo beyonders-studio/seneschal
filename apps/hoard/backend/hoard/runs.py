@@ -94,9 +94,7 @@ async def next_code(db: WriteSession) -> str:
     return f"R-{(latest or 0) + 1:04d}"
 
 
-async def open_run(
-    db: WriteSession, run: ProductionRun, *, quiet: bool = False
-) -> ProductionRun:
+async def open_run(db: WriteSession, run: ProductionRun, *, quiet: bool = False) -> ProductionRun:
     """Add ``run``, not started or in progress, with its lines from its item's
     recipe times its planned batches. A ``quiet`` run records no event."""
     recipe = await recipe_for(db, run.item_id)

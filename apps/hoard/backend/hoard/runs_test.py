@@ -354,3 +354,27 @@ async def test_planning_batches_scales_the_lines_and_a_run_needs_a_recipe(
 
     await runs.delete_run(db, run)
     assert (await db.exec(select(ProductionRunLine))).all() == []
+
+
+async def test_a_run_made_at_once_moves_stock_and_records_no_events(
+    db: WriteSession, main: Location, material, base, buy
+):
+    flour = await material("Flour")
+    await buy((flour, "10", "2"))
+    dough = await base("Dough")
+    await _recipe(db, (flour, "2"), batch="4", base_id=dough.id)
+
+    run = await runs.make(db, dough.id, main.id, Decimal(6), date(2026, 11, 5), initiative_id=3)
+
+    assert run is not None
+    assert (run.status, run.planned_batches, run.actual_quantity, run.initiative_id) == (
+        RunStatus.COMPLETED,
+        Decimal("1.5"),
+        6,
+        3,
+    )
+    assert (await on_hand(db, flour.id), await on_hand(db, dough.id)) == (7, 6)
+    recorded = await db.exec(select(OutboxEvent).where(col(OutboxEvent.name).like("run-%")))
+    assert recorded.all() == []
+    # Without a recipe, nothing is made.
+    assert await runs.make(db, flour.id, main.id, Decimal(1), date(2026, 11, 5)) is None
