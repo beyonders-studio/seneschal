@@ -20,7 +20,7 @@ from urllib.parse import parse_qs
 import httpx2
 
 from hoard.channels.shopify.client import API_VERSION, Pacer
-from hoard.channels.shopify.connector import REQUIRED_SCOPES, ShopifyConnector
+from hoard.channels.shopify.store import REQUIRED_SCOPES, ShopifyConnector
 from hoard.channels.tokens import Tokens
 
 Answer = Mapping[str, Any] | Callable[[dict[str, Any]], Mapping[str, Any]]
@@ -153,7 +153,7 @@ class FakeShop:
         answer = self.answers.get(operation)
         if answer is None:
             raise AssertionError(f"the fake store has no answer for {operation}")
-        data = answer(variables) if callable(answer) else answer
+        data = answer if isinstance(answer, Mapping) else answer(variables)
         return httpx2.Response(200, json={"data": dict(data), "extensions": extensions})
 
 

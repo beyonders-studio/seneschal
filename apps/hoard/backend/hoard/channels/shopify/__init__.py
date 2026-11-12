@@ -13,6 +13,6 @@ from hoard.channels import Connector
 
 def connector(values: Mapping[str, Any]) -> Connector:
     """The connector for the store the connection's ``values`` name."""
-    from hoard.channels.shopify.connector import ShopifyConnector
+    from hoard.channels.shopify.store import ShopifyConnector
 
     return ShopifyConnector(values)

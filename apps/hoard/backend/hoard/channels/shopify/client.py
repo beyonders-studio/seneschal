@@ -262,9 +262,7 @@ class ShopifyClient:
         try:
             async with self.http.stream("GET", url) as response:
                 if response.is_error:
-                    raise ConnectRefused(
-                        ConnectError.STORE_UNREACHABLE, str(response.status_code)
-                    )
+                    raise ConnectRefused(ConnectError.STORE_UNREACHABLE, str(response.status_code))
                 async for line in response.aiter_lines():
                     if line.strip():
                         yield line

@@ -261,7 +261,9 @@ class ShopifyConnector:
         product_id = str(node["id"])
         standalone = [variant["id"] for variant in (node.get("variants") or {}).get("nodes") or []]
         if product.options and product.variants:
-            for chunk in _chunks([_variant_input(product, variant) for variant in product.variants]):
+            for chunk in _chunks(
+                [_variant_input(product, variant) for variant in product.variants]
+            ):
                 data = await self.client.query(
                     queries.VARIANTS_CREATE,
                     {
@@ -348,7 +350,9 @@ class ShopifyConnector:
     async def _push(self, stock_set: StockSet) -> PushResult:
         key = stock_set.idempotency_key
         if stock_set.inventory_item_id is None or stock_set.location_id is None:
-            return PushResult(key, False, error="a Shopify listing needs its inventory item and location")
+            return PushResult(
+                key, False, error="a Shopify listing needs its inventory item and location"
+            )
         data = await self.client.query(
             queries.SET_AVAILABLE,
             {
@@ -375,10 +379,14 @@ class ShopifyConnector:
         if any(error.get("code") == "CHANGE_FROM_QUANTITY_STALE" for error in errors):
             held = await self._available(stock_set.inventory_item_id, stock_set.location_id)
             return PushResult(key, False, store_quantity=held)
-        return PushResult(key, False, error="; ".join(str(error.get("message")) for error in errors))
+        return PushResult(
+            key, False, error="; ".join(str(error.get("message")) for error in errors)
+        )
 
     async def _available(self, item_id: str, location_id: str) -> int | None:
-        data = await self.client.query(queries.AVAILABLE, {"item": item_id, "location": location_id})
+        data = await self.client.query(
+            queries.AVAILABLE, {"item": item_id, "location": location_id}
+        )
         level = (data.get("inventoryItem") or {}).get("inventoryLevel") or {}
         for quantity in level.get("quantities") or []:
             if quantity.get("name") == "available" and isinstance(quantity.get("quantity"), int):
@@ -531,7 +539,11 @@ class ShopifyConnector:
         if not isinstance(payload, dict):
             return None
         api_id = payload.get("admin_graphql_api_id")
-        if field == "id" and isinstance(api_id, str) and api_id.startswith(f"gid://shopify/{kind}/"):
+        if (
+            field == "id"
+            and isinstance(api_id, str)
+            and api_id.startswith(f"gid://shopify/{kind}/")
+        ):
             return Nudge(nudge_topic, api_id)
         number = payload.get(field)
         if isinstance(number, bool) or not isinstance(number, int | str) or not str(number):
@@ -842,4 +854,3 @@ def _moment(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-
