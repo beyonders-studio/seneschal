@@ -6,7 +6,15 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from hoard.declarations import EU_ALLERGENS, US_ALLERGENS, Declaration, Declarations
+from hoard.declarations import (
+    EU_ALLERGENS,
+    FRAGRANCE_ALLERGENS,
+    LEAVE_ON,
+    RINSE_OFF,
+    US_ALLERGENS,
+    Declaration,
+    Declarations,
+)
 from hoard.records import (
     Allergen,
     Location,
@@ -17,8 +25,9 @@ from hoard.records import (
     Recipe,
     RecipeLine,
     RunStatus,
+    Variation,
 )
-from hoard.stock import add_product
+from hoard.stock import add_product, add_variation
 from seneschal_core.db import WriteSession
 
 
@@ -79,6 +88,8 @@ async def test_a_product_declares_its_materials_through_a_two_level_recipe(
         ingredients=["Oat drink", "Ginger", "Black tea", "Almond"],
         allergens=[Allergen.TREE_NUTS],
         undeclared=["Oat drink"],
+        # Nobody has recorded what fragrance allergens these hold.
+        fragrance_undeclared=["Almond", "Assam", "Ginger", "Oat drink"],
     )
     assert (await Declarations(db).item(chai.id)).ingredients == ["Ginger", "Almond"]
 
@@ -138,9 +149,65 @@ async def test_a_run_declares_its_lots_and_its_output_lot_the_run(
         ingredients=["Sugar", "Milk powder"],
         allergens=[Allergen.MILK, Allergen.SOYBEANS],
         undeclared=[],
+        fragrance_undeclared=["Milk powder", "Sugar"],
     )
     assert await declarations.run(run) == expected
     assert await declarations.lot(output) == expected
     # A lot that records nothing of its own declares its material's.
     plain = await _lot(db, main, sugar.id, "S-2")
     assert (await declarations.lot(plain)).undeclared == ["Sugar"]
+
+
+def test_the_eu_fragrance_allergens_are_the_2023_list():
+    # The 24 declared before, 12 earlier entries the update replaced, and
+    # entries 327 to 371.
+    assert len(set(FRAGRANCE_ALLERGENS)) == len(FRAGRANCE_ALLERGENS) == 24 + 12 + 45
+    assert (LEAVE_ON, RINSE_OFF) == (Decimal("0.001"), Decimal("0.01"))
+
+
+async def test_fragrance_allergens_are_declared_past_the_products_threshold(
+    db: WriteSession, material
+):
+    water = await material("Water", ingredient_name="Aqua", allergens=[], fragrance_allergens={})
+    lavender = await material(
+        "Lavender oil",
+        allergens=[],
+        fragrance_allergens={"linalool": "0.5", "limonene": "0.1", "not_a_key": "40"},
+    )
+    lotion, scented = await add_product(db, Product(name="Lotion"))
+    plain = await add_variation(db, Variation(product_id=lotion.id))
+    await _recipe(db, [(water.id, "995"), (lavender.id, "5")], variation_id=scented.id)
+    await _recipe(db, [(water.id, "1000")], variation_id=plain.id)
+    soap, bar = await add_product(db, Product(name="Soap", rinse_off=True))
+    await _recipe(db, [(water.id, "995"), (lavender.id, "5")], variation_id=bar.id)
+    declarations = Declarations(db)
+
+    left_on = await declarations.product(lotion)
+    washed_off = await declarations.product(soap)
+
+    # 5 g of an oil that is 0.5% linalool in 1000 g: 0.0025%, at the scented
+    # lotion's share rather than spread across the unscented one.
+    shares = {"linalool": Decimal("0.0025"), "limonene": Decimal("0.0005")}
+    assert (left_on.fragrance_allergens, left_on.fragrance_shares) == (["linalool"], shares)
+    assert (washed_off.fragrance_allergens, washed_off.fragrance_shares) == ([], shares)
+    assert (await declarations.item(bar.id)).fragrance_allergens == []
+    assert (await declarations.item(lavender.id)).fragrance_allergens == ["linalool", "limonene"]
+    assert left_on.fragrance_undeclared == []
+
+
+async def test_a_lot_declares_its_own_fragrance_allergens_where_known(
+    db: WriteSession, material, main: Location
+):
+    rose = await material("Rose oil", fragrance_allergens={"citronellol": "20"})
+    unknown = await material("Absolute", fragrance_allergens={"geraniol": "a lot"})
+    declarations = Declarations(db)
+
+    own = await declarations.lot(
+        await _lot(db, main, rose.id, "R-1", fragrance_allergens={"geraniol": "2"})
+    )
+    its_materials = await declarations.lot(await _lot(db, main, rose.id, "R-2"))
+
+    assert own.fragrance_allergens == ["geraniol"]
+    assert its_materials.fragrance_allergens == ["citronellol"]
+    # A share that is not a number reads as not recorded.
+    assert (await declarations.item(unknown.id)).fragrance_undeclared == ["Absolute"]
