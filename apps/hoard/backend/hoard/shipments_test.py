@@ -106,20 +106,40 @@ async def test_shipping_draws_lots_and_unshipping_takes_it_back(
         await shipments.unpost(db, shipment)
     assert refused.value.code is shipments.ShipmentError.SHIPMENT_RETURNED
 
-    # What comes back comes in at its own cost, not at none.
-    db.add(
-        Adjustment(
-            organization_id=db.organization_id,
-            item_id=chai.id,
-            location_id=main.id,
-            kind=AdjustmentKind.RETURN,
-            dated_on=returned.dated_on,
-            change=Decimal(1),
-            unit_cost=Decimal(10),
-            return_line_id=returned.id,
-        )
+    # What comes back comes in at what its shipment went out at, not at none
+    # and not at what it was recorded at.
+    came_back = Adjustment(
+        organization_id=db.organization_id,
+        item_id=chai.id,
+        location_id=main.id,
+        kind=AdjustmentKind.RETURN,
+        dated_on=returned.dated_on,
+        change=Decimal(1),
+        unit_cost=Decimal(10),
+        return_line_id=returned.id,
     )
-    assert await costing.rederive(db, chai.id) == Decimal("4.696969")
+    db.add(came_back)
+    assert await costing.rederive(db, chai.id) == Decimal("3.636363")
+    assert came_back.unit_cost == Decimal("3.636363")
+
+
+async def test_nothing_comes_back_of_a_shipment_copied_from_history(
+    db: WriteSession, main: Location, lot, sell
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    await lot(chai.id, "C-1", "10")
+    shipment = await shipments.add(db, await sell((chai.id, "4", "9")), main.id, [])
+    # As a store's history is copied: shipped, moving no stock.
+    shipment.status, shipment.shipped_on = ShipmentStatus.SHIPPED, SHIPPED_ON
+    await db.flush()
+    [line] = await shipments.lines(db, shipment.id)
+
+    assert (
+        await _refused(shipments.record_return(db, line, Decimal(1), SHIPPED_ON, damaged=False))
+        is shipments.ShipmentError.SHIPMENT_FROM_HISTORY
+    )
+    assert (await shipments.returned(db, [line.id]))[line.id] == 0
+    assert await on_hand(db, chai.id) == 10
 
 
 async def _refused(making) -> shipments.ShipmentError | orders.OrderError:

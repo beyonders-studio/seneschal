@@ -68,6 +68,7 @@ export interface AdjustmentRead {
   notes: string | null;
   purchase_id: number | null;
   stocktake_id: number | null;
+  order_id: number | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;

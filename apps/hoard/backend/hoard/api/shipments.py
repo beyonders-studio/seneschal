@@ -29,7 +29,7 @@ router = APIRouter(prefix="/shipments", tags=["shipments"])
 REFUSED: Responses = {
     409: {
         "description": "SHIPMENT_SHIPPED, SHIPMENT_NOT_SHIPPED, SHIPMENT_RETURNED, "
-        "SHIPMENT_CANCELLED, SHIPMENT_EMPTY, ORDER_CANCELLED"
+        "SHIPMENT_CANCELLED, SHIPMENT_EMPTY, SHIPMENT_FROM_HISTORY, ORDER_CANCELLED"
     },
     422: {
         "description": "SHIPMENT_LINE_NOT_SHIPPABLE, SHIPMENT_OVER_ORDER, "

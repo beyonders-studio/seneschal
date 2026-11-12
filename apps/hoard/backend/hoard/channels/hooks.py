@@ -20,7 +20,8 @@ and the schedules, by ``body["schedule"]``:
 * ``reconcile``: each connected store's recent orders imported once, then
   what changed since the last reconcile copied in (``hoard.sync``) and what
   is available pushed where the store holds something else (``hoard.push``);
-* ``upkeep``: each connected store's subscriptions finished.
+* ``upkeep``: each connected store's subscriptions finished, and the push
+  log pruned (``hoard.push``).
 """
 
 from __future__ import annotations
@@ -187,6 +188,10 @@ def hooks(address: str) -> dict[str, HookHandler]:
             stores = list(found.all())
         if organization_id is None:
             return
+        if name == "upkeep":
+            async with write_session(call) as db:
+                await push.prune(db)
+                await db.commit()
         for store in stores:
             connector = await channels.connect(
                 call.plugin, call.claims.community_ref, store.channel

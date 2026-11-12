@@ -17,6 +17,9 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
+// The list scrolls the option it marks into view, which jsdom can't.
+Element.prototype.scrollIntoView ??= () => {};
+
 const ANSWERS = {
   "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
   "GET /api/v1/members": { status: 200, data: [] },
@@ -81,6 +84,36 @@ describe("OrderPage", () => {
     expect(screen.getByText("3 of 4")).toBeTruthy();
     const shipping = asked.find((request) => request.url?.endsWith("/ship"));
     expect(JSON.parse(shipping?.data)).toEqual({ shipped_on: "2026-11-05" });
+  });
+
+  it("names a shipment's carrier among the community's contacts", async () => {
+    const asked = await openSignedIn("/orders/5", undefined, {
+      ...ANSWERS,
+      "GET /api/v1/contacts": {
+        status: 200,
+        data: [
+          { id: 4, name: "Corner Cafe", is_organization: true },
+          { id: 8, name: "Swift Freight", is_organization: true },
+        ],
+      },
+      "GET /api/v1/orders/5": { status: 200, data: orderRead({ shipments: [orderShipment()] }) },
+      "PATCH /api/v1/shipments/12": {
+        status: 200,
+        data: orderRead({ shipments: [orderShipment({ carrier_contact_id: 8 })] }),
+      },
+    });
+
+    const menu = await screen.findByRole("button", { name: "Actions for Shipment 1" });
+    fireEvent.keyDown(menu, { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog", { name: "Edit shipment" });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Carrier" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Swift Freight" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await screen.findByText(/by Swift Freight/);
+    const editing = asked.find((request) => request.method === "patch");
+    expect(JSON.parse(editing?.data)).toMatchObject({ carrier_contact_id: 8 });
   });
 
   it("records what came back damaged", async () => {

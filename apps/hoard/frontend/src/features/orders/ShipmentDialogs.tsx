@@ -15,6 +15,7 @@ import {
 import { toast } from "@/components/Toaster";
 import { LocationField } from "@/features/adjustments/fields";
 import { today, useMovementLabels } from "@/features/adjustments/labels";
+import { ContactPicker } from "@/features/contacts/ContactPicker";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -117,19 +118,22 @@ function DialogForm({
   );
 }
 
-/** A tracking number, a reference and a delivery address, as typed. */
+/** A carrier, a tracking number, a reference and a delivery address, as typed. */
 function useDetails(shipment?: OrderShipmentRead) {
+  const [carrier, setCarrier] = useState(shipment?.carrier_contact_id ?? null);
   const [tracking, setTracking] = useState(shipment?.tracking ?? "");
   const [reference, setReference] = useState(shipment?.reference ?? "");
   const [address, setAddress] = useState(shipment?.delivery_address ?? "");
   return {
     values: {
+      carrier_contact_id: carrier,
       tracking: tracking.trim() || null,
       reference: reference.trim() || null,
       delivery_address: address.trim() || null,
     },
     fields: (
       <DetailsFields
+        carrier={[carrier, setCarrier]}
         tracking={[tracking, setTracking]}
         reference={[reference, setReference]}
         address={[address, setAddress]}
@@ -141,10 +145,12 @@ function useDetails(shipment?: OrderShipmentRead) {
 type Typed = [string, (value: string) => void];
 
 function DetailsFields({
+  carrier,
   tracking,
   reference,
   address,
 }: {
+  carrier: [number | null, (contactId: number | null) => void];
   tracking: Typed;
   reference: Typed;
   address: Typed;
@@ -152,6 +158,7 @@ function DetailsFields({
   const { t } = useTranslation("orders");
   return (
     <>
+      <ContactPicker of="carriers" value={carrier[0]} onChange={carrier[1]} />
       <div className="grid grid-cols-pair gap-4">
         <Field label={t("shipments.tracking")}>
           <Input value={tracking[0]} onChange={(event) => tracking[1](event.target.value)} />
@@ -193,9 +200,7 @@ function PlanForm({ order, onSaved }: { order: OrderRead; onSaved: (saved: Order
             order_id: order.id,
             ...(location === null ? {} : { location_id: location }),
             lines,
-            tracking: details.values.tracking,
-            reference: details.values.reference,
-            delivery_address: details.values.delivery_address,
+            ...details.values,
           },
         })
       );

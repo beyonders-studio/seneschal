@@ -12,7 +12,7 @@ import {
 import { toast } from "@/components/Toaster";
 import { LocationField } from "@/features/adjustments/fields";
 import { today } from "@/features/adjustments/labels";
-import { CustomerPicker } from "@/features/contacts/CustomerPicker";
+import { ContactPicker } from "@/features/contacts/ContactPicker";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -139,7 +139,7 @@ function OrderForm({ order, onSaved }: { order?: OrderRead; onSaved: (saved: Ord
             <Input type="date" value={dueOn} onChange={(event) => setDueOn(event.target.value)} />
           </Field>
         </div>
-        {!fromStore && <CustomerPicker value={customer} onChange={setCustomer} />}
+        {!fromStore && <ContactPicker of="customers" value={customer} onChange={setCustomer} />}
         <LocationField value={location} onChange={setLocation} />
         <Field label={t("order.deliveryAddress")}>
           <Textarea value={address} onChange={(event) => setAddress(event.target.value)} />

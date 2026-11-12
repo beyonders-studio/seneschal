@@ -29,6 +29,7 @@ import {
 } from "@/api/generated/shipments/shipments";
 import { toast } from "@/components/Toaster";
 import { useMovementLabels } from "@/features/adjustments/labels";
+import { useContactNames } from "@/features/contacts/ContactPicker";
 import { type LineAction, LineDialog } from "@/features/orders/LineDialog";
 import { OrderDialog } from "@/features/orders/OrderDialog";
 import { OrderBadges, useOrderFor } from "@/features/orders/OrdersPage";
@@ -330,6 +331,8 @@ function ShipmentCard({
   const { t } = useTranslation("orders");
   const { read_only } = useSession();
   const { date, location, item, quantity } = useMovementLabels();
+  const contactName = useContactNames();
+  const carrier = contactName(shipment.carrier_contact_id);
   const change = useChange();
   const unship = useUnshipShipment();
   const remove = useDeleteShipment();
@@ -361,6 +364,7 @@ function ShipmentCard({
             {[
               shipment.shipped_on ? date(shipment.shipped_on) : "",
               location(shipment.location_id),
+              carrier ? t("shipments.carrierIs", { carrier }) : "",
               shipment.tracking ? t("shipments.trackingIs", { tracking: shipment.tracking }) : "",
               shipment.reference ?? "",
             ]

@@ -220,6 +220,41 @@ async def test_a_queued_push_is_sent_and_logged(
     )
 
 
+async def test_the_log_keeps_recent_pushes_and_the_last_one_taken(
+    db: WriteSession, listing: Listing, shop_location: StoreLocation
+):
+    now = datetime(2026, 11, 12, tzinfo=UTC)
+    long_ago = now - push.KEEP_FINISHED - timedelta(days=1)
+
+    def logged(key: str, status: PushStatus, created_at: datetime) -> StockPush:
+        return StockPush(
+            organization_id=db.organization_id,
+            listing_id=listing.id,
+            store_location_id=shop_location.id,
+            quantity=1,
+            idempotency_key=key,
+            status=status,
+            created_at=created_at,
+            pushed_at=created_at if status is PushStatus.PUSHED else None,
+        )
+
+    db.add_all(
+        [
+            logged("taken-before", PushStatus.PUSHED, long_ago - timedelta(days=1)),
+            logged("taken-last", PushStatus.PUSHED, long_ago),
+            logged("given-up", PushStatus.FAILED, long_ago),
+            logged("waiting", PushStatus.QUEUED, long_ago),
+            logged("given-up-lately", PushStatus.FAILED, now - timedelta(days=1)),
+        ]
+    )
+    await db.flush()
+
+    await push.prune(db, now)
+
+    kept = await db.exec(select(StockPush.idempotency_key).order_by(col(StockPush.id)))
+    assert kept.all() == ["taken-last", "waiting", "given-up-lately"]
+
+
 async def test_a_push_sends_what_is_available_when_it_is_sent(
     db: WriteSession,
     plugin,
