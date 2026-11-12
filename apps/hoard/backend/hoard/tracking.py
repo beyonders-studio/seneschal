@@ -187,7 +187,8 @@ def _positive_id(params: Any, key: str) -> int:
 async def link_task(call: EndpointCall) -> dict[str, Any]:
     """Answer ``link-task``: its ``record``, ``record_id`` and ``task_id``.
 
-    A record opened in another initiative than the call's is not found. A
+    A record opened in another initiative than the call's is not found; one
+    opened before Hoard kept its initiative is found from any. A
     record already tracked moves to the new task, and the old task's fields
     are taken off; a task tracks one record."""
     record = call.params.get("record")
@@ -197,7 +198,10 @@ async def link_task(call: EndpointCall) -> dict[str, Any]:
     task_id = _positive_id(call.params, "task_id")
     async with write_session(call) as db:
         found = await db.get(RECORDS[record], record_id)
-        if found is None or call.claims.initiative_id not in (None, found.initiative_id):
+        if found is None:
+            raise refuse(status.HTTP_404_NOT_FOUND, TrackingError.NOT_FOUND)
+        initiative_id = found.initiative_id or call.claims.initiative_id
+        if call.claims.initiative_id not in (None, initiative_id):
             raise refuse(status.HTTP_404_NOT_FOUND, TrackingError.NOT_FOUND)
         held = (await db.exec(select(TaskLink).where(TaskLink.task_id == task_id))).first()
         if held is not None and getattr(held, f"{record}_id") != record_id:
@@ -217,9 +221,7 @@ async def link_task(call: EndpointCall) -> dict[str, Any]:
         if before not in (None, task_id):
             cleared = dict.fromkeys(values)
             await _write_fields(call.plugin, call.claims.community_ref, before, cleared, None)
-        await _write_fields(
-            call.plugin, call.claims.community_ref, task_id, values, found.initiative_id
-        )
+        await _write_fields(call.plugin, call.claims.community_ref, task_id, values, initiative_id)
     except InitiativeUnavailable:
         logger.warning("Hoard's fields wait for the next event about %s %s", record, record_id)
     return {"record": record, "record_id": record_id, "task_id": task_id}
