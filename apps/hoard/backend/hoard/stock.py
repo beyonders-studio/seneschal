@@ -11,6 +11,7 @@ adjustment, is followed by :func:`hoard.costing.rederive` for its item.
 
 from __future__ import annotations
 
+from collections.abc import MutableMapping
 from decimal import Decimal
 from enum import StrEnum
 
@@ -28,6 +29,7 @@ from hoard.records import (
     Item,
     ItemKind,
     Location,
+    Lot,
     Material,
     Product,
     StockLevel,
@@ -145,3 +147,37 @@ async def on_hand(db: AsyncSession, item_id: int, location_id: int | None = None
     if location_id is not None:
         query = query.where(StockLevel.location_id == location_id)
     return Decimal((await db.exec(query)).one())
+
+
+async def draw_lots(
+    db: AsyncSession,
+    item_id: int,
+    location_id: int,
+    quantity: Decimal,
+    drawn: MutableMapping[int, Decimal],
+) -> list[tuple[int | None, Decimal]]:
+    """The lots ``quantity`` of an item at a location is assumed to come from,
+    and how much from each: the lots holding stock there, the earliest expiry
+    first, then the first in, each no further than its balance less what
+    ``drawn`` already takes from it, which this adds to. Whatever the lots do
+    not hold draws on no lot (``None``)."""
+    lots = await db.exec(
+        select(Lot)
+        .where(Lot.item_id == item_id, Lot.location_id == location_id)
+        .order_by(col(Lot.expires_on).asc().nulls_last(), col(Lot.dated_on), col(Lot.id))
+        .execution_options(populate_existing=True)
+    )
+    draws: list[tuple[int | None, Decimal]] = []
+    need = quantity
+    for lot in lots.all():
+        take = min(need, lot.balance - drawn.get(lot.id, Decimal(0)))
+        if take <= 0:
+            continue
+        draws.append((lot.id, take))
+        drawn[lot.id] = drawn.get(lot.id, Decimal(0)) + take
+        need -= take
+        if need == 0:
+            break
+    if need > 0:
+        draws.append((None, need))
+    return draws

@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from hoard import costing
+import pytest
+
+from hoard import costing, listings
 from hoard.records import Adjustment, AdjustmentKind, Item, Location
 from hoard.stock import adjust
 from seneschal_core.db import WriteSession
@@ -75,3 +77,19 @@ async def test_a_starting_cost_is_corrected_by_editing_it(
     starting.unit_cost = Decimal(5)
     await costing.rederive(db, sugar.id)
     assert (await _average(db, sugar.id), used.unit_cost) == (5, 5)
+
+
+async def test_each_item_re_derived_is_noted_for_its_listings(
+    db: WriteSession, main: Location, material, monkeypatch: pytest.MonkeyPatch
+):
+    noted: list[int] = []
+
+    async def note_changed(_db: WriteSession, item_id: int) -> None:
+        noted.append(item_id)
+
+    monkeypatch.setattr(listings, "note_changed", note_changed)
+    salt = await material("Salt")
+
+    await _adjust(db, salt.id, main, "3", day=1)
+
+    assert noted == [salt.id]
