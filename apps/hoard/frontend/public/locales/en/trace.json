@@ -1,10 +1,53 @@
 {
   "section": {
     "title": "Trace",
-    "empty": "Nothing went into this lot or came from it yet."
+    "empty": "Nothing went into this lot or came from it yet.",
+    "loadError": "The trace couldn't be loaded.",
+    "back": "What went into it",
+    "backEmpty": "Nothing is recorded as going into it.",
+    "forward": "Where it went",
+    "forwardEmpty": "Nothing is recorded as made from it or shipped.",
+    "mayHave": "Where it may have gone",
+    "mayHaveHint": "Lots Hoard assumed by the picking rule, and sales that named no lot of this item here while this lot held stock.",
+    "recall": "Recall this lot"
+  },
+  "steps": {
+    "record": "Record",
+    "item": "Item",
+    "lot": "Lot",
+    "quantity": "Quantity",
+    "party": "With",
+    "mayHave": "May have",
+    "consumer": "A consumer",
+    "unnamedContact": "A contact Hoard can't read",
+    "kinds": {
+      "run": "Run {{code}}",
+      "shipment": "Order {{code}}",
+      "purchase": "Purchase {{code}}"
+    }
   },
   "recall": {
     "emptyTitle": "Recall a lot",
-    "emptyBody": "Find every lot made from it and every shipment it reached or may have reached."
+    "emptyBody": "Find every lot made from it and every shipment it reached or may have reached.",
+    "item": "Item",
+    "since": "Lots dated from",
+    "until": "Lots dated to",
+    "find": "Recall",
+    "fromLot": "Recalling one lot.",
+    "byItem": "Recall by item instead",
+    "backToLot": "Back to the lot",
+    "loadError": "The recall couldn't be loaded.",
+    "none": "No lots of this item are dated in that range.",
+    "download": "Download:",
+    "formats": {
+      "fda": "FDA spreadsheet",
+      "canada": "Canada plain text",
+      "pdf": "PDF"
+    },
+    "lotTitle": "{{item}}, lot",
+    "made": "Lots made from it",
+    "madeEmpty": "No lot was made from it.",
+    "shipments": "Shipments",
+    "shipmentsEmpty": "It reached no shipment."
   }
 }
