@@ -86,6 +86,40 @@ async def test_adding_drinks_twice_changes_nothing_the_second_time(db: WriteSess
     assert (await db.exec(select(OrganizationSettings))).first() is None
 
 
+def test_the_first_open_dropdown_offers_each_industry():
+    assert [*setups.setups()] == ["bakery_food", "cosmetics_soap", "drinks", "restaurant_bar"]
+
+
+@pytest.mark.parametrize("key", ["bakery_food", "cosmetics_soap", "restaurant_bar"])
+async def test_adding_an_industrys_setup_twice_changes_nothing_the_second_time(
+    db: WriteSession, key: str
+):
+    setup = setups.setups()[key]
+
+    await setups.add(db, setup, _words(setup))
+    first = await _everything(db)
+    await setups.add(db, setup, _words(setup))
+
+    assert await _everything(db) == first
+    assert await setups.added(db, setup)
+    held = await db.exec(select(HoldReason.key).where(col(HoldReason.name).is_not(None)))
+    assert sorted(held.all()) == sorted(setup.hold_reasons)
+    # Packaging and the like, which never expires, go first in, first out.
+    first_in = await db.exec(select(Category.name).where(Category.picking == Picking.FIRST_IN))
+    assert first_in.all()
+
+
+async def test_cosmetics_cures_its_lots_and_writes_off_a_failed_cure(db: WriteSession):
+    cosmetics = setups.setups()["cosmetics_soap"]
+
+    await setups.add(db, cosmetics, _words(cosmetics))
+
+    curing = await db.exec(select(HoldReason.name).where(HoldReason.key == "curing"))
+    assert curing.all() == ["<hold_reasons.curing>"]
+    reasons = await db.exec(select(AdjustmentReason.name))
+    assert "<reasons.failed_cure>" in reasons.all()
+
+
 async def test_a_renamed_property_is_found_by_its_key(db: WriteSession):
     drinks = setups.setups()["drinks"]
     await setups.add(db, drinks, _words(drinks))

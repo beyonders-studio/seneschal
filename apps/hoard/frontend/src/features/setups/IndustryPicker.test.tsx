@@ -6,7 +6,12 @@ import { SETTINGS } from "@/features/items/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
 const offered = (added: boolean, started = false): SetupsRead => ({
-  setups: [{ key: "drinks", added, words: ["units.fl_oz", "reasons.spill"] }],
+  setups: [
+    { key: "bakery_food", added: false, words: ["units.dozen"] },
+    { key: "cosmetics_soap", added: false, words: ["hold_reasons.curing"] },
+    { key: "drinks", added, words: ["units.fl_oz", "reasons.spill"] },
+    { key: "restaurant_bar", added: false, words: ["reasons.sent_back"] },
+  ],
   started,
 });
 
@@ -14,7 +19,7 @@ const answers = (setups: SetupsRead) => ({
   ...SETTINGS,
   "GET /api/v1/materials": { status: 200, data: { items: [], total: 0 } },
   "GET /api/v1/setups": { status: 200, data: setups },
-  "POST /api/v1/setups/drinks/add": { status: 200, data: offered(true).setups[0] },
+  "POST /api/v1/setups/drinks/add": { status: 200, data: offered(true).setups[2] },
   "POST /api/v1/setups/blank": { status: 200, data: offered(false, true) },
 });
 
@@ -46,7 +51,10 @@ describe("IndustryPicker", () => {
     const options = await open();
 
     expect(options.map((option) => option.textContent)).toEqual([
+      "Bakery and food",
+      "Cosmetics and soap",
       "Tea, coffee and drinks",
+      "Restaurant, café and bar",
       "Something else",
     ]);
   });

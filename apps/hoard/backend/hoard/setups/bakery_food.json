@@ -1,0 +1,45 @@
+{
+  "base_word": "base",
+  "units": ["g", "kg", "oz", "lb", "ml", "l", "fl_oz", "each", "dozen", "case"],
+  "categories": [
+    { "key": "flour_grain", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "sugar_sweetener", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "dairy_egg", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "fat_oil", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "fruit_vegetable", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "nut_seed", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "spice_flavoring", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "other_ingredient", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "dough_batter", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "filling_frosting", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    { "key": "baked_good", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "packed_food", "kinds": ["product"], "picking": "earliest_expiry" }
+  ],
+  "properties": [
+    {
+      "key": "organic_category",
+      "kind": "lot",
+      "type": "select",
+      "options": ["organic_100", "organic", "made_with_organic", "not_organic"]
+    },
+    { "key": "certifier", "kind": "lot", "type": "text" },
+    { "key": "certificate", "kind": "lot", "type": "file" },
+    { "key": "certificate_expires", "kind": "lot", "type": "date" },
+    { "key": "allergen_statement", "kind": "lot", "type": "file" },
+    { "key": "country_of_origin", "kind": "lot", "type": "text" },
+    { "key": "lot_code_source", "kind": "lot", "type": "text" },
+    { "key": "received_temperature", "kind": "lot", "type": "number" },
+    { "key": "made_at", "kind": "lot", "type": "datetime" }
+  ],
+  "reasons": [
+    "unsold",
+    "burnt",
+    "misshapen",
+    "dropped",
+    "spoiled",
+    "tasting_sample",
+    "damaged_packaging"
+  ],
+  "hold_reasons": ["temperature", "label_check"]
+}

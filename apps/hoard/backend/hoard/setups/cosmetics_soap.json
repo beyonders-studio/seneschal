@@ -1,0 +1,40 @@
+{
+  "base_word": "base",
+  "units": ["g", "kg", "oz", "lb", "ml", "l", "fl_oz", "each"],
+  "categories": [
+    { "key": "oil_butter", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "lye", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "essential_oil_fragrance", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "botanical_extract", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "colorant_additive", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "emulsifier_preservative", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "wax", "kinds": ["material"], "picking": "first_in" },
+    { "key": "oil_blend", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "fragrance_blend", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    { "key": "soap", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "skin_hair_care", "kinds": ["product"], "picking": "earliest_expiry" }
+  ],
+  "properties": [
+    { "key": "certificate_of_analysis", "kind": "lot", "type": "file" },
+    { "key": "allergen_statement", "kind": "lot", "type": "file" },
+    { "key": "country_of_origin", "kind": "lot", "type": "text" },
+    { "key": "ph", "kind": "lot", "type": "number" },
+    {
+      "key": "quality_check",
+      "kind": "lot",
+      "type": "select",
+      "options": ["passed", "failed"]
+    },
+    { "key": "period_after_opening", "kind": "product", "type": "number" }
+  ],
+  "reasons": [
+    "failed_cure",
+    "trimmings",
+    "spoiled",
+    "tester",
+    "spill",
+    "damaged_packaging"
+  ],
+  "hold_reasons": ["curing", "label_check"]
+}
