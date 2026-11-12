@@ -107,7 +107,7 @@ class HoldCreate(BaseModel):
     made_from: bool = False
 
 
-class HoldFromOrder(BaseModel):
+class HoldOrderCreate(BaseModel):
     #: The suspect reason when not given.
     reason_id: int | None = None
     notes: str | None = NOTES
@@ -171,7 +171,7 @@ async def place_hold(body: HoldCreate, db: WriteSessionDep) -> list[HoldRead]:
 
 @router.post("/orders/{order_id}", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
 async def place_order_holds(
-    order_id: int, body: HoldFromOrder, db: WriteSessionDep
+    order_id: int, body: HoldOrderCreate, db: WriteSessionDep
 ) -> list[HoldRead]:
     """Put every lot an order's shipments drew on hold, recorded or assumed,
     when a problem with the order is reported, and, when asked, everything
