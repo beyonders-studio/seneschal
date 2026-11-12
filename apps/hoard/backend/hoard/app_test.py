@@ -71,7 +71,8 @@ async def test_initiative_reaches_hoards_hooks(client, initiative_stand_in, comm
         ("erase", {}),
     ):
         assert (await call(hook, body)).status_code == 204, hook
-    assert (await call("schedule", {"schedule": "nightly", "since": None})).status_code == 404
+    assert (await call("schedule", {"schedule": "nightly", "since": None})).status_code == 400
+    assert (await call("nothing", {})).status_code == 404
 
 
 async def test_each_page_opens_the_built_pages(client):

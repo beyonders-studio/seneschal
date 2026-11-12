@@ -11,8 +11,9 @@ from fastapi import FastAPI, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
-from hoard import plugin_manifest, tracking
+from hoard import plugin_manifest, push, sync, tracking
 from hoard.api import router as api_router
+from hoard.channels import hooks as store_hooks
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
 from hoard.endpoints import ENDPOINTS
 from seneschal_core.api import Plugin, install
@@ -65,14 +66,21 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await plugin.start()
-        # The events the outbox holds are sent until the app stops.
-        delivering = asyncio.create_task(tracking.deliver_forever(plugin))
+        # Until the app stops: the events the outbox holds are sent, stock
+        # is pushed to stores, and what stores' webhooks say is worked.
+        workers = [
+            asyncio.create_task(tracking.deliver_forever(plugin)),
+            asyncio.create_task(push.push_forever(plugin)),
+            asyncio.create_task(sync.work_forever(plugin)),
+        ]
         try:
             yield
         finally:
-            delivering.cancel()
-            with suppress(asyncio.CancelledError):
-                await delivering
+            for worker in workers:
+                worker.cancel()
+            for worker in workers:
+                with suppress(asyncio.CancelledError):
+                    await worker
             await plugin.stop()
 
     app = FastAPI(
@@ -91,7 +99,10 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     app.include_router(api_router)
     app.include_router(
         platform_router(
-            hooks=ORGANIZATION_HOOKS,
+            hooks={
+                **ORGANIZATION_HOOKS,
+                **store_hooks.hooks(store_hooks.webhook_address(settings.public_api_url)),
+            },
             endpoints=ENDPOINTS,
             public=plugin_manifest.PUBLIC_ENDPOINTS,
         )

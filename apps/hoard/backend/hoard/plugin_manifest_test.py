@@ -8,6 +8,7 @@ import re
 
 from hoard import events, plugin_manifest
 from hoard.endpoints import ENDPOINTS
+from hoard.records import Channel
 
 #: The plug-in contract's identifiers and metadata keys.
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -98,3 +99,30 @@ def test_its_fields_parts_and_actions_name_only_what_it_declares():
                 assert set(part["on"]) <= set(actions[props["action"]]["on"]), part["id"]
     blocks = {"actions", "dashboards", "endpoints", "fields", "pages", "parts", "widgets"}
     assert set(definition["features"]) == blocks & set(definition)
+
+
+def test_its_store_connections_route_and_check_their_webhooks():
+    definition = plugin_manifest.definition()
+    connections = {connection["id"]: connection for connection in definition["connections"]}
+    route, verify = definition["webhooks"]["route"], definition["webhooks"]["verify"]
+
+    assert set(connections) == {Channel.SHOPIFY.value}
+    for connection in connections.values():
+        assert connection["scope"] == "static" and connection["after_connect"] is True
+        fields = {field["key"]: field for field in connection["fields"]}
+        assert len(fields) == len(connection["fields"])
+        for key, field in fields.items():
+            assert IDENTIFIER.match(key) and field["type"] in ("string", "secret"), key
+    managed = {
+        field["key"]: field
+        for field in connections[route["connection"]]["fields"]
+        if field.get("managed")
+    }
+    # The route and the signing secret are values Hoard's after_connect answers.
+    assert route["field"] in managed and managed[route["field"]]["type"] == "string"
+    assert verify["secret"] == "{signing_secret}"
+    assert managed["signing_secret"]["type"] == "secret"
+    assert {"header"} == set(route) - {"connection", "field"}
+    for schedule in definition["schedules"]:
+        assert IDENTIFIER.match(schedule["id"]) and re.fullmatch(r"[0-9]+[mh]", schedule["every"])
+    assert len({schedule["id"] for schedule in definition["schedules"]}) == 2

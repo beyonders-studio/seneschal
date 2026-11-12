@@ -11,6 +11,12 @@ drawing each (the plain scripts in ``widgets/``, which Initiative runs in its
 widget sandbox), and one dashboard arranging the first two, which publishing
 Hoard lists on its own.
 
+For sales channels it declares a connection per store it connects to, which
+Hoard checks at the store when an admin saves it (``hoard.channels.hooks``),
+the store's webhooks, which Initiative checks under the connection's signing
+secret and routes by the store's address, and two schedules: ``reconcile``,
+for what a webhook missed, and ``upkeep``.
+
 For the tasks that track its production runs and purchases it declares its
 events (``hoard.events``), the fields it keeps on such a task, a part showing
 them with a button, and two writes the buttons run: complete a run, and
@@ -27,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from hoard import events
-from hoard.records import Allergen, RunStatus
+from hoard.records import Allergen, Channel, RunStatus
 
 #: ``<publisher>.<slug>``: the name a deployment registers Hoard under, and the
 #: audience of every token Initiative signs for it.
@@ -57,6 +63,7 @@ PERMISSIONS = [
 PAGES = [
     ("stock", "/stock", "initiative", "Stock"),
     ("production", "/production", "initiative", "Production"),
+    ("orders", "/orders", "initiative", "Orders"),
     ("reports", "/reports", "initiative", "Reports"),
     ("settings", "/settings", "community", "Settings"),
 ]
@@ -467,6 +474,53 @@ DASHBOARDS: list[dict[str, Any]] = [
 ]
 
 
+#: The Shopify connection: what an admin types (the store's ``myshopify.com``
+#: address and its app's client ID and secret), and what Hoard's
+#: ``after_connect`` answers once the store accepts them: the store's own
+#: address, which routes its webhooks, and the secret they are signed with.
+SHOPIFY = Channel.SHOPIFY.value
+CONNECTIONS: list[dict[str, Any]] = [
+    {
+        "id": SHOPIFY,
+        "scope": "static",
+        "label": {"en": "Shopify"},
+        "after_connect": True,
+        "fields": [
+            {
+                "key": key,
+                "type": type_,
+                "label": {"en": label},
+                **({"managed": True} if managed else {"required": True}),
+            }
+            for key, type_, label, managed in (
+                ("shop", "string", "Store address (myshopify.com)", False),
+                ("client_id", "string", "Client ID", False),
+                ("client_secret", "secret", "Client secret", False),
+                ("shop_domain", "string", "Store domain", True),
+                ("signing_secret", "secret", "Webhook signing secret", True),
+            )
+        ],
+    }
+]
+
+#: Shopify's webhooks: each signed with the store's app's secret, named by its
+#: webhook id, and routed to the community whose connection holds the store.
+WEBHOOKS: dict[str, Any] = {
+    "verify": {
+        "scheme": "hmac_sha256",
+        "header": "X-Shopify-Hmac-Sha256",
+        "encoding": "base64",
+        "secret": "{signing_secret}",
+    },
+    "dedup": "X-Shopify-Webhook-Id",
+    "route": {"header": "X-Shopify-Shop-Domain", "connection": SHOPIFY, "field": "shop_domain"},
+}
+
+#: What Initiative runs for each community: each store reconciled, and its
+#: subscriptions kept.
+SCHEDULES = [{"id": "reconcile", "every": "15m"}, {"id": "upkeep", "every": "24h"}]
+
+
 def definition() -> dict[str, Any]:
     """The manifest: what Hoard offers and asks for."""
     return {
@@ -474,6 +528,9 @@ def definition() -> dict[str, Any]:
         "service": {"public_id": PUBLIC_ID, "protocol": PROTOCOL_VERSION, "scopes": SCOPES},
         "features": ["actions", "dashboards", "endpoints", "fields", "pages", "parts", "widgets"],
         "permissions": PERMISSIONS,
+        "connections": CONNECTIONS,
+        "webhooks": WEBHOOKS,
+        "schedules": SCHEDULES,
         "pages": [
             {"id": page, "path": path, "scopes": [scope], "name": {"en": name}}
             for page, path, scope, name in PAGES
