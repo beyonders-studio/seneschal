@@ -1,21 +1,17 @@
 {
-  "section": {
-    "title": "Starting setups",
-    "intro": "A starting setup adds the units, categories, lot properties and waste reasons a kind of business needs. Adding one keeps everything you have, and you can rename or remove what it adds.",
-    "add": "Add",
-    "added": "Added",
-    "addedToast": "{{name}} added",
-    "error": "Couldn't add the setup."
-  },
-  "suggestion": {
-    "title": "Start from a setup?",
-    "body": "Pick the kind of business closest to yours and Hoard adds what it needs. You can add one later in Settings.",
-    "blank": "Start blank"
+  "picker": {
+    "title": "What kind of business is this?",
+    "body": "Hoard starts with the units, categories, lot details and waste reasons your kind of business uses. You can rename or remove any of them afterwards.",
+    "label": "Kind of business",
+    "placeholder": "Choose one",
+    "other": "Something else",
+    "start": "Start",
+    "addedToast": "Hoard is set up for {{name}}",
+    "error": "Couldn't set Hoard up."
   },
   "setups": {
     "drinks": {
-      "name": "Drinks",
-      "description": "Tea, coffee, boba and the like: blending, roasting, packing and drinks made to order, with the syrups and mixers they share.",
+      "name": "Tea, coffee and drinks",
       "units": {
         "g": "g",
         "kg": "kg",

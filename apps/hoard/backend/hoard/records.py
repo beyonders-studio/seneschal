@@ -669,6 +669,9 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     #: What the organization calls a base, such as "blend"; pages say the
     #: translated word for a base until someone names it.
     base_word: str | None = None
+    #: Whether an admin, asked which kind of business this is on first opening
+    #: Hoard, answered that it is none Hoard has a starting setup for.
+    started_blank: bool = False
 
 
 class ProductImage(OrganizationRow, Stamped, table=True):

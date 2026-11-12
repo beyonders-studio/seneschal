@@ -48,7 +48,7 @@ def test_the_page_holds_words_for_every_key_of_every_setup():
 
         for path in setup.words():
             assert isinstance(word(path), str), (key, path)
-        assert isinstance(word("name"), str) and isinstance(word("description"), str)
+        assert isinstance(word("name"), str)
 
 
 async def test_adding_drinks_twice_changes_nothing_the_second_time(db: WriteSession):

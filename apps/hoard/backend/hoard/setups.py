@@ -1,6 +1,7 @@
 """Starting setups: what a kind of business starts Hoard with, kept as data in
-``setups/<key>.json``. Hoard suggests one the first time it is opened and
-never asks for one; another can be added later.
+``setups/<key>.json``. The first time Hoard is opened, an admin is asked which
+kind of business this is: the answer adds its setup, or, for a business Hoard
+has none for, starts blank. Either way it is asked once.
 
 A setup brings units, categories (its kinds of item, each for the kinds of
 record it sorts), properties of records, each with its key, adjustment
@@ -143,9 +144,21 @@ async def added(db: AsyncSession, setup: Setup) -> bool:
 
 
 async def started(db: AsyncSession) -> bool:
-    """Whether the organization has begun on its own: it has a unit, which
-    whatever holds stock is counted in."""
+    """Whether the organization has begun on its own: an admin chose to start
+    blank, or it has a unit, which whatever holds stock is counted in."""
+    if (await db.exec(select(OrganizationSettings.started_blank))).first():
+        return True
     return (await db.exec(select(func.count()).select_from(Unit))).one() > 0
+
+
+async def start_blank(db: WriteSession) -> None:
+    """Record that an admin chose to start without a setup."""
+    settings = (await db.exec(select(OrganizationSettings))).first() or OrganizationSettings(
+        organization_id=db.organization_id
+    )
+    settings.started_blank = True
+    db.add(settings)
+    await db.flush()
 
 
 async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:

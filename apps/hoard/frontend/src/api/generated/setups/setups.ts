@@ -160,6 +160,54 @@ export function useListSetups<
 }
 
 /**
+ * Start without a setup: the business is none Hoard has one for.
+ * @summary Start Blank
+ */
+export const startBlank = (options?: SecondParameter<typeof apiMutator>, signal?: AbortSignal) => {
+  return apiMutator<SetupsRead>({ url: `/api/v1/setups/blank`, method: "POST", signal }, options);
+};
+
+export const getStartBlankMutationKey = () => ["startBlank"] as const;
+
+export const getStartBlankMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof startBlank>>, TError, void, TContext>;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<Awaited<ReturnType<typeof startBlank>>, TError, void, TContext> => {
+  const mutationKey = getStartBlankMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof startBlank>>, void> = () => {
+    return startBlank(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type StartBlankMutationResult = NonNullable<Awaited<ReturnType<typeof startBlank>>>;
+
+export type StartBlankMutationError = ErrorType<void>;
+
+/**
+ * Start without a setup: the business is none Hoard has one for.
+ * @summary Start Blank
+ */
+export const useStartBlank = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof startBlank>>, TError, void, TContext>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<Awaited<ReturnType<typeof startBlank>>, TError, void, TContext> => {
+  return useMutation(getStartBlankMutationOptions(options), queryClient);
+};
+/**
  * Add what a setup brings that the organization does not have.
  * @summary Add Setup
  */
