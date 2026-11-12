@@ -202,6 +202,9 @@ async def queue(
             made = await _queue_one(db, listing.id, store_location.id, available[where])
             if made is not None:
                 queued.append(made)
+    if queued:
+        # Once the session commits, the running worker sends what this queued.
+        db.info.setdefault(_NOTED, {}).setdefault(db.organization_id, set())
     await db.flush()
     return queued
 
