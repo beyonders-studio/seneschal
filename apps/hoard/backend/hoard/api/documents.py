@@ -167,32 +167,17 @@ async def unlink_document(document_id: int, db: WriteSessionDep) -> None:
     await db.commit()
 
 
-class DocumentRegimePeriod(BaseModel):
-    """How long one rule asks for records to be kept."""
-
-    regime: Regime
-    months: int
-
-
 class DocumentBackupPeriod(BaseModel):
     """How long the organization's rules ask for records to be kept."""
 
-    #: The longest of the rules it keeps records for; None for none.
+    #: The longest any of the rules it keeps records for asks; None for none.
     months: int | None
-    #: Each rule, in its order, and what it asks.
-    regimes: list[DocumentRegimePeriod]
 
 
 @router.get("/backup-period")
 async def read_backup_period(db: OrganizationSessionDep) -> DocumentBackupPeriod:
-    """How long the rules the organization keeps records for ask them kept,
-    and what each rule asks."""
+    """How long the rules the organization keeps records for ask them kept:
+    the longest any of them asks."""
     settings = (await db.exec(select(OrganizationSettings))).first()
     ticked = settings.regimes if settings else []
-    return DocumentBackupPeriod(
-        months=backups.period(Regime(regime) for regime in ticked),
-        regimes=[
-            DocumentRegimePeriod(regime=regime, months=months)
-            for regime, months in backups.MONTHS.items()
-        ],
-    )
+    return DocumentBackupPeriod(months=backups.period(Regime(regime) for regime in ticked))

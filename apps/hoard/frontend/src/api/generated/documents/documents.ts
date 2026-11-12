@@ -358,8 +358,8 @@ export const useUnlinkDocument = <
   return useMutation(getUnlinkDocumentMutationOptions(options), queryClient);
 };
 /**
- * How long the rules the organization keeps records for ask them kept,
- * and what each rule asks.
+ * How long the rules the organization keeps records for ask them kept:
+ * the longest any of them asks.
  * @summary Read Backup Period
  */
 export const readBackupPeriod = (
@@ -401,8 +401,8 @@ export type ReadBackupPeriodQueryResult = NonNullable<Awaited<ReturnType<typeof 
 export type ReadBackupPeriodQueryError = ErrorType<unknown>;
 
 /**
- * How long the rules the organization keeps records for ask them kept,
- * and what each rule asks.
+ * How long the rules the organization keeps records for ask them kept:
+ * the longest any of them asks.
  * @summary Read Backup Period
  */
 export function useReadBackupPeriod<
@@ -424,8 +424,8 @@ export function useReadBackupPeriod<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * How long the rules the organization keeps records for ask them kept,
- * and what each rule asks.
+ * How long the rules the organization keeps records for ask them kept:
+ * the longest any of them asks.
  * @summary Read Backup Period
  */
 export function useReadBackupPeriod<
@@ -447,8 +447,8 @@ export function useReadBackupPeriod<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * How long the rules the organization keeps records for ask them kept,
- * and what each rule asks.
+ * How long the rules the organization keeps records for ask them kept:
+ * the longest any of them asks.
  * @summary Read Backup Period
  */
 export function useReadBackupPeriod<
@@ -462,8 +462,8 @@ export function useReadBackupPeriod<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * How long the rules the organization keeps records for ask them kept,
- * and what each rule asks.
+ * How long the rules the organization keeps records for ask them kept:
+ * the longest any of them asks.
  * @summary Read Backup Period
  */
 export function useReadBackupPeriod<

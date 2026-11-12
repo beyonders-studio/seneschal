@@ -116,6 +116,4 @@ async def test_the_backup_period_is_the_longest_the_ticked_rules_ask(
 
     ticked = (await client.get("/api/v1/documents/backup-period")).json()
 
-    assert (none["months"], ticked["months"]) == (None, 60)
-    assert none["regimes"][0] == {"regime": "us_one_up_one_back", "months": 24}
-    assert len(none["regimes"]) == 7
+    assert (none, ticked) == ({"months": None}, {"months": 60})
