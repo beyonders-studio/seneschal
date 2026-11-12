@@ -15,6 +15,7 @@
     "addFailed": "The contact couldn't be added."
   },
   "errors": {
-    "CONTACT_REFUSED": "Initiative didn't let Hoard add the contact. Open Hoard from an initiative where contacts are on, or add it in Initiative."
+    "COMMUNITY_CONTACTS_NOT_INSTALLED": "Your community keeps its contacts in the Community contacts plug-in, which isn't installed. Install it from your community's plug-ins in Initiative, then add the supplier.",
+    "CONTACT_ADD_REFUSED": "Initiative didn't let Hoard add the contact. Add it to the community's contacts in Initiative instead."
   }
 }
