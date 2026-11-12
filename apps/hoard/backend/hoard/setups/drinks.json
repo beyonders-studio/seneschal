@@ -1,0 +1,77 @@
+{
+  "base_word": "base",
+  "units": [
+    "g",
+    "kg",
+    "oz",
+    "lb",
+    "ml",
+    "l",
+    "fl_oz",
+    "each",
+    "bottle_50ml",
+    "bottle_200ml",
+    "bottle_375ml",
+    "bottle_750ml",
+    "bottle_1l",
+    "bottle_1750ml"
+  ],
+  "categories": [
+    { "key": "tea_botanical", "kinds": ["material"] },
+    { "key": "green_coffee", "kinds": ["material"] },
+    { "key": "roasted_coffee", "kinds": ["material", "base"] },
+    { "key": "blend", "kinds": ["base"] },
+    { "key": "base", "kinds": ["base"] },
+    { "key": "prep", "kinds": ["base"] },
+    { "key": "dairy", "kinds": ["material"] },
+    { "key": "syrup_mixer", "kinds": ["material", "base"] },
+    { "key": "packaging", "kinds": ["material"] },
+    { "key": "packed_product", "kinds": ["product"] },
+    { "key": "drink", "kinds": ["product"] }
+  ],
+  "properties": [
+    {
+      "key": "organic_category",
+      "kind": "lot",
+      "type": "select",
+      "options": ["organic_100", "organic", "made_with_organic", "not_organic"]
+    },
+    {
+      "key": "fair_trade",
+      "kind": "lot",
+      "type": "select",
+      "options": ["certified", "not_certified"]
+    },
+    { "key": "certifier", "kind": "lot", "type": "text" },
+    { "key": "certificate", "kind": "lot", "type": "file" },
+    { "key": "certificate_expires", "kind": "lot", "type": "date" },
+    { "key": "import_certificate", "kind": "lot", "type": "text" },
+    { "key": "country_of_origin", "kind": "lot", "type": "text" },
+    { "key": "region", "kind": "lot", "type": "text" },
+    {
+      "key": "agriculture",
+      "kind": "lot",
+      "type": "select",
+      "options": ["eu", "non_eu", "eu_non_eu"]
+    },
+    { "key": "harvest_plot", "kind": "lot", "type": "text" },
+    { "key": "farm", "kind": "lot", "type": "text" },
+    { "key": "process", "kind": "lot", "type": "text" },
+    { "key": "varietal", "kind": "lot", "type": "text" },
+    { "key": "grade", "kind": "lot", "type": "text" },
+    { "key": "crop_year", "kind": "lot", "type": "number" },
+    { "key": "roasted_on", "kind": "lot", "type": "date" },
+    { "key": "opened_on", "kind": "lot", "type": "date" },
+    { "key": "made_at", "kind": "lot", "type": "datetime" },
+    { "key": "discard_at", "kind": "lot", "type": "datetime" }
+  ],
+  "reasons": [
+    "hold_time_expired",
+    "remake",
+    "leftover_milk",
+    "spill",
+    "spoiled",
+    "tasting_sample",
+    "damaged_packaging"
+  ]
+}

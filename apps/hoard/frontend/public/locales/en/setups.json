@@ -1,5 +1,98 @@
 {
   "section": {
-    "title": "Starting setups"
+    "title": "Starting setups",
+    "intro": "A starting setup adds the units, categories, lot properties and waste reasons a kind of business needs. Adding one keeps everything you have, and you can rename or remove what it adds.",
+    "add": "Add",
+    "added": "Added",
+    "addedToast": "{{name}} added",
+    "error": "Couldn't add the setup."
+  },
+  "suggestion": {
+    "title": "Start from a setup?",
+    "body": "Pick the kind of business closest to yours and Hoard adds what it needs. You can add one later in Settings.",
+    "blank": "Start blank",
+    "adminOnly": "A community admin can add a starting setup in Settings."
+  },
+  "setups": {
+    "drinks": {
+      "name": "Drinks",
+      "description": "Tea, coffee, boba and the like: blending, roasting, packing and drinks made to order, with the syrups and mixers they share.",
+      "units": {
+        "g": "g",
+        "kg": "kg",
+        "oz": "oz",
+        "lb": "lb",
+        "ml": "mL",
+        "l": "L",
+        "fl_oz": "fl oz",
+        "each": "Each",
+        "bottle_50ml": "Bottle, 50 mL",
+        "bottle_200ml": "Bottle, 200 mL",
+        "bottle_375ml": "Bottle, 375 mL",
+        "bottle_750ml": "Bottle, 750 mL",
+        "bottle_1l": "Bottle, 1 L",
+        "bottle_1750ml": "Bottle, 1.75 L"
+      },
+      "categories": {
+        "tea_botanical": "Tea or botanical",
+        "green_coffee": "Green coffee",
+        "roasted_coffee": "Roasted coffee",
+        "blend": "Blend",
+        "base": "Base",
+        "prep": "Prep",
+        "dairy": "Dairy and non-dairy",
+        "syrup_mixer": "Syrup, concentrate, bitters or mixer",
+        "packaging": "Packaging",
+        "packed_product": "Packed product",
+        "drink": "Drink"
+      },
+      "properties": {
+        "organic_category": "Organic category",
+        "fair_trade": "Fair trade",
+        "certifier": "Certifier",
+        "certificate": "Supplier's certificate",
+        "certificate_expires": "Certificate expires",
+        "import_certificate": "Import certificate",
+        "country_of_origin": "Country of origin",
+        "region": "Region",
+        "agriculture": "EU or non-EU agriculture",
+        "harvest_plot": "Harvest plot location",
+        "farm": "Farm or estate",
+        "process": "Process",
+        "varietal": "Varietal",
+        "grade": "Grade",
+        "crop_year": "Crop year",
+        "roasted_on": "Roast or production date",
+        "opened_on": "Opened on",
+        "made_at": "Made at",
+        "discard_at": "Discard at"
+      },
+      "options": {
+        "organic_category": {
+          "organic_100": "100% organic",
+          "organic": "Organic",
+          "made_with_organic": "Made with organic",
+          "not_organic": "Not organic"
+        },
+        "fair_trade": {
+          "certified": "Certified",
+          "not_certified": "Not certified"
+        },
+        "agriculture": {
+          "eu": "EU Agriculture",
+          "non_eu": "non-EU Agriculture",
+          "eu_non_eu": "EU/non-EU Agriculture"
+        }
+      },
+      "reasons": {
+        "hold_time_expired": "Hold time expired",
+        "remake": "Remake",
+        "leftover_milk": "Leftover milk",
+        "spill": "Spill",
+        "spoiled": "Spoiled or expired",
+        "tasting_sample": "Tasting or cupping sample",
+        "damaged_packaging": "Damaged packaging"
+      }
+    }
   }
 }
