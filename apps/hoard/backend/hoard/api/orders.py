@@ -256,7 +256,7 @@ async def _returns(
     return back
 
 
-async def read_order(db: OrganizationSession, order: Order) -> OrderRead:
+async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
     """``order`` as the database holds it, with its lines and shipments."""
     await db.refresh(order)
     order_lines = await orders.lines(db, order.id)
@@ -379,9 +379,9 @@ async def list_orders(
 
 
 @router.get("/{order_id}", responses=NOT_FOUND)
-async def read_order_by_id(db: OrganizationSessionDep, order_id: int) -> OrderRead:
+async def read_order(db: OrganizationSessionDep, order_id: int) -> OrderRead:
     """An order, its lines, and its shipments with their lots and returns."""
-    return await read_order(db, await known(db, Order, order_id))
+    return await describe_order(db, await known(db, Order, order_id))
 
 
 class OrderLineCreate(BaseModel):
@@ -449,7 +449,7 @@ async def create_order(db: WriteSessionDep, session: SessionDep, body: OrderCrea
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 class OrderUpdate(BaseModel):
@@ -484,7 +484,7 @@ async def update_order(db: WriteSessionDep, order_id: int, body: OrderUpdate) ->
     if "location_id" in sent:
         await orders.note(db, order)
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 @router.delete(
@@ -510,7 +510,7 @@ async def cancel_order(db: WriteSessionDep, order_id: int) -> OrderRead:
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 @router.post("/{order_id}/reopen", responses={**NOT_FOUND, **CHANGE_REFUSED})
@@ -522,7 +522,7 @@ async def reopen_order(db: WriteSessionDep, order_id: int) -> OrderRead:
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 async def _line(db: WriteSession, order_id: int, line_id: int) -> tuple[Order, OrderLine]:
@@ -546,7 +546,7 @@ async def create_order_line(db: WriteSessionDep, order_id: int, body: OrderLineC
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 class OrderLineUpdate(BaseModel):
@@ -570,7 +570,7 @@ async def update_order_line(
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 @router.delete("/{order_id}/lines/{line_id}", responses={**NOT_FOUND, **CHANGE_REFUSED})
@@ -582,4 +582,4 @@ async def delete_order_line(db: WriteSessionDep, order_id: int, line_id: int) ->
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)

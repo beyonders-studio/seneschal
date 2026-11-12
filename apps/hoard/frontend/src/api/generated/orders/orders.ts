@@ -273,9 +273,9 @@ export const useCreateOrder = <TError = ErrorType<void>, TContext = unknown>(
 };
 /**
  * An order, its lines, and its shipments with their lots and returns.
- * @summary Read Order By Id
+ * @summary Read Order
  */
-export const readOrderById = (
+export const readOrder = (
   orderId: number,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
@@ -286,56 +286,56 @@ export const readOrderById = (
   );
 };
 
-export const getReadOrderByIdQueryKey = (orderId: number) => {
+export const getReadOrderQueryKey = (orderId: number) => {
   return [`/api/v1/orders/${orderId}`] as const;
 };
 
-export const getReadOrderByIdQueryOptions = <
-  TData = Awaited<ReturnType<typeof readOrderById>>,
+export const getReadOrderQueryOptions = <
+  TData = Awaited<ReturnType<typeof readOrder>>,
   TError = ErrorType<void | HTTPValidationError>,
 >(
   orderId: number,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   }
 ) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getReadOrderByIdQueryKey(orderId);
+  const queryKey = queryOptions?.queryKey ?? getReadOrderQueryKey(orderId);
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof readOrderById>>> = ({ signal }) =>
-    readOrderById(orderId, requestOptions, signal);
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readOrder>>> = ({ signal }) =>
+    readOrder(orderId, requestOptions, signal);
 
   return {
     queryKey,
     queryFn,
     enabled: orderId !== null && orderId !== undefined,
     ...queryOptions,
-  } as UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData> & {
+  } as UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData> & {
     queryKey: DataTag<QueryKey, TData, TError>;
   };
 };
 
-export type ReadOrderByIdQueryResult = NonNullable<Awaited<ReturnType<typeof readOrderById>>>;
-export type ReadOrderByIdQueryError = ErrorType<void | HTTPValidationError>;
+export type ReadOrderQueryResult = NonNullable<Awaited<ReturnType<typeof readOrder>>>;
+export type ReadOrderQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
  * An order, its lines, and its shipments with their lots and returns.
- * @summary Read Order By Id
+ * @summary Read Order
  */
-export function useReadOrderById<
-  TData = Awaited<ReturnType<typeof readOrderById>>,
+export function useReadOrder<
+  TData = Awaited<ReturnType<typeof readOrder>>,
   TError = ErrorType<void | HTTPValidationError>,
 >(
   orderId: number,
   options: {
-    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData>> &
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData>> &
       Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof readOrderById>>,
+          Awaited<ReturnType<typeof readOrder>>,
           TError,
-          Awaited<ReturnType<typeof readOrderById>>
+          Awaited<ReturnType<typeof readOrder>>
         >,
         "initialData"
       >;
@@ -345,20 +345,20 @@ export function useReadOrderById<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * An order, its lines, and its shipments with their lots and returns.
- * @summary Read Order By Id
+ * @summary Read Order
  */
-export function useReadOrderById<
-  TData = Awaited<ReturnType<typeof readOrderById>>,
+export function useReadOrder<
+  TData = Awaited<ReturnType<typeof readOrder>>,
   TError = ErrorType<void | HTTPValidationError>,
 >(
   orderId: number,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData>> &
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData>> &
       Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof readOrderById>>,
+          Awaited<ReturnType<typeof readOrder>>,
           TError,
-          Awaited<ReturnType<typeof readOrderById>>
+          Awaited<ReturnType<typeof readOrder>>
         >,
         "initialData"
       >;
@@ -368,35 +368,35 @@ export function useReadOrderById<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * An order, its lines, and its shipments with their lots and returns.
- * @summary Read Order By Id
+ * @summary Read Order
  */
-export function useReadOrderById<
-  TData = Awaited<ReturnType<typeof readOrderById>>,
+export function useReadOrder<
+  TData = Awaited<ReturnType<typeof readOrder>>,
   TError = ErrorType<void | HTTPValidationError>,
 >(
   orderId: number,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * An order, its lines, and its shipments with their lots and returns.
- * @summary Read Order By Id
+ * @summary Read Order
  */
-export function useReadOrderById<
-  TData = Awaited<ReturnType<typeof readOrderById>>,
+export function useReadOrder<
+  TData = Awaited<ReturnType<typeof readOrder>>,
   TError = ErrorType<void | HTTPValidationError>,
 >(
   orderId: number,
   options?: {
-    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrderById>>, TError, TData>>;
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readOrder>>, TError, TData>>;
     request?: SecondParameter<typeof apiMutator>;
   },
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-  const queryOptions = getReadOrderByIdQueryOptions(orderId, options);
+  const queryOptions = getReadOrderQueryOptions(orderId, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

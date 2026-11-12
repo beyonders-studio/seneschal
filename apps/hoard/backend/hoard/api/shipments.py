@@ -5,7 +5,7 @@ A shipment is planned pending: its lines, each no more than its order line
 has left, and the lot each draws, recorded or left for Hoard to assume when it
 ships. Only shipping it moves stock. What comes back of a shipped line is
 restocked, or written off when damaged. Every route answers the shipment's
-order as :func:`hoard.api.orders.read_order` reads it.
+order as :func:`hoard.api.orders.describe_order` reads it.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from hoard import shipments
 from hoard.api.adjustments import NOT_FOUND, Responses, changes, known, location_or_main
 from hoard.api.deps import HoardError
-from hoard.api.orders import OrderRead, Positive, Text, read_order
+from hoard.api.orders import OrderRead, Positive, Text, describe_order
 from hoard.records import Order, ReturnLine, Shipment, ShipmentLine
 from hoard.shipments import Pick, ShipmentError, ShipmentRefused
 from seneschal_core.api import WriteSessionDep, refuse
@@ -55,7 +55,7 @@ def _refused(refused: ShipmentRefused) -> Exception:
 
 
 async def _order_of(db: WriteSession, shipment: Shipment) -> OrderRead:
-    return await read_order(db, await db.get_one(Order, shipment.order_id))
+    return await describe_order(db, await db.get_one(Order, shipment.order_id))
 
 
 class ShipmentLineCreate(BaseModel):
@@ -99,7 +99,7 @@ async def create_shipment(db: WriteSessionDep, body: ShipmentCreate) -> OrderRea
     shipment.delivery_address = body.delivery_address or order.delivery_address
     shipment.reference = body.reference or None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 class ShipmentUpdate(BaseModel):
@@ -142,7 +142,7 @@ async def delete_shipment(db: WriteSessionDep, shipment_id: int) -> OrderRead:
     except ShipmentRefused as refused:
         raise _refused(refused) from None
     await db.commit()
-    return await read_order(db, order)
+    return await describe_order(db, order)
 
 
 class ShipmentShip(BaseModel):
