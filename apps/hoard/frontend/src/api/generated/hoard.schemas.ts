@@ -2031,6 +2031,17 @@ export interface ShipmentUpdate {
   reference?: string | null;
 }
 
+/**
+ * What a step of a trace is.
+ */
+export type StepKind = (typeof StepKind)[keyof typeof StepKind];
+
+export const StepKind = {
+  run: "run",
+  shipment: "shipment",
+  purchase: "purchase",
+} as const;
+
 export interface StocktakeCreate {
   kind: CategoryKind;
   location_id?: number | null;
@@ -2179,6 +2190,77 @@ export interface StoreRead {
   linked: number;
   pushes_queued: number;
   pushes_failed: number;
+}
+
+/**
+ * A lot a step names.
+ */
+export interface TraceLotRef {
+  id: number;
+  number: string;
+}
+
+/**
+ * The other party to a step: a community contact.
+ */
+export interface TracePartyRead {
+  contact_id: number;
+  name: string | null;
+}
+
+/**
+ * One movement a trace follows.
+ */
+export interface TraceStepRead {
+  kind: StepKind;
+  record_id: number;
+  code: string;
+  order_id: number | null;
+  lot: TraceLotRef | null;
+  made_lot: TraceLotRef | null;
+  from_lot: TraceLotRef | null;
+  item: AdjustmentItem;
+  quantity: string;
+  dated_on: string;
+  party: TracePartyRead | null;
+  assumed: boolean;
+  level: number;
+}
+
+/**
+ * A lot's trace: back to what went into it, forward to where it went.
+ */
+export interface TraceLotRead {
+  back: TraceStepRead[];
+  forward: TraceStepRead[];
+}
+
+/**
+ * A forward trace from one recalled lot.
+ */
+export interface TraceRead {
+  lot: TraceLotRef;
+  item: AdjustmentItem;
+  dated_on: string;
+  steps: TraceStepRead[];
+}
+
+/**
+ * The files a recall downloads as.
+ */
+export type TraceRecallFormat = (typeof TraceRecallFormat)[keyof typeof TraceRecallFormat];
+
+export const TraceRecallFormat = {
+  fda: "fda",
+  canada: "canada",
+  pdf: "pdf",
+} as const;
+
+/**
+ * A recall: the forward trace of each lot it starts from.
+ */
+export interface TraceRecallRead {
+  traces: TraceRead[];
 }
 
 /**
@@ -2358,4 +2440,19 @@ export type ListListingsParams = {
    * @maximum 200
    */
   limit?: number;
+};
+
+export type ReadRecallParams = {
+  lot_id?: number | null;
+  item_id?: number | null;
+  since?: string | null;
+  until?: string | null;
+};
+
+export type ExportRecallParams = {
+  format: TraceRecallFormat;
+  lot_id?: number | null;
+  item_id?: number | null;
+  since?: string | null;
+  until?: string | null;
 };

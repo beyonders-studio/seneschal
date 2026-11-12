@@ -22,4 +22,5 @@ export * from "./setups/setups";
 export * from "./shipments/shipments";
 export * from "./stocktakes/stocktakes";
 export * from "./stores/stores";
+export * from "./trace/trace";
 export * from "./tracking/tracking";
