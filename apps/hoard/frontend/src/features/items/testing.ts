@@ -1,4 +1,6 @@
 import type {
+  BaseDetail,
+  BaseRead,
   MaterialDetail,
   MaterialRead,
   ProductDetail,
@@ -84,5 +86,26 @@ export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetai
   ...product(),
   ...STAMPS,
   variations: [],
+  ...fields,
+});
+
+export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
+  id: 8,
+  name: "Chai spice",
+  sku: null,
+  tracking_unit_id: 1,
+  low_stock_limit: null,
+  category_id: null,
+  on_hand: "0",
+  average_cost: null,
+  properties: [],
+  ...fields,
+});
+
+export const baseDetail = (fields: Partial<BaseDetail> = {}): BaseDetail => ({
+  ...base(),
+  ...STAMPS,
+  stock: [],
+  lots: [],
   ...fields,
 });
