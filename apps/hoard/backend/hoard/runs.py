@@ -134,6 +134,7 @@ async def plan_batches(db: WriteSession, run: ProductionRun, batches: Decimal) -
     for line in await lines(db, run.id):
         line.quantity = (line.quantity * batches / run.planned_batches).quantize(PLACES)
     run.planned_batches = batches
+    await db.flush()
 
 
 async def record_lot(
@@ -147,6 +148,7 @@ async def record_lot(
             raise RunRefused(RunError.RUN_LOT_MISMATCH)
     line.lot_id = lot_id
     line.assumed = False
+    await db.flush()
 
 
 async def start(db: WriteSession, run: ProductionRun, started_on: date) -> None:
@@ -186,6 +188,7 @@ async def _assume_lots(db: WriteSession, run: ProductionRun) -> list[ProductionR
             select(Lot)
             .where(Lot.item_id == line.item_id, Lot.location_id == run.location_id)
             .order_by(col(Lot.expires_on).asc().nulls_last(), col(Lot.dated_on), col(Lot.id))
+            .execution_options(populate_existing=True)
         )
         need, current = line.quantity, line
         for lot in lots.all():
