@@ -94,7 +94,7 @@ def _returns(*returns: tuple[str, str, str], list_: bool = False) -> list[dict[s
     ]
 
 
-#: How many days back the Drinks reads look, when a caller does not say.
+#: How many days back the waste and planned-against-actual reports look.
 DAYS_PARAM = {"key": "days", "type": "int", "label": {"en": "Days back"}}
 
 ENDPOINTS: list[dict[str, Any]] = [
