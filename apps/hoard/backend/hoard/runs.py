@@ -14,6 +14,10 @@ Only completing a run moves stock: each line out, and the quantity made in,
 into its output lot, numbered with the run's code. ``hoard.costing`` costs it.
 A completed run can be reopened, which takes those adjustments and the output
 lot back and returns its assumed lines to naming no lot.
+
+A run can also be made at once (:func:`make`), opened and completed together,
+as auto-manufacture makes what a store order sells. Such a run records no
+events.
 """
 
 from __future__ import annotations
@@ -90,9 +94,11 @@ async def next_code(db: WriteSession) -> str:
     return f"R-{(latest or 0) + 1:04d}"
 
 
-async def open_run(db: WriteSession, run: ProductionRun) -> ProductionRun:
+async def open_run(
+    db: WriteSession, run: ProductionRun, *, quiet: bool = False
+) -> ProductionRun:
     """Add ``run``, not started or in progress, with its lines from its item's
-    recipe times its planned batches."""
+    recipe times its planned batches. A ``quiet`` run records no event."""
     recipe = await recipe_for(db, run.item_id)
     if recipe is None:
         raise RunRefused(RunError.RUN_NO_RECIPE)
@@ -117,7 +123,7 @@ async def open_run(db: WriteSession, run: ProductionRun) -> ProductionRun:
             )
         )
     await db.flush()
-    if run.status is RunStatus.IN_PROGRESS:
+    if run.status is RunStatus.IN_PROGRESS and not quiet:
         await events.record(db, await events.run_event(db, events.EventName.RUN_STARTED, run))
     return run
 
@@ -197,10 +203,16 @@ async def _assume_lots(db: WriteSession, run: ProductionRun) -> list[ProductionR
 
 
 async def complete(
-    db: WriteSession, run: ProductionRun, actual_quantity: Decimal, completed_on: date
+    db: WriteSession,
+    run: ProductionRun,
+    actual_quantity: Decimal,
+    completed_on: date,
+    *,
+    quiet: bool = False,
 ) -> None:
     """Complete ``run``, having made ``actual_quantity`` on ``completed_on``:
-    its lines out, from their lots, and what it made into its output lot."""
+    its lines out, from their lots, and what it made into its output lot. A
+    ``quiet`` run records no event."""
     not_completed(run)
     for line in await _assume_lots(db, run):
         db.add(
@@ -245,7 +257,41 @@ async def complete(
     run.started_on = run.started_on or completed_on
     run.output_lot_id = lot.id
     await costing.rederive_run(db, run)
-    await events.record(db, await events.run_event(db, events.EventName.RUN_COMPLETED, run))
+    if not quiet:
+        await events.record(db, await events.run_event(db, events.EventName.RUN_COMPLETED, run))
+
+
+async def make(
+    db: WriteSession,
+    item_id: int,
+    location_id: int,
+    quantity: Decimal,
+    made_on: date,
+    *,
+    initiative_id: int | None = None,
+) -> ProductionRun | None:
+    """Make ``quantity`` of a variation or a base at a location on
+    ``made_on``, by a run opened and completed at once from its recipe, which
+    records no events. None when it has no recipe, or too little is asked for
+    to plan a batch."""
+    recipe = await recipe_for(db, item_id)
+    if recipe is None:
+        return None
+    batches = (quantity / recipe.batch_quantity).quantize(PLACES)
+    if batches <= 0:
+        return None
+    run = ProductionRun(
+        code=await next_code(db),
+        item_id=item_id,
+        location_id=location_id,
+        initiative_id=initiative_id,
+        status=RunStatus.IN_PROGRESS,
+        started_on=made_on,
+        planned_batches=batches,
+    )
+    await open_run(db, run, quiet=True)
+    await complete(db, run, quantity, made_on, quiet=True)
+    return run
 
 
 async def reopen(db: WriteSession, run: ProductionRun) -> None:
