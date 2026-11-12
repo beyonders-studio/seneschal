@@ -17,7 +17,14 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { ReportReorderRow, ReportValuation } from "../hoard.schemas";
+import type {
+  ReadCostOfGoodsReportParams,
+  ReadMassBalanceReportParams,
+  ReportBalanceRow,
+  ReportCostOfGoods,
+  ReportReorderRow,
+  ReportValuation,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType } from "../../mutator";
@@ -294,6 +301,307 @@ export function useReadValuationReport<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getReadValuationReportQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * What the goods cost from ``start`` to ``end``, both days included, at
+ * moving average cost: materials only, without labour or purchase tax.
+ * @summary Read Cost Of Goods Report
+ */
+export const readCostOfGoodsReport = (
+  params: ReadCostOfGoodsReportParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ReportCostOfGoods>(
+    { url: `/api/v1/reports/cost-of-goods`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getReadCostOfGoodsReportQueryKey = (params?: ReadCostOfGoodsReportParams) => {
+  return [`/api/v1/reports/cost-of-goods`, ...(params ? [params] : [])] as const;
+};
+
+export const getReadCostOfGoodsReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadCostOfGoodsReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCostOfGoodsReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadCostOfGoodsReportQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readCostOfGoodsReport>>> = ({ signal }) =>
+    readCostOfGoodsReport(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ReadCostOfGoodsReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readCostOfGoodsReport>>
+>;
+export type ReadCostOfGoodsReportQueryError = ErrorType<void>;
+
+/**
+ * What the goods cost from ``start`` to ``end``, both days included, at
+ * moving average cost: materials only, without labour or purchase tax.
+ * @summary Read Cost Of Goods Report
+ */
+export function useReadCostOfGoodsReport<
+  TData = Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadCostOfGoodsReportParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCostOfGoodsReport>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+          TError,
+          Awaited<ReturnType<typeof readCostOfGoodsReport>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * What the goods cost from ``start`` to ``end``, both days included, at
+ * moving average cost: materials only, without labour or purchase tax.
+ * @summary Read Cost Of Goods Report
+ */
+export function useReadCostOfGoodsReport<
+  TData = Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadCostOfGoodsReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCostOfGoodsReport>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+          TError,
+          Awaited<ReturnType<typeof readCostOfGoodsReport>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * What the goods cost from ``start`` to ``end``, both days included, at
+ * moving average cost: materials only, without labour or purchase tax.
+ * @summary Read Cost Of Goods Report
+ */
+export function useReadCostOfGoodsReport<
+  TData = Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadCostOfGoodsReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCostOfGoodsReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * What the goods cost from ``start`` to ``end``, both days included, at
+ * moving average cost: materials only, without labour or purchase tax.
+ * @summary Read Cost Of Goods Report
+ */
+export function useReadCostOfGoodsReport<
+  TData = Awaited<ReturnType<typeof readCostOfGoodsReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadCostOfGoodsReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readCostOfGoodsReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadCostOfGoodsReportQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Each item's quantities from ``start`` to ``end``, both days included,
+ * by name; split by the options of the lot property ``split_by``, a select,
+ * when one is named.
+ * @summary Read Mass Balance Report
+ */
+export const readMassBalanceReport = (
+  params: ReadMassBalanceReportParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ReportBalanceRow[]>(
+    { url: `/api/v1/reports/mass-balance`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getReadMassBalanceReportQueryKey = (params?: ReadMassBalanceReportParams) => {
+  return [`/api/v1/reports/mass-balance`, ...(params ? [params] : [])] as const;
+};
+
+export const getReadMassBalanceReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof readMassBalanceReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadMassBalanceReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readMassBalanceReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadMassBalanceReportQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readMassBalanceReport>>> = ({ signal }) =>
+    readMassBalanceReport(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof readMassBalanceReport>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ReadMassBalanceReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readMassBalanceReport>>
+>;
+export type ReadMassBalanceReportQueryError = ErrorType<void>;
+
+/**
+ * Each item's quantities from ``start`` to ``end``, both days included,
+ * by name; split by the options of the lot property ``split_by``, a select,
+ * when one is named.
+ * @summary Read Mass Balance Report
+ */
+export function useReadMassBalanceReport<
+  TData = Awaited<ReturnType<typeof readMassBalanceReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadMassBalanceReportParams,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readMassBalanceReport>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readMassBalanceReport>>,
+          TError,
+          Awaited<ReturnType<typeof readMassBalanceReport>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Each item's quantities from ``start`` to ``end``, both days included,
+ * by name; split by the options of the lot property ``split_by``, a select,
+ * when one is named.
+ * @summary Read Mass Balance Report
+ */
+export function useReadMassBalanceReport<
+  TData = Awaited<ReturnType<typeof readMassBalanceReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadMassBalanceReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readMassBalanceReport>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readMassBalanceReport>>,
+          TError,
+          Awaited<ReturnType<typeof readMassBalanceReport>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Each item's quantities from ``start`` to ``end``, both days included,
+ * by name; split by the options of the lot property ``split_by``, a select,
+ * when one is named.
+ * @summary Read Mass Balance Report
+ */
+export function useReadMassBalanceReport<
+  TData = Awaited<ReturnType<typeof readMassBalanceReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadMassBalanceReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readMassBalanceReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * Each item's quantities from ``start`` to ``end``, both days included,
+ * by name; split by the options of the lot property ``split_by``, a select,
+ * when one is named.
+ * @summary Read Mass Balance Report
+ */
+export function useReadMassBalanceReport<
+  TData = Awaited<ReturnType<typeof readMassBalanceReport>>,
+  TError = ErrorType<void>,
+>(
+  params: ReadMassBalanceReportParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readMassBalanceReport>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadMassBalanceReportQueryOptions(params, options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

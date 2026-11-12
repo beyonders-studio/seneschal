@@ -26,14 +26,15 @@ function useQuantity(): (amount: string) => string {
 }
 
 /** Reports on stock, inside an initiative: what to reorder, what the stock is
- *  worth (for those who see costs), and every record to download. */
+ *  worth (for those who see costs), reports over a period, and every record
+ *  to download. */
 export function ReportsPage() {
   const seesCosts = useSeesCosts();
   return (
     <div className="flex flex-col gap-6">
       <ReorderReport />
       {seesCosts && <ValuationReport />}
-      {seesCosts && <CostOfGoodsSection />}
+      <CostOfGoodsSection />
       <ExportLinks />
     </div>
   );

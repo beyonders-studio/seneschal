@@ -1630,6 +1630,45 @@ export interface RecipeWrite {
   lines: RecipeLineWrite[];
 }
 
+export type ReportBalanceRowAttributes = { [key: string]: string };
+
+/**
+ * One item's quantities over a period, under one option of the property
+ * the balance is split by: opening + received + made − used − sold − lost =
+ * closing.
+ */
+export interface ReportBalanceRow {
+  item_id: number;
+  kind: ItemKind;
+  name: string;
+  attributes: ReportBalanceRowAttributes;
+  unit: string | null;
+  option: string | null;
+  opening: string;
+  received: string;
+  made: string;
+  used: string;
+  sold: string;
+  lost: string;
+  closing: string;
+}
+
+/**
+ * What the goods cost over a period, in the organization's currency:
+ * opening + starting + purchases − personal use − closing.
+ */
+export interface ReportCostOfGoods {
+  currency: string;
+  opening: string;
+  starting: string;
+  purchases: string;
+  personal_use: string;
+  closing: string;
+  cost_of_goods: string;
+  shipped: string;
+  uncosted_runs: number;
+}
+
 /**
  * A material, base or product at or below its low-stock limit.
  */
@@ -2123,6 +2162,17 @@ export type ListStocktakesParams = {
    * @maximum 200
    */
   limit?: number;
+};
+
+export type ReadCostOfGoodsReportParams = {
+  start: string;
+  end: string;
+};
+
+export type ReadMassBalanceReportParams = {
+  start: string;
+  end: string;
+  split_by?: number | null;
 };
 
 export type ExportRecordsParams = {

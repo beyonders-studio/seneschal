@@ -43,9 +43,55 @@
     }
   },
   "errors": {
-    "COSTS_ONLY": "Only members who can see costs can see what stock is worth."
+    "COSTS_ONLY": "Only members who can see costs can see what stock is worth.",
+    "PERIOD_INVALID": "The period has to end on or after the day it starts.",
+    "SPLIT_INVALID": "A mass balance splits only by a lot property that is a list of options."
   },
   "costOfGoods": {
-    "title": "Cost of goods"
+    "title": "Cost of goods",
+    "description": "What the goods cost over the period, as a tax return asks for it: stock valued at each item's average cost on the day, counting materials only, without labour or purchase tax.",
+    "opening": "Stock value at the start",
+    "starting": "Plus starting stock entered",
+    "purchases": "Plus purchases received",
+    "personalUse": "Less stock taken for personal use",
+    "closing": "Less stock value at the end",
+    "total": "Cost of goods",
+    "shipped": "Goods shipped in this period cost {{amount}}, less what came back; the rest is stock lost, written off or corrected by a count.",
+    "uncosted_one": "{{count}} production run in this period is uncosted: something it used had no cost, so what it made is valued too low.",
+    "uncosted_other": "{{count}} production runs in this period are uncosted: something they used had no cost, so what they made is valued too low."
+  },
+  "period": {
+    "title": "Over a period",
+    "from": "From",
+    "to": "To",
+    "invalid": "The period has to end on or after the day it starts."
+  },
+  "massBalance": {
+    "title": "Mass balance",
+    "description": "What each item had at the start, what came in and went out, and what it had at the end: opening + received + made − used − sold − lost = closing. Split it by a lot property to see each of its options apart.",
+    "splitBy": "Split by",
+    "notSplit": "Not split",
+    "noOption": "None recorded",
+    "unit": "Unit",
+    "each": "Each",
+    "opening": "Opening",
+    "received": "Received",
+    "made": "Made",
+    "used": "Used",
+    "sold": "Sold",
+    "lost": "Lost",
+    "closing": "Closing",
+    "empty": "Nothing was in stock or moved in this period."
+  },
+  "certifiedVolume": {
+    "title": "Certified volume",
+    "description": "For a certification such as fair trade: how much of each item came in, in lots holding one option of a lot property, against how much of it was sold.",
+    "property": "Property",
+    "option": "Option",
+    "chooseProperty": "Choose a property",
+    "chooseOption": "Choose an option",
+    "choose": "Choose a lot property, and the option that means certified.",
+    "noProperties": "Add a lot property with a list of options, such as fair-trade status, to see certified volume.",
+    "empty": "Nothing in lots holding this option came in or was sold in this period."
   }
 }
