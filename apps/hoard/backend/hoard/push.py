@@ -21,6 +21,9 @@ log (:class:`hoard.records.StockPush`).
 * **Reconciling** (:func:`reconcile`), on Initiative's schedule: the store's
   locations are read again, and each listing pushed where what is available
   is not what the store was last pushed.
+* **Pruning** (:func:`prune`), on ``upkeep``: pushes finished more than
+  :data:`KEEP_FINISHED` ago leave the push log, but for the last one each
+  listing was pushed at each location, which the next push compares with.
 """
 
 from __future__ import annotations
@@ -37,7 +40,8 @@ from decimal import ROUND_FLOOR, Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import event, text
+from sqlalchemy import delete, event, text
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 from sqlmodel import col, select
 
@@ -76,6 +80,8 @@ FIRST_WAIT = timedelta(seconds=30)
 LONGEST_WAIT = timedelta(hours=6)
 #: The attempts a push is given before it is given up on.
 MAX_ATTEMPTS = 10
+#: How long a push the store took, or that was given up on, stays in the push log.
+KEEP_FINISHED = timedelta(days=30)
 #: The lock one process holds while it sends an organization's pushes.
 _PUSH_LOCK = "SELECT pg_try_advisory_xact_lock(hashtext('hoard.stock_pushes'), :organization)"
 #: Where a session notes the items whose stock it changed, by organization.
@@ -377,6 +383,30 @@ async def reconcile(
         )
         await db.commit()
     await send(plugin, organization_id, {store.id: connector})
+
+
+async def prune(db: WriteSession, now: datetime | None = None) -> None:
+    """Remove the pushes finished, taken or given up on, before
+    :data:`KEEP_FINISHED` ago, but for the last one each listing was pushed at
+    each of its store's locations."""
+    last = (
+        select(StockPush.id)
+        .where(StockPush.status == PushStatus.PUSHED)
+        .ext(distinct_on(col(StockPush.listing_id), col(StockPush.store_location_id)))
+        .order_by(
+            col(StockPush.listing_id),
+            col(StockPush.store_location_id),
+            col(StockPush.pushed_at).desc(),
+            col(StockPush.id).desc(),
+        )
+    )
+    await db.execute(
+        delete(StockPush).where(
+            col(StockPush.status) != PushStatus.QUEUED,
+            col(StockPush.created_at) < (now or datetime.now(UTC)) - KEEP_FINISHED,
+            col(StockPush.id).not_in(last),
+        )
+    )
 
 
 async def queue_noted(plugin: Plugin, organization_id: int, item_ids: Iterable[int]) -> None:

@@ -167,6 +167,13 @@ async def test_the_schedules_reconcile_each_connected_store_and_keep_it_subscrib
     assert ran[1][2][0].isoformat() == since
 
     store.subscriptions.clear()
+    pruned: list[int | None] = []
+
+    async def prune(db) -> None:
+        pruned.append(db.organization_id)
+
+    monkeypatch.setattr(push, "prune", prune)
     assert (await call("schedule", {"schedule": "upkeep", "since": None})).status_code == 204
     assert store.subscriptions == {ADDRESS}
+    assert len(pruned) == 1 and pruned[0] is not None
     assert (await call("schedule", {"schedule": "nightly", "since": None})).status_code == 400
