@@ -27,6 +27,7 @@ import {
   useListProperties,
 } from "@/api/generated/properties/properties";
 import { toast } from "@/components/Toaster";
+import { useInitiativeFiles } from "@/features/documents/files";
 import { errorMessage } from "@/lib/errors";
 import { useIsAdmin, useSeesCosts } from "@/lib/permissions";
 import { useSession } from "@/session";
@@ -50,7 +51,6 @@ import { type EditableDetail, type EditableLists, LayoutEditor } from "@/ui/layo
 import type { SaveLayouts } from "@/ui/layouts/layoutSet";
 import type { LayoutNode, Parts } from "@/ui/layouts/tree";
 import type { Member, MemberId } from "@/ui/member-picker";
-import type { FileFieldFiles } from "@/ui/properties/FileFieldInput";
 import { listedValue, type PropertyDefinition } from "@/ui/properties/propertyHelpers";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
@@ -118,13 +118,6 @@ const fieldMap = <I extends HoardRecord>(
     ].map((field) => [field.id, field])
   );
 
-const NO_FILES: FileFieldFiles = {
-  find: async () => [],
-  href: () => "",
-  preview: () => null,
-  newFile: () => null,
-};
-
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -133,12 +126,14 @@ const initials = (name: string) =>
     .join("") || "?";
 
 /** What Hoard's property editors read and change: a kind's properties, made
- *  by an admin, and the members a person-valued property may name. */
+ *  by an admin, the members a person-valued property may name, and the
+ *  Initiative files a file-valued one may hold. */
 export function usePropertyEnv(kind: RecordKind): PropertyEnv<HoardPropertyRead> {
   const { t } = useTranslation(["fields", "connection"]);
   const admin = useIsAdmin();
   const queryClient = useQueryClient();
   const definitions = useListProperties({ kind });
+  const files = useInitiativeFiles();
   return useMemo(() => {
     const refresh = () =>
       queryClient.invalidateQueries({ queryKey: getListPropertiesQueryKey({ kind }) });
@@ -180,9 +175,9 @@ export function usePropertyEnv(kind: RecordKind): PropertyEnv<HoardPropertyRead>
           return { id: member_ref, name: shown, initials: initials(shown) };
         });
       },
-      files: NO_FILES,
+      files,
     };
-  }, [kind, admin, definitions, queryClient, t]);
+  }, [kind, admin, definitions, files, queryClient, t]);
 }
 
 /** What a kind's fields are drawn with. */
