@@ -36,7 +36,8 @@ async def link(db: WriteSession, file_id: int, **record: int) -> DocumentLink:
     ).first()
     if existing is not None:
         return existing
-    made = DocumentLink(organization_id=db.organization_id, file_id=file_id, **{name: record_id})
+    made = DocumentLink(organization_id=db.organization_id, file_id=file_id)
+    setattr(made, name, record_id)
     db.add(made)
     await db.flush()
     return made

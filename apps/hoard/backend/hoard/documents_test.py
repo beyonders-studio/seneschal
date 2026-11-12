@@ -16,16 +16,14 @@ async def test_files_linked_to_a_record_list_together_in_order(
     sack = await lot(flour.id, "F-1", "3")
 
     first = await documents.link(db, 31, lot_id=sack.id)
-    second = await documents.link(db, 12, lot_id=sack.id)
+    await documents.link(db, 12, lot_id=sack.id)
     again = await documents.link(db, 31, lot_id=sack.id)
     certificate = await documents.link(db, 31, material_id=flour.id)
     plan = await documents.link(db, 40, base_id=batter.id)
 
     assert again.id == first.id
     assert [each.file_id for each in await documents.links(db, lot_id=sack.id)] == [31, 12]
-    assert [each.id for each in await documents.links(db, material_id=flour.id)] == [
-        certificate.id
-    ]
+    assert [each.id for each in await documents.links(db, material_id=flour.id)] == [certificate.id]
     assert (plan.base_id, plan.created_by) == (batter.id, "member-ref")
     assert await documents.links(db, product_id=999999) == []
 
