@@ -14,6 +14,14 @@ address, which must be the deployment's public one.
 A token may be narrowed to one initiative the app is placed in (``resource``,
 RFC 8707), and then reaches only that initiative's items.
 
+A call may instead **act for a member** (``acting_for``, the member's
+reference): the app signs an assertion naming the member and the install
+(``urn:ietf:params:oauth:grant-type:jwt-bearer``, RFC 7523 §2.1) and is given a
+**member token**, which reaches only what that member may. Initiative issues
+one only while the member has consented to the app acting for them; until
+then the call raises :class:`ConsentRequired`, and the app asks the member
+(:meth:`InitiativeApi.ask_consent`), who answers in Initiative.
+
 Community routes are ``<api>/c/{community}/…``. An installation token names its
 community, so the segment is always ``0``. The install's own routes, such as
 the events it emits and the values it keeps on items, are
@@ -55,9 +63,13 @@ TOKEN_PATH = "/plugin-platform/oauth/token"
 COMMUNITY_PREFIX = "/c/0"
 #: Where the install's own routes start, under Initiative's API.
 INSTALLATION_PREFIX = "/plugin-platform/installation"
+#: Where the install asks a member to let it act for them, under Initiative's API.
+CONSENT_REQUESTS_PATH = "/plugin-platform/consent-requests"
 #: How a token request names the initiative it narrows the token to.
 INITIATIVE_RESOURCE_PREFIX = "urn:initiative:initiative:"
 ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+#: The grant a member token is asked for with.
+MEMBER_GRANT = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 #: How long a client assertion is valid for.
 ASSERTION_LIFETIME_SECONDS = 60
 #: How long before a token expires it is replaced.
@@ -72,6 +84,11 @@ _TIMEOUT_SECONDS = 10.0
 class InitiativeUnavailable(Exception):
     """Initiative could not be asked: the app has no key, Initiative did not
     answer, or it gave no token."""
+
+
+class ConsentRequired(Exception):
+    """The member a call would act for has not consented to the app acting
+    for them, or no longer does."""
 
 
 class InitiativeRefused(Exception):
@@ -105,8 +122,9 @@ def _b64(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
-#: A community's reference, and the initiative a token for it is narrowed to.
-_Narrowing = tuple[str, int | None]
+#: A community's reference, the initiative a token for it is narrowed to, and
+#: the member it acts for.
+_Narrowing = tuple[str, int | None, str | None]
 
 
 @dataclass(frozen=True)
@@ -147,15 +165,43 @@ class InitiativeApi:
         params: Mapping[str, Any] | None = None,
         body: object = None,
         narrowed_to: int | None = None,
+        acting_for: str | None = None,
     ) -> Any:
         """Call ``path`` among the community's routes (``/contacts/``, say) as
-        its install, with ``body`` as JSON, and answer the response's body read
-        as JSON (None when empty). ``narrowed_to`` narrows the token to that
-        initiative. Raises :class:`InitiativeRefused` for an error status and
+        its install, or as the member ``acting_for`` names, with ``body`` as
+        JSON, and answer the response's body read as JSON (None when empty).
+        ``narrowed_to`` narrows the token to that initiative. Raises
+        :class:`ConsentRequired` when the member has not consented,
+        :class:`InitiativeRefused` for an error status and
         :class:`InitiativeUnavailable` when there is no answer."""
         return await self._request(
-            (community_ref, narrowed_to), method, f"{COMMUNITY_PREFIX}{path}", params, body
+            (community_ref, narrowed_to, acting_for),
+            method,
+            f"{COMMUNITY_PREFIX}{path}",
+            params,
+            body,
         )
+
+    async def ask_consent(
+        self,
+        community_ref: str,
+        member_ref: str,
+        label: str,
+        *,
+        write: bool = False,
+    ) -> dict[str, Any]:
+        """Ask the member ``member_ref`` names to let the app act for them,
+        for what ``label`` says in the app's words, reading only unless
+        ``write``. Initiative tells the member, who answers there; asking again
+        answers the request as it stands, with its ``status``."""
+        answer = await self._request(
+            (community_ref, None, None),
+            "POST",
+            CONSENT_REQUESTS_PATH,
+            None,
+            {"member": member_ref, "label": label, "access": "read_write" if write else "read"},
+        )
+        return answer if isinstance(answer, dict) else {}
 
     async def emit_event(
         self,
@@ -170,7 +216,7 @@ class InitiativeApi:
         when it is about one. Initiative keeps it and delivers it to the
         community's subscriptions."""
         await self._request(
-            (community_ref, None),
+            (community_ref, None, None),
             "POST",
             f"{INSTALLATION_PREFIX}/events",
             None,
@@ -184,7 +230,7 @@ class InitiativeApi:
         install, its ``config_state`` and each member's connections. Never a
         flow's tokens."""
         answer = await self._request(
-            (community_ref, None), "GET", f"{INSTALLATION_PREFIX}/config", None, None
+            (community_ref, None, None), "GET", f"{INSTALLATION_PREFIX}/config", None, None
         )
         return answer if isinstance(answer, dict) else {}
 
@@ -205,7 +251,7 @@ class InitiativeApi:
         ``remove`` change a list field's elements by their ``ref``. Answers
         every value it keeps there now."""
         answer = await self._request(
-            (community_ref, narrowed_to),
+            (community_ref, narrowed_to, None),
             "PUT",
             f"{INSTALLATION_PREFIX}/metadata",
             None,
@@ -306,13 +352,21 @@ class InitiativeApi:
     async def _issue(self, narrowing: _Narrowing) -> _Token:
         if self._key is None:
             raise InitiativeUnavailable("the app has no key to call Initiative with")
-        community_ref, initiative_id = narrowing
-        form = {
-            "grant_type": "client_credentials",
-            "client_assertion_type": ASSERTION_TYPE,
-            "client_assertion": self._assertion(self._key),
-            "installation": community_ref,
-        }
+        community_ref, initiative_id, member_ref = narrowing
+        if member_ref is None:
+            form = {
+                "grant_type": "client_credentials",
+                "client_assertion_type": ASSERTION_TYPE,
+                "client_assertion": self._assertion(self._key),
+                "installation": community_ref,
+            }
+        else:
+            form = {
+                "grant_type": MEMBER_GRANT,
+                "assertion": self._assertion(
+                    self._key, subject=member_ref, installation=community_ref
+                ),
+            }
         if initiative_id is not None:
             form["resource"] = f"{INITIATIVE_RESOURCE_PREFIX}{initiative_id}"
         requested_at = time.monotonic()
@@ -329,6 +383,8 @@ class InitiativeApi:
         token = body.get("access_token") if isinstance(body, dict) else None
         if response.is_error or not isinstance(token, str) or not token:
             error = body.get("error") if isinstance(body, dict) else None
+            if member_ref is not None and error == "consent_required":
+                raise ConsentRequired(member_ref)
             logger.warning(
                 "Initiative gave no installation token (%s, %s)", response.status_code, error
             )
@@ -337,17 +393,26 @@ class InitiativeApi:
         lifetime = expires_in if isinstance(expires_in, int) and expires_in > 0 else 0
         return _Token(token, requested_at + lifetime - TOKEN_EXPIRY_SKEW_SECONDS)
 
-    def _assertion(self, key: ed25519.Ed25519PrivateKey) -> str:
-        """A client assertion addressed to the token endpoint."""
+    def _assertion(
+        self,
+        key: ed25519.Ed25519PrivateKey,
+        *,
+        subject: str | None = None,
+        installation: str | None = None,
+    ) -> str:
+        """An assertion addressed to the token endpoint: the client's own, or,
+        naming a member as its ``subject`` and the ``installation``, a member
+        grant's."""
         issued_at = int(time.time())
         return jwt.encode(
             {
                 "iss": self.public_id,
-                "sub": self.public_id,
+                "sub": subject or self.public_id,
                 "aud": f"{self.api_url}{TOKEN_PATH}",
                 "jti": str(uuid.uuid4()),
                 "iat": issued_at,
                 "exp": issued_at + ASSERTION_LIFETIME_SECONDS,
+                **({"installation": installation} if installation else {}),
             },
             key,
             algorithm=ALGORITHM,

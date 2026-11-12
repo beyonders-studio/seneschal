@@ -18,6 +18,7 @@ import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders/$orderId'
 import { Route as ProductionIndexRouteImport } from './routes/production/index'
 import { Route as StockIndexRouteImport } from './routes/stock/index'
+import { Route as StockRecallRouteImport } from './routes/stock/recall'
 import { Route as OrdersListingsIndexRouteImport } from './routes/orders/listings/index'
 import { Route as ProductionRecipesIndexRouteImport } from './routes/production/recipes/index'
 import { Route as ProductionRunsIndexRouteImport } from './routes/production/runs/index'
@@ -25,6 +26,7 @@ import { Route as ProductionRunsRunIdRouteImport } from './routes/production/run
 import { Route as StockAdjustmentsIndexRouteImport } from './routes/stock/adjustments/index'
 import { Route as StockBasesIndexRouteImport } from './routes/stock/bases/index'
 import { Route as StockBasesBaseIdRouteImport } from './routes/stock/bases/$baseId'
+import { Route as StockLotsLotIdRouteImport } from './routes/stock/lots/$lotId'
 import { Route as StockMaterialsIndexRouteImport } from './routes/stock/materials/index'
 import { Route as StockMaterialsMaterialIdRouteImport } from './routes/stock/materials/$materialId'
 import { Route as StockProductsIndexRouteImport } from './routes/stock/products/index'
@@ -79,6 +81,11 @@ const StockIndexRoute = StockIndexRouteImport.update({
   path: '/',
   getParentRoute: () => StockRouteRoute,
 } as any)
+const StockRecallRoute = StockRecallRouteImport.update({
+  id: '/recall',
+  path: '/recall',
+  getParentRoute: () => StockRouteRoute,
+} as any)
 const OrdersListingsIndexRoute = OrdersListingsIndexRouteImport.update({
   id: '/listings/',
   path: '/listings/',
@@ -112,6 +119,11 @@ const StockBasesIndexRoute = StockBasesIndexRouteImport.update({
 const StockBasesBaseIdRoute = StockBasesBaseIdRouteImport.update({
   id: '/bases/$baseId',
   path: '/bases/$baseId',
+  getParentRoute: () => StockRouteRoute,
+} as any)
+const StockLotsLotIdRoute = StockLotsLotIdRouteImport.update({
+  id: '/lots/$lotId',
+  path: '/lots/$lotId',
   getParentRoute: () => StockRouteRoute,
 } as any)
 const StockMaterialsIndexRoute = StockMaterialsIndexRouteImport.update({
@@ -165,11 +177,13 @@ export interface FileRoutesByFullPath {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/stock/recall': typeof StockRecallRoute
   '/orders/': typeof OrdersIndexRoute
   '/production/': typeof ProductionIndexRoute
   '/stock/': typeof StockIndexRoute
   '/production/runs/$runId': typeof ProductionRunsRunIdRoute
   '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
+  '/stock/lots/$lotId': typeof StockLotsLotIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
@@ -188,11 +202,13 @@ export interface FileRoutesByTo {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/stock/recall': typeof StockRecallRoute
   '/orders': typeof OrdersIndexRoute
   '/production': typeof ProductionIndexRoute
   '/stock': typeof StockIndexRoute
   '/production/runs/$runId': typeof ProductionRunsRunIdRoute
   '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
+  '/stock/lots/$lotId': typeof StockLotsLotIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
@@ -215,11 +231,13 @@ export interface FileRoutesById {
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/stock/recall': typeof StockRecallRoute
   '/orders/': typeof OrdersIndexRoute
   '/production/': typeof ProductionIndexRoute
   '/stock/': typeof StockIndexRoute
   '/production/runs/$runId': typeof ProductionRunsRunIdRoute
   '/stock/bases/$baseId': typeof StockBasesBaseIdRoute
+  '/stock/lots/$lotId': typeof StockLotsLotIdRoute
   '/stock/materials/$materialId': typeof StockMaterialsMaterialIdRoute
   '/stock/products/$productId': typeof StockProductsProductIdRoute
   '/stock/purchases/$purchaseId': typeof StockPurchasesPurchaseIdRoute
@@ -243,11 +261,13 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/orders/$orderId'
+    | '/stock/recall'
     | '/orders/'
     | '/production/'
     | '/stock/'
     | '/production/runs/$runId'
     | '/stock/bases/$baseId'
+    | '/stock/lots/$lotId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
@@ -266,11 +286,13 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/orders/$orderId'
+    | '/stock/recall'
     | '/orders'
     | '/production'
     | '/stock'
     | '/production/runs/$runId'
     | '/stock/bases/$baseId'
+    | '/stock/lots/$lotId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
@@ -292,11 +314,13 @@ export interface FileRouteTypes {
     | '/reports'
     | '/settings'
     | '/orders/$orderId'
+    | '/stock/recall'
     | '/orders/'
     | '/production/'
     | '/stock/'
     | '/production/runs/$runId'
     | '/stock/bases/$baseId'
+    | '/stock/lots/$lotId'
     | '/stock/materials/$materialId'
     | '/stock/products/$productId'
     | '/stock/purchases/$purchaseId'
@@ -385,6 +409,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StockIndexRouteImport
       parentRoute: typeof StockRouteRoute
     }
+    '/stock/recall': {
+      id: '/stock/recall'
+      path: '/recall'
+      fullPath: '/stock/recall'
+      preLoaderRoute: typeof StockRecallRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
     '/orders/listings/': {
       id: '/orders/listings/'
       path: '/listings'
@@ -432,6 +463,13 @@ declare module '@tanstack/react-router' {
       path: '/bases/$baseId'
       fullPath: '/stock/bases/$baseId'
       preLoaderRoute: typeof StockBasesBaseIdRouteImport
+      parentRoute: typeof StockRouteRoute
+    }
+    '/stock/lots/$lotId': {
+      id: '/stock/lots/$lotId'
+      path: '/lots/$lotId'
+      fullPath: '/stock/lots/$lotId'
+      preLoaderRoute: typeof StockLotsLotIdRouteImport
       parentRoute: typeof StockRouteRoute
     }
     '/stock/materials/': {
@@ -528,8 +566,10 @@ const ProductionRouteRouteWithChildren = ProductionRouteRoute._addFileChildren(
 )
 
 interface StockRouteRouteChildren {
+  StockRecallRoute: typeof StockRecallRoute
   StockIndexRoute: typeof StockIndexRoute
   StockBasesBaseIdRoute: typeof StockBasesBaseIdRoute
+  StockLotsLotIdRoute: typeof StockLotsLotIdRoute
   StockMaterialsMaterialIdRoute: typeof StockMaterialsMaterialIdRoute
   StockProductsProductIdRoute: typeof StockProductsProductIdRoute
   StockPurchasesPurchaseIdRoute: typeof StockPurchasesPurchaseIdRoute
@@ -543,8 +583,10 @@ interface StockRouteRouteChildren {
 }
 
 const StockRouteRouteChildren: StockRouteRouteChildren = {
+  StockRecallRoute: StockRecallRoute,
   StockIndexRoute: StockIndexRoute,
   StockBasesBaseIdRoute: StockBasesBaseIdRoute,
+  StockLotsLotIdRoute: StockLotsLotIdRoute,
   StockMaterialsMaterialIdRoute: StockMaterialsMaterialIdRoute,
   StockProductsProductIdRoute: StockProductsProductIdRoute,
   StockPurchasesPurchaseIdRoute: StockPurchasesPurchaseIdRoute,

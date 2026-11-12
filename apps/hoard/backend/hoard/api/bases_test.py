@@ -45,11 +45,21 @@ async def test_a_base_is_added_edited_and_removed_and_holds_its_properties(
 
     made = await client.post(
         "/api/v1/bases",
-        json={"name": "Brown sugar syrup", "tracking_unit_id": unit.id, "category_id": syrups.id},
+        json={
+            "name": "Brown sugar syrup",
+            "tracking_unit_id": unit.id,
+            "category_id": syrups.id,
+            "cure_days": 2,
+        },
     )
     assert made.status_code == 201
     syrup = made.json()
-    assert (syrup["on_hand"], syrup["stock"], syrup["category_id"]) == ("0", [], syrups.id)
+    assert (syrup["on_hand"], syrup["stock"], syrup["category_id"], syrup["cure_days"]) == (
+        "0",
+        [],
+        syrups.id,
+        2,
+    )
     wrong = await client.put(
         f"/api/v1/bases/{syrup['id']}",
         json={"name": "Syrup", "tracking_unit_id": unit.id, "category_id": tea.id},

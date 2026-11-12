@@ -4,16 +4,20 @@ kind of business this is: the answer adds its setup, or, for a business Hoard
 has none for, starts blank. Either way it is asked once.
 
 A setup brings units, categories (its kinds of item, each for the kinds of
-record it sorts), properties of records, each with its key, adjustment
-reasons for waste, and the word for a base. Adding one adds what the
+record it sorts, with the rule for which of its lots goes first), properties
+of records, each with its key, adjustment reasons for waste, hold reasons,
+each with its key, and the word for a base. Adding one adds what the
 organization does not have and changes nothing it does, so adding it again
-changes nothing.
+changes nothing. Only an organization that has not yet begun adds one
+(:func:`started`): a setup is chosen once, never added later.
 
 Everything a setup adds is named in the words of the member who adds it: the
 page sends the words for each of the setup's keys (:meth:`Setup.words`),
 which its locale holds, and people rename them as they like afterwards. A
-property keeps its key, so adding the setup again finds it however it was
-renamed; a unit, a category or a reason is found by its name.
+property and a hold reason keep their keys, so adding the setup again finds
+them however they were renamed; a unit, a category or an adjustment reason is
+found by its name. A hold reason that is one of the defaults keeps the name
+the setup gives it.
 """
 
 from __future__ import annotations
@@ -34,7 +38,9 @@ from hoard.records import (
     AdjustmentReason,
     Category,
     CategoryKind,
+    HoldReason,
     OrganizationSettings,
+    Picking,
     PropertyDefinition,
     PropertyType,
     RecordKind,
@@ -52,6 +58,8 @@ BASE = "base"
 class SetupError(StrEnum):
     #: The words sent leave out one of the setup's keys.
     WORDS_MISSING = "WORDS_MISSING"
+    #: The organization has begun already, with a setup or blank.
+    SETUP_STARTED = "SETUP_STARTED"
 
 
 class SetupRefused(Exception):
@@ -64,6 +72,8 @@ class SetupRefused(Exception):
 class SetupCategory:
     key: str
     kinds: tuple[CategoryKind, ...]
+    #: Which of its items' lots goes first.
+    picking: Picking
 
 
 @dataclass(frozen=True)
@@ -85,6 +95,8 @@ class Setup:
     properties: tuple[SetupProperty, ...]
     #: Why stock is thrown away.
     reasons: tuple[str, ...]
+    #: Why a lot is put on hold, by key.
+    hold_reasons: tuple[str, ...]
 
     def words(self) -> list[str]:
         """The keys whose words the member adding it sends."""
@@ -101,6 +113,7 @@ class Setup:
                 )
             ),
             *(f"reasons.{reason}" for reason in self.reasons),
+            *(f"hold_reasons.{reason}" for reason in self.hold_reasons),
         ]
 
 
@@ -112,7 +125,9 @@ def _setup(path: Path) -> Setup:
         units=tuple(data["units"]),
         categories=tuple(
             SetupCategory(
-                key=each["key"], kinds=tuple(CategoryKind(kind) for kind in each["kinds"])
+                key=each["key"],
+                kinds=tuple(CategoryKind(kind) for kind in each["kinds"]),
+                picking=Picking(each["picking"]),
             )
             for each in data["categories"]
         ),
@@ -126,6 +141,7 @@ def _setup(path: Path) -> Setup:
             for each in data["properties"]
         ),
         reasons=tuple(data["reasons"]),
+        hold_reasons=tuple(data["hold_reasons"]),
     )
 
 
@@ -171,7 +187,11 @@ async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:
         (
             Category,
             [
-                {"kind": kind, "name": words[f"categories.{category.key}"]}
+                {
+                    "kind": kind,
+                    "name": words[f"categories.{category.key}"],
+                    "picking": category.picking,
+                }
                 for category in setup.categories
                 for kind in category.kinds
             ],
@@ -194,6 +214,13 @@ async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:
             ],
         ),
         (AdjustmentReason, [{"name": words[f"reasons.{reason}"]} for reason in setup.reasons]),
+        (
+            HoldReason,
+            [
+                {"key": reason, "name": words[f"hold_reasons.{reason}"]}
+                for reason in setup.hold_reasons
+            ],
+        ),
     ]
     for model, values in rows:
         if values:

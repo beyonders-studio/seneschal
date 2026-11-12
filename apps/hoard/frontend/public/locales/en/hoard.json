@@ -16,7 +16,8 @@
     "products": "Products",
     "purchases": "Purchases",
     "adjustments": "Adjustments",
-    "stocktakes": "Stocktakes"
+    "stocktakes": "Stocktakes",
+    "recall": "Recall"
   },
   "production": {
     "title": "Production",
@@ -65,7 +66,9 @@
     "price": "Price",
     "total": "Total",
     "createdBy": "Added by {{name}}",
-    "updatedBy": "Last changed by {{name}}"
+    "updatedBy": "Last changed by {{name}}",
+    "yes": "Yes",
+    "no": "No"
   },
   "errors": {
     "NOT_AUTHENTICATED": "Your session ended. Open Hoard again from Initiative.",

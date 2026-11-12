@@ -30,6 +30,7 @@ import {
 import { toast } from "@/components/Toaster";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { useContactNames } from "@/features/contacts/ContactPicker";
+import { HoldFromOrder } from "@/features/holds/HoldFromOrder";
 import { type LineAction, LineDialog } from "@/features/orders/LineDialog";
 import { OrderDialog } from "@/features/orders/OrderDialog";
 import { OrderBadges, useOrderFor } from "@/features/orders/OrdersPage";
@@ -140,6 +141,7 @@ function Order({ order }: { order: OrderRead }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <HoldFromOrder order={order} />
           <Button variant="outline" onClick={() => setEditing(true)} disabled={read_only}>
             <Pencil aria-hidden />
             {t("hoard:common.edit")}

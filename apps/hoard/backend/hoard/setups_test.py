@@ -4,6 +4,7 @@ changes nothing the second time."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -15,11 +16,14 @@ from hoard.records import (
     AdjustmentReason,
     Category,
     CategoryKind,
+    HoldReason,
     OrganizationSettings,
+    Picking,
     PropertyDefinition,
     RecordKind,
     Unit,
 )
+from hoard.stock import add_default_hold_reasons
 from seneschal_core.db import WriteSession
 
 LOCALE = Path(__file__).parents[2] / "frontend" / "public" / "locales" / "en" / "setups.json"
@@ -31,7 +35,14 @@ def _words(setup: setups.Setup) -> dict[str, str]:
 
 async def _everything(db: WriteSession) -> list[Any]:
     rows: list[Any] = []
-    for model in (Unit, Category, PropertyDefinition, AdjustmentReason, OrganizationSettings):
+    for model in (
+        Unit,
+        Category,
+        PropertyDefinition,
+        AdjustmentReason,
+        HoldReason,
+        OrganizationSettings,
+    ):
         found = await db.exec(select(model).order_by(col(model.id)))
         rows.extend(row.model_dump(exclude={"created_at", "updated_at"}) for row in found.all())
     return rows
@@ -65,6 +76,10 @@ async def test_adding_drinks_twice_changes_nothing_the_second_time(db: WriteSess
     assert await setups.started(db)
     categories = await db.exec(select(Category.name).where(Category.kind == CategoryKind.BASE))
     assert "<categories.prep>" in categories.all()
+    packaging = await db.exec(
+        select(Category.picking).where(col(Category.name).startswith("<categories.packaging"))
+    )
+    assert packaging.all() == [Picking.FIRST_IN]
     reasons = (await db.exec(select(AdjustmentReason.name))).all()
     assert "<reasons.spill>" in reasons
     # Drinks calls a base a base, which needs no word of its own.
@@ -102,3 +117,16 @@ async def test_a_setup_wants_every_word(db: WriteSession):
 
     with pytest.raises(setups.SetupRefused):
         await setups.add(db, drinks, words)
+
+
+async def test_a_setups_hold_reasons_keep_their_keys_beside_the_defaults(db: WriteSession):
+    drinks = setups.setups()["drinks"]
+    held = replace(drinks, hold_reasons=("curing", "tasting"))
+    await add_default_hold_reasons(db)
+
+    await setups.add(db, held, _words(held))
+
+    reasons = await db.exec(select(HoldReason.key, HoldReason.name).order_by(col(HoldReason.id)))
+    # A default the organization has keeps its own name; another is added named.
+    assert [*reasons.all()][-2:] == [("recall", None), ("tasting", "<hold_reasons.tasting>")]
+    assert "hold_reasons.curing" in held.words()

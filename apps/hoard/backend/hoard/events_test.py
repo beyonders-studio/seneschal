@@ -46,10 +46,11 @@ async def test_an_event_is_kept_only_with_the_change_that_caused_it(
     )
 
 
-async def test_a_runs_and_a_purchases_events_carry_what_they_declare_and_their_task(
-    db: WriteSession, main: Location, material, base, buy
+async def test_a_runs_a_purchases_and_a_holds_events_carry_what_they_declare(
+    db: WriteSession, main: Location, material, base, buy, lot, hold
 ):
     flour = await material("Flour")
+    lot_of_flour = await lot(flour.id, "F-1", "2")
     dough = await base("Dough")
     purchase = await buy((flour, "10", "2"), initiative_id=12)
     [line] = (
@@ -76,6 +77,19 @@ async def test_a_runs_and_a_purchases_events_carry_what_they_declare_and_their_t
         assert event.initiative_id == 12
     assert (started.payload["item"], started.payload["started_on"]) == ("Dough", "2026-11-02")
     assert (started.payload["task_id"], received.payload["task_id"]) == (41, None)
+    held = await events.hold_event(db, EventName.HOLD_PLACED, await hold(lot_of_flour))
+    assert list(held.payload) == [r.key for r in events.RETURNS[EventName.HOLD_PLACED]]
+    assert held.payload | {"hold_id": 0} == {
+        "hold_id": 0,
+        "lot_id": lot_of_flour.id,
+        "lot": "F-1",
+        "item_id": flour.id,
+        "item": "Flour",
+        "reason": "suspect",
+        "ready_on": None,
+        "ended": None,
+        "ended_on": None,
+    }
     assert received.payload | {"purchase_id": 0, "line_id": 0} == {
         "purchase_id": 0,
         "code": purchase.code,

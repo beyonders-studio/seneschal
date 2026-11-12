@@ -7,6 +7,7 @@ export * from "./export/export";
 export * from "./health/health";
 export * from "./layouts/layouts";
 export * from "./listings/listings";
+export * from "./lots/lots";
 export * from "./materials/materials";
 export * from "./members/members";
 export * from "./orders/orders";

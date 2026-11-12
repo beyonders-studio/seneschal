@@ -210,3 +210,15 @@ async def test_an_order_ships_cancels_and_reopens(db: WriteSession, main: Locati
     await shipments.unship(db, first)
     await orders.delete(db, order)
     assert await db.get(Order, order.id) is None
+
+
+async def test_what_is_on_hold_is_not_available(db: WriteSession, main: Location, lot, sell, hold):
+    _, chai = await add_product(db, Product(name="Chai"))
+    suspect = await lot(chai.id, "C-1", "6")
+    await lot(chai.id, "C-2", "10")
+    await sell((chai.id, "4", "4"))
+
+    await hold(suspect)
+
+    assert await orders.available(db, chai.id, main.id) == 6
+    assert await orders.available(db, chai.id) == 6

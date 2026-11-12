@@ -12,6 +12,7 @@ const TABS = {
   purchases: "/stock/purchases",
   adjustments: "/stock/adjustments",
   stocktakes: "/stock/stocktakes",
+  recall: "/stock/recall",
 } as const;
 
 type Tab = keyof typeof TABS;

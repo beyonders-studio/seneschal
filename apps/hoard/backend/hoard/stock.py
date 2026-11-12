@@ -21,16 +21,21 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import costing
+from hoard.holds import held_lots
 from hoard.records import (
     Adjustment,
     AdjustmentReason,
     Base,
+    Category,
+    DefaultHoldReason,
     DefaultReason,
+    HoldReason,
     Item,
     ItemKind,
     Location,
     Lot,
     Material,
+    Picking,
     Product,
     StockLevel,
     Variation,
@@ -66,6 +71,15 @@ async def add_default_reasons(db: WriteSession) -> None:
     await db.execute(
         insert(AdjustmentReason)
         .values([{"organization_id": db.organization_id, "key": key} for key in DefaultReason])
+        .on_conflict_do_nothing()
+    )
+
+
+async def add_default_hold_reasons(db: WriteSession) -> None:
+    """Give the organization the :class:`DefaultHoldReason` reasons, keeping any it has."""
+    await db.execute(
+        insert(HoldReason)
+        .values([{"organization_id": db.organization_id, "key": key} for key in DefaultHoldReason])
         .on_conflict_do_nothing()
     )
 
@@ -149,6 +163,37 @@ async def on_hand(db: AsyncSession, item_id: int, location_id: int | None = None
     return Decimal((await db.exec(query)).one())
 
 
+async def picking(db: AsyncSession, item_id: int) -> Picking:
+    """Which lot of an item goes first: its category's rule, or, for an item
+    with no category, the earliest expiry first. A variation's category is
+    its product's."""
+    category_id = (
+        await db.exec(
+            select(func.coalesce(Material.category_id, Base.category_id, Product.category_id))
+            .select_from(Item)
+            .outerjoin(Material, col(Material.id) == Item.id)
+            .outerjoin(Base, col(Base.id) == Item.id)
+            .outerjoin(Variation, col(Variation.id) == Item.id)
+            .outerjoin(Product, col(Product.id) == Variation.product_id)
+            .where(Item.id == item_id)
+        )
+    ).first()
+    category = await db.get(Category, category_id) if category_id is not None else None
+    return category.picking if category is not None else Picking.EARLIEST_EXPIRY
+
+
+#: The order each picking rule takes an item's lots in.
+_ORDER = {
+    Picking.EARLIEST_EXPIRY: (
+        col(Lot.expires_on).asc().nulls_last(),
+        col(Lot.dated_on),
+        col(Lot.id),
+    ),
+    Picking.FIRST_IN: (col(Lot.dated_on), col(Lot.id)),
+    Picking.LAST_IN: (col(Lot.dated_on).desc(), col(Lot.id).desc()),
+}
+
+
 async def draw_lots(
     db: AsyncSession,
     item_id: int,
@@ -157,14 +202,22 @@ async def draw_lots(
     drawn: MutableMapping[int, Decimal],
 ) -> list[tuple[int | None, Decimal]]:
     """The lots ``quantity`` of an item at a location is assumed to come from,
-    and how much from each: the lots holding stock there, the earliest expiry
-    first, then the first in, each no further than its balance less what
-    ``drawn`` already takes from it, which this adds to. Whatever the lots do
-    not hold draws on no lot (``None``)."""
+    and how much from each: the lots holding stock there that are not on
+    hold, in the order the item's picking rule (:func:`picking`) takes them,
+    each no further than its balance less what ``drawn`` already takes from
+    it, which this adds to. Whatever the lots do not hold draws on no lot
+    (``None``), and so does all of it where the rule assumes no lot."""
+    rule = await picking(db, item_id)
+    if rule is Picking.RECORDED:
+        return [(None, quantity)]
     lots = await db.exec(
         select(Lot)
-        .where(Lot.item_id == item_id, Lot.location_id == location_id)
-        .order_by(col(Lot.expires_on).asc().nulls_last(), col(Lot.dated_on), col(Lot.id))
+        .where(
+            Lot.item_id == item_id,
+            Lot.location_id == location_id,
+            col(Lot.id).not_in(held_lots()),
+        )
+        .order_by(*_ORDER[rule])
         .execution_options(populate_existing=True)
     )
     draws: list[tuple[int | None, Decimal]] = []

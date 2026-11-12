@@ -1,5 +1,5 @@
-"""The organization's settings: its currency, units, categories, locations and
-adjustment reasons. Every member reads them; only a community admin changes
+"""The organization's settings: its currency, the rules it keeps records for,
+units, categories with their picking rules, locations and adjustment reasons. Every member reads them; only a community admin changes
 them (:data:`~hoard.api.deps.AdminDep`).
 
 An organization starts with its main location and the default adjustment
@@ -30,6 +30,8 @@ from hoard.records import (
     DefaultReason,
     Location,
     OrganizationSettings,
+    Picking,
+    Regime,
     Unit,
 )
 from seneschal_core.api import (
@@ -79,6 +81,8 @@ class SettingsRead(BaseModel):
     currency: str
     #: Whether a store order makes what it sells, where its product says nothing.
     auto_manufacture: AutoManufacture
+    #: The rules the organization keeps records for.
+    regimes: list[Regime]
 
 
 class SettingsUpdate(BaseModel):
@@ -86,6 +90,7 @@ class SettingsUpdate(BaseModel):
 
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     auto_manufacture: AutoManufacture | None = None
+    regimes: list[Regime] | None = None
 
 
 class SettingsUnitRead(BaseModel):
@@ -101,15 +106,21 @@ class SettingsCategoryRead(BaseModel):
     id: int
     kind: CategoryKind
     name: str
+    #: Which of its items' lots goes first.
+    picking: Picking
 
 
 class SettingsCategoryCreate(BaseModel):
     kind: CategoryKind
     name: Name
+    picking: Picking = Picking.EARLIEST_EXPIRY
 
 
 class SettingsCategoryUpdate(BaseModel):
-    name: Name
+    """The category's name and picking rule: each left as it is unless sent."""
+
+    name: Name | None = None
+    picking: Picking | None = None
 
 
 class SettingsLocationRead(BaseModel):
@@ -118,15 +129,20 @@ class SettingsLocationRead(BaseModel):
     #: the words for the main location.
     name: str | None
     main: bool
+    #: The Initiative contact holding its address and phone.
+    contact_id: int | None
 
 
 class SettingsLocationCreate(BaseModel):
     name: Name
+    contact_id: int | None = None
 
 
 class SettingsLocationUpdate(BaseModel):
     #: Null only for the main location.
     name: Name | None
+    #: Left as it is unless sent.
+    contact_id: int | None = None
 
 
 class SettingsReasonRead(BaseModel):
@@ -223,14 +239,17 @@ async def update_settings(
     settings = (await db.exec(select(OrganizationSettings))).first() or OrganizationSettings(
         organization_id=db.organization_id
     )
-    settings.sqlmodel_update(body.model_dump(exclude_none=True))
+    changes = body.model_dump(exclude_none=True)
+    if body.regimes is not None:
+        changes["regimes"] = [regime for regime in Regime if regime in body.regimes]
+    settings.sqlmodel_update(changes)
     db.add(settings)
     await db.commit()
     return _settings(settings)
 
 
 def _settings(settings: OrganizationSettings) -> SettingsRead:
-    return SettingsRead(currency=settings.currency, auto_manufacture=settings.auto_manufacture)
+    return SettingsRead.model_validate(settings, from_attributes=True)
 
 
 @router.get("/units", responses=_READ)
@@ -281,7 +300,7 @@ async def list_settings_categories(
 async def create_settings_category(
     body: SettingsCategoryCreate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsCategoryRead:
-    category = Category(organization_id=db.organization_id, kind=body.kind, name=body.name)
+    category = Category(organization_id=db.organization_id, **body.model_dump())
     await _save(db, category)
     return SettingsCategoryRead.model_validate(category, from_attributes=True)
 
@@ -291,7 +310,7 @@ async def update_settings_category(
     category_id: int, body: SettingsCategoryUpdate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsCategoryRead:
     category = await found(db, Category, category_id)
-    await _save(db, category, name=body.name)
+    await _save(db, category, **body.model_dump(exclude_none=True))
     return SettingsCategoryRead.model_validate(category, from_attributes=True)
 
 
@@ -327,7 +346,7 @@ async def list_settings_locations(
 async def create_settings_location(
     body: SettingsLocationCreate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsLocationRead:
-    location = Location(organization_id=db.organization_id, name=body.name)
+    location = Location(organization_id=db.organization_id, **body.model_dump())
     await _save(db, location)
     return SettingsLocationRead.model_validate(location, from_attributes=True)
 
@@ -339,7 +358,9 @@ async def update_settings_location(
     location = await found(db, Location, location_id)
     if body.name is None and not location.main:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.NAME_REQUIRED)
-    await _save(db, location, name=body.name)
+    await _save(
+        db, location, **body.model_dump(exclude_unset=True, include={"contact_id"}), name=body.name
+    )
     return SettingsLocationRead.model_validate(location, from_attributes=True)
 
 

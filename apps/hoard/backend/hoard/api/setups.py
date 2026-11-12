@@ -1,7 +1,7 @@
 """Starting setups (``hoard.setups``): which Hoard offers and which the
 organization has added. Every member reads them; only a community admin adds
 one, sending the words its keys take in the admin's language, or starts
-blank."""
+blank, and only before the organization has begun."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ _BLANK: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_BLANK,
     404: {"description": "NOT_FOUND"},
+    409: {"description": "SETUP_STARTED"},
     422: {"description": "WORDS_MISSING"},
 }
 
@@ -81,10 +82,13 @@ async def start_blank(_admin: AdminDep, db: WriteSessionDep) -> SetupsRead:
 async def add_setup(
     setup_key: str, body: SetupAdd, _admin: AdminDep, db: WriteSessionDep
 ) -> SetupRead:
-    """Add what a setup brings that the organization does not have."""
+    """Add what a setup brings, once: an organization that has begun, with a
+    setup or blank, adds none."""
     setup = setups.setups().get(setup_key)
     if setup is None:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    if await setups.started(db):
+        raise refuse(status.HTTP_409_CONFLICT, setups.SetupError.SETUP_STARTED)
     try:
         await setups.add(db, setup, body.words)
     except setups.SetupRefused as refused:

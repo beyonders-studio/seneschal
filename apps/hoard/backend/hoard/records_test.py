@@ -17,10 +17,14 @@ from hoard.records import (
     Allergen,
     CategoryKind,
     Channel,
+    DocumentLink,
+    Hold,
+    HoldEnd,
     Item,
     ItemKind,
     Listing,
     Location,
+    Lot,
     Material,
     Order,
     OrderStatus,
@@ -273,3 +277,87 @@ async def test_orders_and_stores_keep_their_shapes(db: WriteSession, main: Locat
     db.add(by_hand)
     await db.flush()
     assert by_hand.status is OrderStatus.OPEN
+
+
+async def test_holds_and_document_links_keep_their_shapes(
+    db: WriteSession, main: Location, material, hold
+):
+    flour = await material("Flour")
+    held = Lot(
+        organization_id=db.organization_id,
+        item_id=flour.id,
+        location_id=main.id,
+        number="F-1",
+        dated_on=date(2026, 11, 1),
+    )
+    db.add(held)
+    await db.flush()
+    first = await hold(held)
+    product = Product(organization_id=db.organization_id, name="Loaf")
+    db.add(product)
+    await db.flush()
+    db.add(DocumentLink(organization_id=db.organization_id, file_id=9, lot_id=held.id))
+    await db.flush()
+
+    for row, constraint in (
+        (
+            Hold(organization_id=db.organization_id, lot_id=held.id, reason_id=first.reason_id),
+            "uq_holds_open",
+        ),
+        (
+            Hold(
+                organization_id=db.organization_id,
+                lot_id=held.id,
+                reason_id=first.reason_id,
+                ended=HoldEnd.RELEASED,
+            ),
+            "ck_holds_ended",
+        ),
+        (
+            DocumentLink(organization_id=db.organization_id, file_id=9, lot_id=held.id),
+            "uq_document_links_lot",
+        ),
+        (
+            DocumentLink(
+                organization_id=db.organization_id, file_id=9, lot_id=held.id, product_id=product.id
+            ),
+            "ck_document_links_record",
+        ),
+        (
+            Adjustment(
+                organization_id=db.organization_id,
+                item_id=flour.id,
+                location_id=main.id,
+                kind=AdjustmentKind.STARTING,
+                dated_on=date(2026, 11, 12),
+                change=Decimal(1),
+                hold_id=first.id,
+            ),
+            "ck_adjustments_hold",
+        ),
+        (
+            Material(
+                organization_id=db.organization_id,
+                name="Rose oil",
+                tracking_unit_id=flour.tracking_unit_id,
+                fragrance_allergens=["linalool"],
+            ),
+            "ck_materials_fragrance_allergens",
+        ),
+    ):
+        async with db.begin_nested():
+            with pytest.raises(DBAPIError, match=constraint):
+                if isinstance(row, Material):
+                    await add_material(db, row)
+                db.add(row)
+                await db.flush()
+
+    # An ended hold is kept, and the lot may be held again.
+    first.ended, first.ended_on = HoldEnd.RELEASED, date(2026, 11, 12)
+    await db.flush()
+    await hold(held)
+    # Deleting a lot takes its holds and links with it.
+    await db.delete(held)
+    await db.flush()
+    assert (await db.exec(select(Hold))).all() == []
+    assert (await db.exec(select(DocumentLink))).all() == []

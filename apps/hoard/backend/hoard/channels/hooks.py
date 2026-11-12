@@ -20,8 +20,9 @@ and the schedules, by ``body["schedule"]``:
 * ``reconcile``: each connected store's recent orders imported once, then
   what changed since the last reconcile copied in (``hoard.sync``) and what
   is available pushed where the store holds something else (``hoard.push``);
-* ``upkeep``: each connected store's subscriptions finished, and the push
-  log pruned (``hoard.push``).
+* ``upkeep``: each connected store's subscriptions finished, the push log
+  pruned (``hoard.push``), and the holds whose ready date has come noted
+  (``hoard.holds``).
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 
-from hoard import channels, plugin_manifest, push, sync
+from hoard import channels, holds, plugin_manifest, push, sync
 from hoard.channels import Connected, ConnectRefused
 from hoard.records import Channel, Store, StoreNudge
 from seneschal_core.db import OrganizationSession, WriteSession
@@ -191,6 +192,7 @@ def hooks(address: str) -> dict[str, HookHandler]:
         if name == "upkeep":
             async with write_session(call) as db:
                 await push.prune(db)
+                await holds.upkeep(db)
                 await db.commit()
         for store in stores:
             connector = await channels.connect(

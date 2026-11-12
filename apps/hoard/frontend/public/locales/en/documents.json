@@ -1,0 +1,10 @@
+{
+  "section": {
+    "title": "Documents",
+    "empty": "No documents linked yet."
+  },
+  "backups": {
+    "title": "Backups",
+    "none": "Tick the rules you keep records for to see how long backups are kept."
+  }
+}

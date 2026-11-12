@@ -208,7 +208,8 @@ export const useStartBlank = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getStartBlankMutationOptions(options), queryClient);
 };
 /**
- * Add what a setup brings that the organization does not have.
+ * Add what a setup brings, once: an organization that has begun, with a
+ * setup or blank, adds none.
  * @summary Add Setup
  */
 export const addSetup = (
@@ -270,7 +271,8 @@ export type AddSetupMutationError = ErrorType<void>;
 export type AddSetupMutationVariables = { setupKey: string; data: BodyType<SetupAdd> };
 
 /**
- * Add what a setup brings that the organization does not have.
+ * Add what a setup brings, once: an organization that has begun, with a
+ * setup or blank, adds none.
  * @summary Add Setup
  */
 export const useAddSetup = <TError = ErrorType<void>, TContext = unknown>(

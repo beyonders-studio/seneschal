@@ -15,6 +15,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard.api.properties import HoardPropertySummary, values_of
+from hoard.holds import held_lots
 from hoard.records import Lot, RecordKind, StockLevel
 
 #: A name or code someone types.
@@ -24,6 +25,8 @@ OptionalText = Text | None
 Amount = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=6)]
 #: The same, above zero.
 Positive = Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=6)]
+#: How many days what a run makes cures before it is used or sold.
+CureDays = Annotated[int, Field(gt=0, le=3650)]
 
 
 class ItemStamps(BaseModel):
@@ -53,6 +56,8 @@ class ItemLotRead(BaseModel):
     expires_on: date | None
     notes: str | None
     balance: Decimal
+    #: Whether it is on hold.
+    on_hold: bool
     #: What it holds of the properties people add to lots.
     properties: list[HoardPropertySummary]
 
@@ -90,12 +95,18 @@ async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemH
         item.on_hand += level.quantity
     lots = (
         await db.exec(
-            select(Lot).where(col(Lot.item_id).in_(ids)).order_by(col(Lot.dated_on), col(Lot.id))
+            select(Lot, col(Lot.id).in_(held_lots()))
+            .where(col(Lot.item_id).in_(ids))
+            .order_by(col(Lot.dated_on), col(Lot.id))
         )
     ).all()
-    values = await values_of(db, RecordKind.LOT, [lot.id for lot in lots])
-    for lot in lots:
-        held[lot.item_id].lots.append(
-            ItemLotRead.model_validate({**lot.model_dump(), "properties": values[lot.id]})
-        )
+    values = await values_of(db, RecordKind.LOT, [lot.id for lot, _ in lots])
+    for lot, on_hold in lots:
+        held[lot.item_id].lots.append(lot_read(lot, on_hold, values[lot.id]))
     return held
+
+
+def lot_read(lot: Lot, on_hold: bool, properties: list[HoardPropertySummary]) -> ItemLotRead:
+    return ItemLotRead.model_validate(
+        {**lot.model_dump(), "on_hold": on_hold, "properties": properties}
+    )

@@ -3,8 +3,10 @@ import { useTranslation } from "react-i18next";
 
 import { HoardPage } from "@/components/HoardPage";
 import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
+import { BackupSection } from "@/features/settings/BackupSection";
 import { CategoriesSection } from "@/features/settings/CategoriesSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
+import { HoldReasonsSection } from "@/features/settings/HoldReasonsSection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
@@ -26,10 +28,12 @@ function SettingsPage() {
         <CategoriesSection />
         <LocationsSection />
         <ReasonsSection />
+        <HoldReasonsSection />
         <PropertiesSection />
         <TrackingSection />
         <StoresSection />
         <AutoManufactureField />
+        <BackupSection />
       </div>
     </HoardPage>
   );

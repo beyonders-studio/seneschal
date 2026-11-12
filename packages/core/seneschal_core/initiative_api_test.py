@@ -9,6 +9,7 @@ import jwt
 import pytest
 
 from seneschal_core.initiative_api import (
+    ConsentRequired,
     InitiativeApi,
     InitiativeRefused,
     InitiativeUnavailable,
@@ -124,6 +125,27 @@ async def test_a_token_narrowed_to_an_initiative_is_kept_apart(
     await api.call(community_ref, "GET", "/tasks/", narrowed_to=12)
 
     assert sorted(initiative_stand_in.narrowed.values(), key=str) == [12, None]
+
+
+async def test_a_call_acts_for_a_member_once_they_consent(
+    api: InitiativeApi, initiative_stand_in: InitiativeStandIn, community_ref: str
+):
+    initiative_stand_in.routes[("GET", "/files/")] = lambda request: httpx2.Response(
+        200, json={"member": initiative_stand_in.member_of(request)}
+    )
+
+    with pytest.raises(ConsentRequired):
+        await api.call(community_ref, "GET", "/files/", acting_for="ref-ada")
+    asked = await api.ask_consent(community_ref, "ref-ada", "Find files to link")
+    initiative_stand_in.consents.add((community_ref, "ref-ada"))
+    acting = await api.call(community_ref, "GET", "/files/", acting_for="ref-ada")
+    own = await api.call(community_ref, "GET", "/files/")
+
+    assert asked["status"] == "pending"
+    assert initiative_stand_in.consent_requests == [
+        (community_ref, {"member": "ref-ada", "label": "Find files to link", "access": "read"})
+    ]
+    assert (acting, own) == ({"member": "ref-ada"}, {"member": None})
 
 
 async def test_it_emits_events_and_keeps_values_on_items_as_the_install(

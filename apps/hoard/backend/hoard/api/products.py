@@ -88,6 +88,13 @@ class ProductRead(BaseModel):
     default_price: Decimal | None
     #: Whether a store order makes it; null takes the organization's.
     auto_manufacture: AutoManufacture | None
+    #: How many days what a run makes cures before it is sold; null for none.
+    cure_days: int | None
+    #: Whether it is on the US Food Traceability List.
+    traceability_list: bool
+    #: Whether it is washed off after use, as an EU fragrance allergen's
+    #: threshold asks.
+    rinse_off: bool
     #: What it holds of the properties people add to products.
     properties: list[HoardPropertySummary]
 
@@ -124,6 +131,9 @@ class ProductWrite(BaseModel):
     default_price: items.Amount | None = None
     #: Left as it is unless sent; null takes the organization's.
     auto_manufacture: AutoManufacture | None = None
+    cure_days: items.CureDays | None = None
+    traceability_list: bool = False
+    rinse_off: bool = False
 
 
 class ProductVariationWrite(BaseModel):

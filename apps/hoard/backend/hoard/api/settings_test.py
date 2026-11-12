@@ -14,6 +14,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     assert (await client.get("/api/v1/settings")).json() == {
         "currency": "USD",
         "auto_manufacture": "off",
+        "regimes": [],
     }
 
     db.add(OrganizationSettings(organization_id=db.organization_id, currency="EUR"))
@@ -23,7 +24,14 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     # A change leaves what it does not send as it is.
     await sign_in(client, admin=True)
     changed = await client.put("/api/v1/settings", json={"auto_manufacture": "out_of_stock"})
-    assert changed.json() == {"currency": "EUR", "auto_manufacture": "out_of_stock"}
+    assert changed.json() == {"currency": "EUR", "auto_manufacture": "out_of_stock", "regimes": []}
+    # Regimes are kept once each, in their own order.
+    ticked = await client.put(
+        "/api/v1/settings", json={"regimes": ["eu_cosmetics", "us_cosmetics", "eu_cosmetics"]}
+    )
+    assert ticked.json()["regimes"] == ["us_cosmetics", "eu_cosmetics"]
+    unknown = await client.put("/api/v1/settings", json={"regimes": ["moon_food"]})
+    assert unknown.status_code == 422
 
 
 #: A change to each kind of setting, as a method, path and body.
@@ -84,5 +92,23 @@ async def test_names_stay_unique_and_what_records_name_stays(
     main = (await client.get("/api/v1/settings/locations")).json()[0]
     kept = await client.delete(f"/api/v1/settings/locations/{main['id']}")
     assert (kept.status_code, kept.json()) == (409, {"detail": "MAIN_LOCATION"})
-    renamed = await client.patch(f"/api/v1/settings/locations/{main['id']}", json={"name": "Shop"})
-    assert renamed.json() == {"id": main["id"], "name": "Shop", "main": True}
+    renamed = await client.patch(
+        f"/api/v1/settings/locations/{main['id']}", json={"name": "Shop", "contact_id": 4}
+    )
+    assert renamed.json() == {"id": main["id"], "name": "Shop", "main": True, "contact_id": 4}
+    # A contact not sent is kept.
+    again = await client.patch(f"/api/v1/settings/locations/{main['id']}", json={"name": "Shop"})
+    assert again.json()["contact_id"] == 4
+
+    category = await client.post(
+        "/api/v1/settings/categories",
+        json={"kind": "material", "name": "Packaging", "picking": "first_in"},
+    )
+    picked = await client.patch(
+        f"/api/v1/settings/categories/{category.json()['id']}", json={"picking": "recorded"}
+    )
+    assert (category.json()["picking"], picked.json()["name"], picked.json()["picking"]) == (
+        "first_in",
+        "Packaging",
+        "recorded",
+    )

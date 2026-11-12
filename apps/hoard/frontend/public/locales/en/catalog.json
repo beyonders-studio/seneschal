@@ -59,7 +59,9 @@
     "addAttribute": "Add attribute",
     "removeAttribute": "Remove attribute",
     "saveFailed": "Couldn't save the product.",
-    "loadFailed": "Couldn't load the product."
+    "loadFailed": "Couldn't load the product.",
+    "traceabilityList": "On the Food Traceability List",
+    "rinseOff": "Rinsed off after use"
   },
   "settings": {
     "rename": "Rename",
@@ -145,6 +147,10 @@
     "noMatch": "Nothing matches that search.",
     "removeTitle": "Delete {{name}}?",
     "removeBody": "Its stock, lots and adjustments go with it.",
-    "removeFailed": "Couldn't delete it."
+    "removeFailed": "Couldn't delete it.",
+    "cureDays": "Cure time, in days",
+    "cureDaysValue_one": "{{count}} day",
+    "cureDaysValue_other": "{{count}} days",
+    "cureDaysHint": "What a run makes waits on hold, curing, this long."
   }
 }

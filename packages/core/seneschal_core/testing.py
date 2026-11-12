@@ -61,7 +61,9 @@ from seneschal_core.initiative import (
 from seneschal_core.initiative_api import (
     ASSERTION_TYPE,
     COMMUNITY_PREFIX,
+    CONSENT_REQUESTS_PATH,
     INSTALLATION_PREFIX,
+    MEMBER_GRANT,
     TOKEN_PATH,
     InitiativeApi,
     key_id,
@@ -201,11 +203,19 @@ class InitiativeStandIn:
             ("POST", f"{INSTALLATION_PREFIX}/events"): self._emit,
             ("PUT", f"{INSTALLATION_PREFIX}/metadata"): self._write_metadata,
             ("GET", f"{INSTALLATION_PREFIX}/config"): self._config,
+            ("POST", CONSENT_REQUESTS_PATH): self._ask_consent,
         }
         #: Each installation token issued, and the community it is for.
         self.tokens: dict[str, str] = {}
         #: The initiative each installation token is narrowed to, if any.
         self.narrowed: dict[str, int | None] = {}
+        #: The member each member token acts for, by token.
+        self.acting: dict[str, str] = {}
+        #: The members who consented to the app acting for them, by community
+        #: and the install's reference for them.
+        self.consents: set[tuple[str, str]] = set()
+        #: Each consent request: the community, and the body it was sent with.
+        self.consent_requests: list[tuple[str, dict[str, Any]]] = []
         #: Each event emitted: the community, and the body it was sent with.
         self.events: list[tuple[str, dict[str, Any]]] = []
         #: The values the install keeps on each item, by community and
@@ -252,9 +262,11 @@ class InitiativeStandIn:
         )
 
     def _issue(self, request: httpx2.Request) -> httpx2.Response:
-        """An installation token, for an assertion the app's key signed."""
+        """An installation token, for an assertion the app's key signed; or a
+        member token, for one naming a member who consented."""
         form = dict(parse_qsl(request.content.decode()))
-        assertion = form.get("client_assertion", "")
+        member = form.get("grant_type") == MEMBER_GRANT
+        assertion = form.get("assertion" if member else "client_assertion", "")
         try:
             if jwt.get_unverified_header(assertion).get("kid") != key_id(self.plugin_key):
                 raise jwt.InvalidTokenError("unknown key")
@@ -264,24 +276,34 @@ class InitiativeStandIn:
                 algorithms=[ALGORITHM],
                 audience=f"{self.API_URL}{TOKEN_PATH}",
                 issuer=self.public_id,
-                subject=self.public_id,
+                subject=None if member else self.public_id,
                 options={"require": ["iss", "sub", "aud", "jti", "iat", "exp"]},
             )
         except jwt.PyJWTError:
             return httpx2.Response(401, json={"error": "invalid_client"})
-        if (
+        if member:
+            community_ref = claims.get("installation")
+            if not community_ref or claims["exp"] - claims["iat"] > 300:
+                return httpx2.Response(400, json={"error": "invalid_grant"})
+            if (community_ref, claims["sub"]) not in self.consents:
+                return httpx2.Response(400, json={"error": "consent_required"})
+        elif (
             form.get("grant_type") != "client_credentials"
             or form.get("client_assertion_type") != ASSERTION_TYPE
             or not form.get("installation")
             or claims["exp"] - claims["iat"] > 300
         ):
             return httpx2.Response(400, json={"error": "invalid_grant"})
+        else:
+            community_ref = form["installation"]
         resource = form.get("resource")
         if resource is not None and not resource.startswith("urn:initiative:initiative:"):
             return httpx2.Response(400, json={"error": "invalid_target"})
         token = secrets.token_hex(16)
-        self.tokens[token] = form["installation"]
+        self.tokens[token] = community_ref
         self.narrowed[token] = int(resource.rsplit(":", 1)[1]) if resource else None
+        if member:
+            self.acting[token] = claims["sub"]
         return httpx2.Response(
             200,
             json={
@@ -294,6 +316,27 @@ class InitiativeStandIn:
 
     def _community(self, request: httpx2.Request) -> str:
         return self.tokens[request.headers["authorization"].partition(" ")[2]]
+
+    def member_of(self, request: httpx2.Request) -> str | None:
+        """The member a request's token acts for; None for the install's own."""
+        return self.acting.get(request.headers["authorization"].partition(" ")[2])
+
+    def _ask_consent(self, request: httpx2.Request) -> httpx2.Response:
+        """Keeps the request; answers it pending, or granted once the member
+        has consented."""
+        community_ref, body = self._community(request), json.loads(request.content)
+        self.consent_requests.append((community_ref, body))
+        granted = (community_ref, body["member"]) in self.consents
+        return httpx2.Response(
+            201,
+            json={
+                **body,
+                "requested_access": body["access"],
+                "status": "granted" if granted else "pending",
+                "granted_access": body["access"] if granted else None,
+                "requested_at": datetime.now(UTC).isoformat(),
+            },
+        )
 
     def _emit(self, request: httpx2.Request) -> httpx2.Response:
         self.events.append((self._community(request), json.loads(request.content)))

@@ -48,6 +48,8 @@ class BaseRead(BaseModel):
     tracking_unit_id: int
     low_stock_limit: Decimal | None
     category_id: int | None
+    #: How many days what a run makes cures before it is used; null for none.
+    cure_days: int | None
     #: What is on hand at every location.
     on_hand: Decimal
     #: The moving average cost of one tracking unit; null without ``costs``.
@@ -68,6 +70,7 @@ class BaseWrite(BaseModel):
     tracking_unit_id: int
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
+    cure_days: items.CureDays | None = None
 
 
 def _read(
