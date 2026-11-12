@@ -976,7 +976,7 @@ export const HoldEnd = {
   discarded: "discarded",
 } as const;
 
-export interface HoldFromOrder {
+export interface HoldOrderCreate {
   reason_id?: number | null;
   notes?: string | null;
   made_from?: boolean;

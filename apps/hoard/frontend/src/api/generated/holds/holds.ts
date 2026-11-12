@@ -24,7 +24,7 @@ import type {
   HTTPValidationError,
   HoldCreate,
   HoldDiscard,
-  HoldFromOrder,
+  HoldOrderCreate,
   HoldRead,
   HoldReasonRead,
   HoldReasonWrite,
@@ -151,7 +151,7 @@ export const usePlaceHold = <TError = ErrorType<void | HTTPValidationError>, TCo
  */
 export const placeOrderHolds = (
   orderId: number,
-  holdFromOrder: BodyType<HoldFromOrder>,
+  holdOrderCreate: BodyType<HoldOrderCreate>,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
@@ -160,7 +160,7 @@ export const placeOrderHolds = (
       url: `/api/v1/holds/orders/${orderId}`,
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      data: holdFromOrder,
+      data: holdOrderCreate,
       signal,
     },
     options
@@ -208,9 +208,9 @@ export const getPlaceOrderHoldsMutationOptions = <
 export type PlaceOrderHoldsMutationResult = NonNullable<
   Awaited<ReturnType<typeof placeOrderHolds>>
 >;
-export type PlaceOrderHoldsMutationBody = BodyType<HoldFromOrder>;
+export type PlaceOrderHoldsMutationBody = BodyType<HoldOrderCreate>;
 export type PlaceOrderHoldsMutationError = ErrorType<void | HTTPValidationError>;
-export type PlaceOrderHoldsMutationVariables = { orderId: number; data: BodyType<HoldFromOrder> };
+export type PlaceOrderHoldsMutationVariables = { orderId: number; data: BodyType<HoldOrderCreate> };
 
 /**
  * Put every lot an order's shipments drew on hold, recorded or assumed,
