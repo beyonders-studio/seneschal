@@ -1,21 +1,106 @@
 {
   "section": {
-    "title": "Stores"
+    "title": "Stores",
+    "description": "A store connects under Hoard's connections in Initiative. Hoard tells it what it may sell from the locations mapped here.",
+    "empty": "No store is connected yet.",
+    "connected": "Connected",
+    "notConnected": "Not connected",
+    "listings_one": "{{linked}} of {{count}} listing sells an item",
+    "listings_other": "{{linked}} of {{count}} listings sell an item",
+    "pushesQueued_one": "{{count}} push waiting",
+    "pushesQueued_other": "{{count}} pushes waiting",
+    "pushesFailed_one": "{{count}} push given up",
+    "pushesFailed_other": "{{count}} pushes given up",
+    "refresh": "Read the store again",
+    "refreshed": "Read the store again.",
+    "refreshFailed": "The store couldn't be read.",
+    "noLocations": "Read the store again to see its locations.",
+    "storeLocation": "Store location",
+    "sellsFrom": "Sells stock from",
+    "nothing": "Nothing",
+    "mapped": "Location saved.",
+    "mapFailed": "The location couldn't be saved.",
+    "showLog": "Show the push log",
+    "hideLog": "Hide the push log"
+  },
+  "channels": {
+    "shopify": "Shopify",
+    "woocommerce": "WooCommerce"
+  },
+  "push": {
+    "empty": "Nothing has been pushed to this store yet.",
+    "listing": "Listing",
+    "location": "Location",
+    "quantity": "Quantity",
+    "status": "Status",
+    "when": "When",
+    "statuses": {
+      "queued": "Waiting",
+      "pushed": "Pushed",
+      "failed": "Given up"
+    }
   },
   "product": {
     "title": "In your stores",
-    "empty": "This product isn't listed in a connected store."
+    "empty": "This product isn't listed in a connected store.",
+    "live": "Edited live in the store: Hoard keeps no copy.",
+    "addTo": "Add to {{store}}",
+    "added": "Added to the store as a draft.",
+    "addFailed": "The product couldn't be added to the store.",
+    "loadFailed": "The store's product couldn't be read.",
+    "storeTitle": "Title in the store",
+    "description": "Description",
+    "descriptionHint": "As the store keeps it, in HTML.",
+    "status": "Status in the store",
+    "statusHint": "The store's own word, such as active or draft.",
+    "variant": "Variant",
+    "images": "Images",
+    "imageUrl": "Image address",
+    "imageAlt": "Image description",
+    "addImage": "Add image",
+    "removeImage": "Remove image",
+    "save": "Save to the store",
+    "saved": "Saved to the store.",
+    "saveFailed": "The store didn't take the changes."
   },
   "listings": {
     "emptyTitle": "No listings yet",
-    "emptyBody": "Once a store is connected, its products will be here, each with the product or variation it sells."
+    "emptyBody": "Once a store is connected, its products will be here, each with the product or variation it sells.",
+    "show": "Show",
+    "all": "All listings",
+    "unlinked": "Not linked",
+    "linkedOnly": "Linked",
+    "title": "Listing",
+    "store": "Store",
+    "sells": "Sells",
+    "matchedBy": "Linked by",
+    "sellsNothing": "Nothing yet",
+    "link": "Link",
+    "linkTitle": "Link {{title}}",
+    "item": "Item it sells",
+    "clear": "Sell nothing",
+    "saved": "Listing linked.",
+    "saveFailed": "The listing couldn't be linked.",
+    "matched": {
+      "sku": "SKU",
+      "title": "Title",
+      "external_id": "Store's id",
+      "hand": "Hand"
+    }
   },
   "errors": {
     "STORE_ADDRESS_INVALID": "That isn't the store's own address. Use the one ending in myshopify.com.",
     "STORE_CREDENTIALS_REFUSED": "The store didn't accept the client ID and secret.",
     "STORE_SCOPES_MISSING": "The store's app is missing permissions Hoard needs: {{detail}}.",
-    "STORE_UNREACHABLE": "The store couldn't be reached. Try saving the connection again in a moment.",
+    "STORE_UNREACHABLE": "The store couldn't be reached. Try again in a moment.",
     "STORE_SUBSCRIPTION_REFUSED": "The store didn't let Hoard hear about its orders and products.",
-    "CHANNEL_UNSUPPORTED": "Hoard can't connect to this kind of store yet."
+    "CHANNEL_UNSUPPORTED": "Hoard can't connect to this kind of store yet.",
+    "STORE_NOT_CONNECTED": "The store isn't connected.",
+    "LOCATION_UNKNOWN": "That location isn't one of Hoard's.",
+    "ITEM_NOT_SOLD": "A listing sells a material or a product's variation.",
+    "LISTING_UNLINKED": "The listing no longer sells an item.",
+    "LOCATION_UNMAPPED": "The store's location no longer sells stock from Hoard.",
+    "STORE_HOLDS_OTHER": "The store held a different amount, so Hoard is waiting for its orders.",
+    "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection."
   }
 }
