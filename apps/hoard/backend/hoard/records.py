@@ -24,6 +24,13 @@
   adjustments (``seneschal_core.ledger``).
 * **Purchases** of materials, from a supplier among the community's contacts,
   with lines that are received into lots.
+* **Stores**: a community's connected store on a sales channel, the store's
+  locations mapped to Hoard's, its **listings** linked to items, the **stock
+  pushes** sent to it, and the **nudges** its webhooks leave for Hoard to
+  refetch a record.
+* **Orders**, by hand for a customer among the community's contacts or copied
+  in from a store, with lines; **shipments** of their lines, which record the
+  lots they draw; and **returns** of what was shipped.
 * **Task links**: the Initiative task that tracks a run or a purchase.
 * **The event outbox**: events recorded with the change that caused them,
   waiting to be sent to Initiative.
@@ -138,6 +145,10 @@ class AdjustmentKind(StrEnum):
     MANUAL = "manual"
     #: A completed production run's: each of its lines consumed, and its output made.
     PRODUCTION = "production"
+    #: A shipped shipment's line, out.
+    SHIPMENT = "shipment"
+    #: What came back of a shipment line, in.
+    RETURN = "return"
 
 
 class RecordKind(StrEnum):
@@ -157,6 +168,62 @@ class RunStatus(StrEnum):
     NOT_STARTED = "not_started"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+
+
+class Channel(StrEnum):
+    """A sales channel a store is on: each has its connector (``hoard.channels``)."""
+
+    SHOPIFY = "shopify"
+    WOOCOMMERCE = "woocommerce"
+
+
+class AutoManufacture(StrEnum):
+    """Whether a store order makes what it sells: never, always, or only what
+    is out of stock. A product or variation with none takes its product's,
+    then the organization's."""
+
+    OFF = "off"
+    ALWAYS = "always"
+    OUT_OF_STOCK = "out_of_stock"
+
+
+class OrderStatus(StrEnum):
+    """Where an order stands. Only an open order commits stock."""
+
+    #: Copied in from a store and not paid yet: it commits nothing.
+    PENDING = "pending"
+    #: Its lines not yet shipped are committed.
+    OPEN = "open"
+    #: Every line has shipped, or the store had it fulfilled.
+    SHIPPED = "shipped"
+    CANCELLED = "cancelled"
+
+
+class ShipmentStatus(StrEnum):
+    """Where a shipment stands. Only a shipped one has moved stock."""
+
+    PENDING = "pending"
+    SHIPPED = "shipped"
+    CANCELLED = "cancelled"
+
+
+class PushStatus(StrEnum):
+    """Where a stock push stands."""
+
+    QUEUED = "queued"
+    PUSHED = "pushed"
+    #: Given up on: its error says why.
+    FAILED = "failed"
+
+
+class MatchedBy(StrEnum):
+    """How a listing was linked to its item: by SKU, title or the store's id,
+    in that order, or by hand."""
+
+    SKU = "sku"
+    TITLE = "title"
+    EXTERNAL_ID = "external_id"
+    HAND = "hand"
 
 
 class Allergen(StrEnum):
@@ -186,6 +253,14 @@ class Allergen(StrEnum):
 ALLERGENS_CHECK = "allergens <@ ARRAY[{}]::text[]".format(
     ", ".join(f"'{allergen}'" for allergen in Allergen)
 )
+
+
+def auto_manufacture() -> Any:
+    """Whether a store order makes what it sells, or None to take what the
+    level above says."""
+    return Field(
+        default=None, sa_column=enum_column(AutoManufacture, "auto_manufacture", nullable=True)
+    )
 
 
 def allergens() -> Any:
@@ -370,6 +445,8 @@ class Product(OrganizationRow, Stamped, table=True):
     low_stock_limit: Decimal | None = amount(None)
     #: Sold as the variations its recipe holds.
     bundle: bool = False
+    #: Whether a store order makes it; None takes the organization's.
+    auto_manufacture: AutoManufacture | None = auto_manufacture()
     #: Whether its variations' stock together was at or below its low-stock
     #: limit when ``hoard.events`` last looked.
     low_stock: bool = False
@@ -405,6 +482,8 @@ class Variation(OrganizationRow, Stamped, table=True):
     #: Its price, when not the product's default price.
     price: Decimal | None = amount(None)
     is_default: bool = False
+    #: Whether a store order makes it; None takes its product's.
+    auto_manufacture: AutoManufacture | None = auto_manufacture()
 
 
 class DefaultReason(StrEnum):
@@ -416,6 +495,8 @@ class DefaultReason(StrEnum):
     EXPIRED = "expired"
     LOST = "lost"
     PERSONAL_USE = "personal_use"
+    #: What came back of a shipment damaged, written off rather than restocked.
+    RETURNED_DAMAGED = "returned_damaged"
 
 
 class AdjustmentReason(OrganizationRow, Stamped, table=True):
@@ -604,6 +685,8 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         reference(
             "adjustments", "production_run_line_id", "production_run_lines", ondelete="CASCADE"
         ),
+        reference("adjustments", "shipment_line_id", "shipment_lines", ondelete="CASCADE"),
+        reference("adjustments", "return_line_id", "return_lines", ondelete="CASCADE"),
         Index("ix_adjustments_item", "organization_id", "item_id", "dated_on", "id"),
         Index("ix_adjustments_production_run", "organization_id", "production_run_id"),
         Index(
@@ -615,6 +698,8 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         UniqueConstraint("purchase_line_id", name="uq_adjustments_purchase_line_id"),
         UniqueConstraint("stocktake_row_id", name="uq_adjustments_stocktake_row_id"),
         UniqueConstraint("production_run_line_id", name="uq_adjustments_production_run_line_id"),
+        UniqueConstraint("shipment_line_id", name="uq_adjustments_shipment_line_id"),
+        UniqueConstraint("return_line_id", "kind", name="uq_adjustments_return_line_kind"),
         CheckConstraint("change <> 0", name="ck_adjustments_change"),
         CheckConstraint(
             "(kind = 'purchase') = (purchase_line_id IS NOT NULL)",
@@ -632,6 +717,15 @@ class Adjustment(OrganizationRow, Stamped, table=True):
             "production_run_line_id IS NULL OR production_run_id IS NOT NULL",
             name="ck_adjustments_production_line",
         ),
+        CheckConstraint(
+            "(kind = 'shipment') = (shipment_line_id IS NOT NULL)",
+            name="ck_adjustments_shipment",
+        ),
+        CheckConstraint(
+            "(kind <> 'return' OR return_line_id IS NOT NULL) "
+            "AND (return_line_id IS NULL OR kind IN ('return', 'manual'))",
+            name="ck_adjustments_return",
+        ),
     )
 
     id: int = identity()
@@ -645,12 +739,16 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     reason_id: int | None = Field(default=None, sa_type=BigInteger)
     notes: str | None = None
     #: What caused it, by kind: the received purchase line, the stocktake's
-    #: row, or the completed production run: one of its lines consumed, or,
-    #: with no line, its output made.
+    #: row, the completed production run (one of its lines consumed, or, with
+    #: no line, its output made), the shipped shipment line, or the return
+    #: line: what came back, in, and, for what came back damaged, the manual
+    #: adjustment writing it off.
     purchase_line_id: int | None = Field(default=None, sa_type=BigInteger)
     stocktake_row_id: int | None = Field(default=None, sa_type=BigInteger)
     production_run_id: int | None = Field(default=None, sa_type=BigInteger)
     production_run_line_id: int | None = Field(default=None, sa_type=BigInteger)
+    shipment_line_id: int | None = Field(default=None, sa_type=BigInteger)
+    return_line_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class OrganizationSettings(OrganizationRow, Stamped, table=True):
@@ -672,6 +770,11 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     #: Whether an admin, asked which kind of business this is on first opening
     #: Hoard, answered that it is none Hoard has a starting setup for.
     started_blank: bool = False
+    #: Whether a store order makes what it sells, where its product says nothing.
+    auto_manufacture: AutoManufacture = Field(
+        default=AutoManufacture.OFF,
+        sa_column=enum_column(AutoManufacture, "auto_manufacture", server_default="off"),
+    )
 
 
 class ProductImage(OrganizationRow, Stamped, table=True):
@@ -959,3 +1062,329 @@ class OutboxEvent(OrganizationRow, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
     )
+
+
+class Store(OrganizationRow, Stamped, table=True):
+    """The organization's store on one sales channel, made when its connection
+    is first saved (``hoard.channels.hooks``): at most one per channel.
+
+    ``last_check_error`` keeps why saving the connection was last refused,
+    until it is saved again. The ``*_since`` stamps say how far the store's
+    orders and products have been read, and ``imported_at`` when its recent
+    orders were copied in."""
+
+    __tablename__ = "stores"
+    __table_args__ = (
+        referable("stores"),
+        UniqueConstraint("organization_id", "channel", name="uq_stores_channel"),
+    )
+
+    id: int = identity()
+    channel: Channel = Field(sa_column=enum_column(Channel, "channel"))
+    #: The store's own address, such as ``shop.myshopify.com``, as the store
+    #: answered it; None until a connection is saved.
+    shop_domain: str | None = None
+    #: What the store calls itself.
+    account_label: str | None = None
+    #: Whether its connection is saved now: false once it is cleared.
+    connected: bool = False
+    #: Why saving the connection was last refused: a code pages translate.
+    last_check_error: str | None = None
+    orders_since: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    products_since: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    imported_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class StoreLocation(OrganizationRow, Stamped, table=True):
+    """One of a store's locations, by the store's id, and the Hoard location
+    whose stock it sells; none until someone maps it."""
+
+    __tablename__ = "store_locations"
+    __table_args__ = (
+        referable("store_locations"),
+        reference("store_locations", "store_id", "stores", ondelete="CASCADE"),
+        reference("store_locations", "location_id", "locations"),
+        UniqueConstraint(
+            "organization_id", "store_id", "external_id", name="uq_store_locations_external"
+        ),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    #: The store's id for it.
+    external_id: str
+    #: The store's name for it.
+    name: str | None = None
+    location_id: int | None = Field(default=None, sa_type=BigInteger)
+
+
+class Listing(OrganizationRow, Stamped, table=True):
+    """A store's product or variant, by the store's ids, and the item it sells:
+    none until it is matched. Several listings may sell one item."""
+
+    __tablename__ = "listings"
+    __table_args__ = (
+        referable("listings"),
+        reference("listings", "store_id", "stores", ondelete="CASCADE"),
+        reference("listings", "item_id", "items"),
+        UniqueConstraint(
+            "organization_id",
+            "store_id",
+            "product_id",
+            "variant_id",
+            name="uq_listings_external",
+            postgresql_nulls_not_distinct=True,
+        ),
+        Index("ix_listings_item", "organization_id", "item_id"),
+        CheckConstraint("(item_id IS NULL) = (matched_by IS NULL)", name="ck_listings_matched"),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    item_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The store's ids: its product, its variant where it has variants, and
+    #: the inventory item its stock is kept under, where the store has one.
+    product_id: str
+    variant_id: str | None = None
+    inventory_item_id: str | None = None
+    sku: str | None = None
+    title: str | None = None
+    matched_by: MatchedBy | None = Field(
+        default=None, sa_column=enum_column(MatchedBy, "matched_by", nullable=True)
+    )
+
+
+class StockPush(OrganizationRow, table=True):
+    """Setting a listing's stock at one of its store's locations: queued,
+    tried until the store takes it, and kept as the push log. ``compare_quantity``
+    is what Hoard last knew the store held, which a store that compares
+    before it sets checks; ``idempotency_key`` makes a retry the same push."""
+
+    __tablename__ = "stock_pushes"
+    __table_args__ = (
+        reference("stock_pushes", "listing_id", "listings", ondelete="CASCADE"),
+        reference("stock_pushes", "store_location_id", "store_locations", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "idempotency_key", name="uq_stock_pushes_key"),
+        Index("ix_stock_pushes_due", "organization_id", "status", "next_attempt_at"),
+        Index("ix_stock_pushes_listing", "organization_id", "listing_id", "created_at"),
+        CheckConstraint("attempts >= 0", name="ck_stock_pushes_attempts"),
+    )
+
+    id: int = identity()
+    listing_id: int = Field(sa_type=BigInteger)
+    store_location_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Whole units: what stores count in.
+    quantity: int
+    compare_quantity: int | None = None
+    idempotency_key: str
+    status: PushStatus = Field(
+        default=PushStatus.QUEUED,
+        sa_column=enum_column(PushStatus, "push_status", server_default="queued"),
+    )
+    attempts: int = 0
+    next_attempt_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )
+    #: Why the store did not take it.
+    error: str | None = None
+    created_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )
+    pushed_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class StoreNudge(OrganizationRow, table=True):
+    """A store's webhook saying one of its records changed: Hoard refetches the
+    record, then marks it done. One waits per record at a time."""
+
+    __tablename__ = "store_nudges"
+    __table_args__ = (
+        reference("store_nudges", "store_id", "stores", ondelete="CASCADE"),
+        Index(
+            "uq_store_nudges_waiting",
+            "organization_id",
+            "store_id",
+            "topic",
+            "external_id",
+            unique=True,
+            postgresql_where=text("done_at IS NULL"),
+        ),
+        Index("ix_store_nudges_due", "organization_id", "done_at", "next_attempt_at"),
+        CheckConstraint("attempts >= 0", name="ck_store_nudges_attempts"),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    #: What changed: one of ``hoard.channels.NudgeTopic``.
+    topic: str
+    #: The store's id for the record.
+    external_id: str
+    created_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )
+    attempts: int = 0
+    next_attempt_at: datetime = Field(
+        default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
+    )
+    done_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class Order(OrganizationRow, Stamped, table=True):
+    """Goods sold, shipped from a location: made by hand for a customer among
+    the community's contacts, or copied in from a store, where the store's
+    order number stands for a consumer. Its shipping and tax are not goods;
+    its discount is taken off its lines' total."""
+
+    __tablename__ = "orders"
+    __table_args__ = (
+        referable("orders"),
+        reference("orders", "store_id", "stores"),
+        reference("orders", "location_id", "locations"),
+        UniqueConstraint("organization_id", "code", name="uq_orders_code"),
+        UniqueConstraint("organization_id", "store_id", "external_id", name="uq_orders_external"),
+        Index("ix_orders_status", "organization_id", "status"),
+        CheckConstraint("(store_id IS NULL) = (external_id IS NULL)", name="ck_orders_external"),
+        CheckConstraint(
+            "store_id IS NOT NULL OR customer_contact_id IS NOT NULL", name="ck_orders_customer"
+        ),
+        CheckConstraint("shipping >= 0 AND tax >= 0 AND discount >= 0", name="ck_orders_amounts"),
+    )
+
+    id: int = identity()
+    code: str
+    #: The store it was copied from, and the store's id and number for it.
+    store_id: int | None = Field(default=None, sa_type=BigInteger)
+    external_id: str | None = None
+    external_number: str | None = None
+    #: The customer: an Initiative contact's id. None for a store's consumer.
+    customer_contact_id: int | None = Field(default=None, sa_type=BigInteger)
+    location_id: int = Field(sa_type=BigInteger)
+    #: The initiative it was made from.
+    initiative_id: int | None = Field(default=None, sa_type=BigInteger)
+    ordered_on: date
+    due_on: date | None = None
+    paid: bool = False
+    status: OrderStatus = Field(
+        default=OrderStatus.OPEN,
+        sa_column=enum_column(OrderStatus, "order_status", server_default="open"),
+    )
+    shipping: Decimal = amount()
+    tax: Decimal = amount()
+    discount: Decimal = amount()
+    delivery_address: str | None = None
+
+
+class OrderLine(OrganizationRow, Stamped, table=True):
+    """A variation sold, so many at a price each. A bundle's parts are lines
+    of their own, each naming the bundle's line (``bundle_line_id``), and the
+    bundle's own line commits nothing. A line may name the run that made it."""
+
+    __tablename__ = "order_lines"
+    __table_args__ = (
+        referable("order_lines"),
+        reference("order_lines", "order_id", "orders", ondelete="CASCADE"),
+        reference("order_lines", "item_id", "items"),
+        reference("order_lines", "bundle_line_id", "order_lines", ondelete="CASCADE"),
+        reference("order_lines", "production_run_id", "production_runs"),
+        Index("ix_order_lines_order", "organization_id", "order_id"),
+        Index("ix_order_lines_item", "organization_id", "item_id"),
+        CheckConstraint("quantity > 0 AND price >= 0", name="ck_order_lines_amounts"),
+    )
+
+    id: int = identity()
+    order_id: int = Field(sa_type=BigInteger)
+    item_id: int = Field(sa_type=BigInteger)
+    quantity: Decimal = amount()
+    #: What one sold for.
+    price: Decimal = amount()
+    #: The store's id for the line.
+    external_line_id: str | None = None
+    bundle_line_id: int | None = Field(default=None, sa_type=BigInteger)
+    production_run_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The store's selling plan, for a subscription's order.
+    selling_plan: str | None = None
+
+
+class Shipment(OrganizationRow, Stamped, table=True):
+    """Some of an order's lines sent from a location, by hand or from the
+    store's fulfillment (``external_id``). Only shipping it moves stock: each
+    line out, from its lot."""
+
+    __tablename__ = "shipments"
+    __table_args__ = (
+        referable("shipments"),
+        reference("shipments", "order_id", "orders", ondelete="CASCADE"),
+        reference("shipments", "location_id", "locations"),
+        UniqueConstraint(
+            "organization_id", "order_id", "external_id", name="uq_shipments_external"
+        ),
+        Index("ix_shipments_order", "organization_id", "order_id"),
+        CheckConstraint(
+            "status <> 'shipped' OR shipped_on IS NOT NULL", name="ck_shipments_shipped"
+        ),
+    )
+
+    id: int = identity()
+    order_id: int = Field(sa_type=BigInteger)
+    location_id: int = Field(sa_type=BigInteger)
+    #: The store's id for the fulfillment it records.
+    external_id: str | None = None
+    status: ShipmentStatus = Field(
+        default=ShipmentStatus.PENDING,
+        sa_column=enum_column(ShipmentStatus, "shipment_status", server_default="pending"),
+    )
+    shipped_on: date | None = None
+    #: The carrier: an Initiative contact's id.
+    carrier_contact_id: int | None = Field(default=None, sa_type=BigInteger)
+    tracking: str | None = None
+    delivery_address: str | None = None
+    #: The customer's or carrier's reference for it.
+    reference: str | None = None
+
+
+class ShipmentLine(OrganizationRow, Stamped, table=True):
+    """What a shipment sends of an order line, and from which lot: the lot
+    someone recorded, or the one Hoard assumed (``assumed``)."""
+
+    __tablename__ = "shipment_lines"
+    __table_args__ = (
+        referable("shipment_lines"),
+        reference("shipment_lines", "shipment_id", "shipments", ondelete="CASCADE"),
+        reference("shipment_lines", "order_line_id", "order_lines", ondelete="CASCADE"),
+        reference("shipment_lines", "item_id", "items"),
+        reference("shipment_lines", "lot_id", "lots"),
+        Index("ix_shipment_lines_shipment", "organization_id", "shipment_id"),
+        Index("ix_shipment_lines_order_line", "organization_id", "order_line_id"),
+        CheckConstraint("quantity > 0", name="ck_shipment_lines_quantity"),
+    )
+
+    id: int = identity()
+    shipment_id: int = Field(sa_type=BigInteger)
+    order_line_id: int = Field(sa_type=BigInteger)
+    item_id: int = Field(sa_type=BigInteger)
+    lot_id: int | None = Field(default=None, sa_type=BigInteger)
+    quantity: Decimal = amount()
+    assumed: bool = False
+
+
+class ReturnLine(OrganizationRow, Stamped, table=True):
+    """What came back of a shipment line, and when. What came back damaged is
+    written off with the reason for it rather than restocked."""
+
+    __tablename__ = "return_lines"
+    __table_args__ = (
+        referable("return_lines"),
+        reference("return_lines", "shipment_line_id", "shipment_lines", ondelete="CASCADE"),
+        Index("ix_return_lines_shipment_line", "organization_id", "shipment_line_id"),
+        CheckConstraint("quantity > 0", name="ck_return_lines_quantity"),
+    )
+
+    id: int = identity()
+    shipment_line_id: int = Field(sa_type=BigInteger)
+    quantity: Decimal = amount()
+    dated_on: date
+    damaged: bool = False

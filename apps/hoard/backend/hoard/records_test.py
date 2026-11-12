@@ -16,10 +16,14 @@ from hoard.records import (
     AdjustmentKind,
     Allergen,
     CategoryKind,
+    Channel,
     Item,
     ItemKind,
     Location,
+    Listing,
     Material,
+    Order,
+    OrderStatus,
     Product,
     ProductImage,
     PropertyDefinition,
@@ -28,6 +32,7 @@ from hoard.records import (
     Recipe,
     RecordKind,
     Stocktake,
+    Store,
     Unit,
 )
 from hoard.stock import add_material
@@ -210,3 +215,61 @@ async def test_making_keeps_its_shapes(db: WriteSession, main: Location, materia
                     await add_material(db, row)
                 db.add(row)
                 await db.flush()
+
+
+async def test_orders_and_stores_keep_their_shapes(db: WriteSession, main: Location, material):
+    flour = await material("Flour")
+    store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
+    db.add(store)
+    await db.flush()
+    # A store's product without variants is listed once.
+    db.add(Listing(organization_id=db.organization_id, store_id=store.id, product_id="p-1"))
+    await db.flush()
+
+    def order(**fields) -> Order:
+        return Order(
+            organization_id=db.organization_id,
+            code=f"O-{len(fields)}",
+            location_id=main.id,
+            ordered_on=date(2026, 11, 12),
+            **fields,
+        )
+
+    for row, constraint in (
+        (Store(organization_id=db.organization_id, channel=Channel.SHOPIFY), "uq_stores_channel"),
+        (
+            Listing(organization_id=db.organization_id, store_id=store.id, product_id="p-1"),
+            "uq_listings_external",
+        ),
+        (
+            Listing(
+                organization_id=db.organization_id,
+                store_id=store.id,
+                product_id="p-2",
+                item_id=flour.id,
+            ),
+            "ck_listings_matched",
+        ),
+        (order(), "ck_orders_customer"),
+        (order(store_id=store.id), "ck_orders_external"),
+        (
+            Adjustment(
+                organization_id=db.organization_id,
+                item_id=flour.id,
+                location_id=main.id,
+                kind=AdjustmentKind.SHIPMENT,
+                dated_on=date(2026, 11, 12),
+                change=Decimal(-1),
+            ),
+            "ck_adjustments_shipment",
+        ),
+    ):
+        async with db.begin_nested():
+            with pytest.raises(DBAPIError, match=constraint):
+                db.add(row)
+                await db.flush()
+
+    by_hand = order(customer_contact_id=7)
+    db.add(by_hand)
+    await db.flush()
+    assert by_hand.status is OrderStatus.OPEN

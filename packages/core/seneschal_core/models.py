@@ -77,11 +77,11 @@ def identity() -> Any:
     )
 
 
-def enum_column(enum: type[StrEnum], name: str, **kwargs: Any) -> Column:
+def enum_column(enum: type[StrEnum], name: str, *, nullable: bool = False, **kwargs: Any) -> Column:
     """A column of the Postgres enum type ``name``, holding ``enum``'s values."""
     return Column(
         SqlEnum(enum, name=name, values_callable=lambda members: [m.value for m in members]),
-        nullable=False,
+        nullable=nullable,
         **kwargs,
     )
 
