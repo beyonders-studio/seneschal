@@ -10,6 +10,121 @@
     "error": "Couldn't set Hoard up."
   },
   "setups": {
+    "bakery_food": {
+      "name": "Bakery and food",
+      "units": {
+        "g": "g",
+        "kg": "kg",
+        "oz": "oz",
+        "lb": "lb",
+        "ml": "mL",
+        "l": "L",
+        "fl_oz": "fl oz",
+        "each": "Each",
+        "dozen": "Dozen",
+        "case": "Case"
+      },
+      "categories": {
+        "flour_grain": "Flour and grain",
+        "sugar_sweetener": "Sugar and sweetener",
+        "dairy_egg": "Dairy and eggs",
+        "fat_oil": "Fat and oil",
+        "fruit_vegetable": "Fruit and vegetables",
+        "nut_seed": "Nuts and seeds",
+        "spice_flavoring": "Spice and flavoring",
+        "other_ingredient": "Other ingredient",
+        "dough_batter": "Dough or batter",
+        "filling_frosting": "Filling or frosting",
+        "packaging": "Packaging",
+        "baked_good": "Baked good",
+        "packed_food": "Packed food"
+      },
+      "properties": {
+        "organic_category": "Organic category",
+        "certifier": "Certifier",
+        "certificate": "Supplier's certificate",
+        "certificate_expires": "Certificate expires",
+        "allergen_statement": "Supplier's allergen statement",
+        "country_of_origin": "Country of origin",
+        "lot_code_source": "Traceability lot code source",
+        "received_temperature": "Temperature on receipt",
+        "made_at": "Made at"
+      },
+      "options": {
+        "organic_category": {
+          "organic_100": "100% organic",
+          "organic": "Organic",
+          "made_with_organic": "Made with organic",
+          "not_organic": "Not organic"
+        }
+      },
+      "reasons": {
+        "unsold": "Unsold",
+        "burnt": "Burnt",
+        "misshapen": "Misshapen or broken",
+        "dropped": "Dropped",
+        "spoiled": "Spoiled or expired",
+        "tasting_sample": "Tasting sample",
+        "damaged_packaging": "Damaged packaging"
+      },
+      "hold_reasons": {
+        "temperature": "Temperature out of range",
+        "label_check": "Label check"
+      }
+    },
+    "cosmetics_soap": {
+      "name": "Cosmetics and soap",
+      "units": {
+        "g": "g",
+        "kg": "kg",
+        "oz": "oz",
+        "lb": "lb",
+        "ml": "mL",
+        "l": "L",
+        "fl_oz": "fl oz",
+        "each": "Each"
+      },
+      "categories": {
+        "oil_butter": "Oil and butter",
+        "lye": "Lye",
+        "essential_oil_fragrance": "Essential oil or fragrance",
+        "botanical_extract": "Botanical or extract",
+        "colorant_additive": "Colorant or additive",
+        "emulsifier_preservative": "Emulsifier or preservative",
+        "wax": "Wax",
+        "oil_blend": "Oil blend",
+        "fragrance_blend": "Fragrance blend",
+        "packaging": "Packaging",
+        "soap": "Soap",
+        "skin_hair_care": "Skin and hair care"
+      },
+      "properties": {
+        "certificate_of_analysis": "Certificate of analysis",
+        "allergen_statement": "Supplier's allergen statement",
+        "country_of_origin": "Country of origin",
+        "ph": "pH",
+        "quality_check": "Quality check",
+        "period_after_opening": "Period after opening (months)"
+      },
+      "options": {
+        "quality_check": {
+          "passed": "Passed",
+          "failed": "Failed"
+        }
+      },
+      "reasons": {
+        "failed_cure": "Failed cure",
+        "trimmings": "Trimmings and offcuts",
+        "spoiled": "Spoiled or expired",
+        "tester": "Tester or sample",
+        "spill": "Spill",
+        "damaged_packaging": "Damaged packaging"
+      },
+      "hold_reasons": {
+        "curing": "Curing",
+        "label_check": "Label check"
+      }
+    },
     "drinks": {
       "name": "Tea, coffee and drinks",
       "units": {
@@ -87,6 +202,65 @@
         "spoiled": "Spoiled or expired",
         "tasting_sample": "Tasting or cupping sample",
         "damaged_packaging": "Damaged packaging"
+      }
+    },
+    "restaurant_bar": {
+      "name": "Restaurant, café and bar",
+      "units": {
+        "g": "g",
+        "kg": "kg",
+        "oz": "oz",
+        "lb": "lb",
+        "ml": "mL",
+        "l": "L",
+        "fl_oz": "fl oz",
+        "each": "Each",
+        "dozen": "Dozen",
+        "case": "Case",
+        "bunch": "Bunch",
+        "bottle_375ml": "Bottle, 375 mL",
+        "bottle_750ml": "Bottle, 750 mL",
+        "bottle_1l": "Bottle, 1 L",
+        "bottle_1750ml": "Bottle, 1.75 L"
+      },
+      "categories": {
+        "produce": "Produce",
+        "meat_poultry": "Meat and poultry",
+        "seafood": "Seafood",
+        "dairy_egg": "Dairy and eggs",
+        "dry_goods": "Dry goods",
+        "frozen": "Frozen",
+        "spirits": "Spirits",
+        "wine": "Wine",
+        "beer": "Beer",
+        "syrup_mixer": "Syrup, bitters or mixer",
+        "prep": "Prep",
+        "supplies": "Disposables and supplies",
+        "dish": "Dish",
+        "drink": "Drink"
+      },
+      "properties": {
+        "received_temperature": "Temperature on receipt",
+        "country_of_origin": "Country of origin",
+        "lot_code_source": "Traceability lot code source",
+        "shellstock_tag": "Shellstock tag",
+        "opened_on": "Opened on",
+        "made_at": "Made at",
+        "discard_at": "Discard at"
+      },
+      "reasons": {
+        "hold_time_expired": "Hold time expired",
+        "spoiled": "Spoiled or expired",
+        "overproduced": "Overproduced",
+        "dropped": "Dropped",
+        "sent_back": "Sent back",
+        "wrong_order": "Wrong order",
+        "staff_meal": "Staff meal",
+        "breakage": "Breakage"
+      },
+      "hold_reasons": {
+        "cooling": "Cooling",
+        "temperature": "Temperature out of range"
       }
     }
   },

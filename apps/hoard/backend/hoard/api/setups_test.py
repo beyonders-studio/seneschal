@@ -7,7 +7,7 @@ from __future__ import annotations
 async def test_an_admin_adds_a_setup_in_their_own_words(client, sign_in):
     await sign_in(client, admin=True)
     offered = (await client.get("/api/v1/setups")).json()
-    [drinks] = offered["setups"]
+    [drinks] = [setup for setup in offered["setups"] if setup["key"] == "drinks"]
     words = {word: word.rsplit(".", 1)[-1] for word in drinks["words"]}
 
     short = await client.post("/api/v1/setups/drinks/add", json={"words": {}})

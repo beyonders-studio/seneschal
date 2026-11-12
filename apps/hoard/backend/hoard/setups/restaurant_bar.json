@@ -1,0 +1,56 @@
+{
+  "base_word": "base",
+  "units": [
+    "g",
+    "kg",
+    "oz",
+    "lb",
+    "ml",
+    "l",
+    "fl_oz",
+    "each",
+    "dozen",
+    "case",
+    "bunch",
+    "bottle_375ml",
+    "bottle_750ml",
+    "bottle_1l",
+    "bottle_1750ml"
+  ],
+  "categories": [
+    { "key": "produce", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "meat_poultry", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "seafood", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "dairy_egg", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "dry_goods", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "frozen", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "spirits", "kinds": ["material"], "picking": "first_in" },
+    { "key": "wine", "kinds": ["material"], "picking": "first_in" },
+    { "key": "beer", "kinds": ["material"], "picking": "earliest_expiry" },
+    { "key": "syrup_mixer", "kinds": ["material", "base"], "picking": "earliest_expiry" },
+    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry" },
+    { "key": "supplies", "kinds": ["material"], "picking": "first_in" },
+    { "key": "dish", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" }
+  ],
+  "properties": [
+    { "key": "received_temperature", "kind": "lot", "type": "number" },
+    { "key": "country_of_origin", "kind": "lot", "type": "text" },
+    { "key": "lot_code_source", "kind": "lot", "type": "text" },
+    { "key": "shellstock_tag", "kind": "lot", "type": "file" },
+    { "key": "opened_on", "kind": "lot", "type": "date" },
+    { "key": "made_at", "kind": "lot", "type": "datetime" },
+    { "key": "discard_at", "kind": "lot", "type": "datetime" }
+  ],
+  "reasons": [
+    "hold_time_expired",
+    "spoiled",
+    "overproduced",
+    "dropped",
+    "sent_back",
+    "wrong_order",
+    "staff_meal",
+    "breakage"
+  ],
+  "hold_reasons": ["cooling", "temperature"]
+}
