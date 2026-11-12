@@ -226,7 +226,12 @@ async def mass_balance(
     rows = (await db.execute(query.group_by(*grouped))).all()
     labels = await _labels(db, {row[0] for row in rows})
     balances = [
-        Balance(item_id, *labels[item_id], held, *(Decimal(amount) for amount in totals))
+        Balance(
+            item_id,
+            *labels[item_id],
+            held,
+            *(Decimal(amount).quantize(PLACES) for amount in totals),
+        )
         for item_id, held, *totals in rows
         if any(totals)
     ]
