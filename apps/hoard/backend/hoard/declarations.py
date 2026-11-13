@@ -178,6 +178,10 @@ class Declaration:
     fragrance_shares: dict[str, Decimal] = field(default_factory=dict)
     #: The materials in it whose fragrance allergens are not recorded, by name.
     fragrance_undeclared: list[str] = field(default_factory=list)
+    #: Whether any material in it has its fragrance allergens recorded.
+    fragrance_recorded: bool = False
+    #: Whether it takes the rinse-off threshold rather than the leave-on one.
+    rinse_off: bool = False
 
 
 @dataclass
@@ -191,6 +195,7 @@ class _Mix:
     undeclared: set[str] = field(default_factory=set)
     fragrance: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
     fragrance_undeclared: set[str] = field(default_factory=set)
+    fragrance_recorded: bool = False
 
     def add(self, other: _Mix, scale: Decimal) -> None:
         for ingredient, weight in other.weights.items():
@@ -200,6 +205,7 @@ class _Mix:
         self.allergens |= other.allergens
         self.undeclared |= other.undeclared
         self.fragrance_undeclared |= other.fragrance_undeclared
+        self.fragrance_recorded |= other.fragrance_recorded
 
     def shares(self) -> dict[str, Decimal]:
         """Each fragrance allergen's share of the whole, in percent."""
@@ -229,6 +235,8 @@ class _Mix:
             ],
             fragrance_shares=shares,
             fragrance_undeclared=sorted(self.fragrance_undeclared),
+            fragrance_recorded=self.fragrance_recorded,
+            rinse_off=rinse_off,
         )
 
 
@@ -262,6 +270,7 @@ def _material(
         mix.fragrance_undeclared.add(material.name)
     else:
         mix.fragrance.update(weights)
+        mix.fragrance_recorded = True
     return mix
 
 
