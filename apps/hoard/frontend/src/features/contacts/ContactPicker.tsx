@@ -26,17 +26,20 @@ export function useContactNames(): (contactId: number | null | undefined) => str
 }
 
 /**
- * Picks an order's customer, a business, or a shipment's carrier (`of`)
- * among the community's contacts in Initiative. A name typed that no contact
- * has is added as a new contact. When the community has no contacts yet, a
- * notice says so. A carrier may be cleared; a customer is always picked.
+ * Picks an order's customer, a business, a shipment's carrier or the contact
+ * holding a location's address (`of`), under `label` when given, among the
+ * community's contacts in Initiative. A name typed that no contact has is
+ * added as a new contact. When the community has no contacts yet, a notice
+ * says so. A customer is always picked; the others may be cleared.
  */
 export function ContactPicker({
   of,
+  label,
   value,
   onChange,
 }: {
-  of: "customers" | "carriers";
+  of: "customers" | "carriers" | "locations";
+  label?: string;
   value: number | null;
   onChange: (contactId: number | null) => void;
 }) {
@@ -63,7 +66,7 @@ export function ContactPicker({
 
   return (
     <Field
-      label={t(`${of}.label`)}
+      label={label ?? t(`${of}.label`)}
       hint={contacts.data?.length === 0 ? t(`${of}.noContacts`) : undefined}
       error={
         contacts.isError
@@ -73,8 +76,9 @@ export function ContactPicker({
     >
       <Combobox
         items={[
-          // A carrier can be cleared, listed first: "" is no contact's id.
-          ...(of === "carriers" && value !== null
+          // Anything but a customer can be cleared, listed first: "" is no
+          // contact's id.
+          ...(of !== "customers" && value !== null
             ? [{ value: "", label: t("ui:clear"), icon: X }]
             : []),
           ...(contacts.data ?? []).map((contact) => ({

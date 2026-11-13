@@ -141,5 +141,14 @@
     "SHIPMENT_LOT_MISMATCH": "That lot isn't this item's, at this shipment's location.",
     "RETURN_OVER_SHIPPED": "That is more than the shipment sent of it.",
     "SHIPMENT_FROM_HISTORY": "This shipment was copied from the store's history and took no stock, so nothing comes back of it here. Record what came back as an adjustment."
+  },
+  "locations": {
+    "choose": "Choose a contact",
+    "search": "Search contacts",
+    "none": "No contact has that name.",
+    "add": "Add “{{name}}” as a contact",
+    "noContacts": "Your community has no contacts yet. Type a name to add the contact holding this location's address, or add it to the community's contacts in Initiative.",
+    "loadFailed": "The community's contacts couldn't be read.",
+    "addFailed": "The contact couldn't be added."
   }
 }

@@ -106,7 +106,8 @@
       "title": "Locations",
       "add": "Add location",
       "empty": "No locations yet.",
-      "name": "Location"
+      "name": "Location",
+      "contact": "Contact for {{name}}"
     },
     "reasons": {
       "title": "Adjustment reasons",
