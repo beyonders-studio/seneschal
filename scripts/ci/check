@@ -19,6 +19,9 @@
 #   codegen     each app's generated API client is what its frontend's
 #               generate:api makes of its backend's OpenAPI document; run it
 #               to regenerate them
+#   listing     each plug-in app's listing, at its VERSION with its changelog
+#               section, builds as the plug-in SDK checks it for a release
+#               (scripts/release/registry-source.sh); needs the network
 #
 # A check whose files are not in the tree is skipped, and the summary says so.
 #
@@ -79,6 +82,7 @@ absent() {
       [[ -n "$(apps_with backend/scripts/export_openapi.py frontend/orval.config.ts)" ]] \
         || echo "no app has both backend/scripts/export_openapi.py and frontend/orval.config.ts"
       ;;
+    listing) [[ -n "$(apps_with backend/scripts/export_plugin.py)" ]] || echo "no app has backend/scripts/export_plugin.py" ;;
   esac
 }
 
@@ -158,6 +162,18 @@ check_codegen() {
   fi
 }
 
+check_listing() {
+  local app out
+  out="$(mktemp -d)"
+  trap 'rm -rf "$out"' RETURN
+  for app in $(apps_with backend/scripts/export_plugin.py); do
+    # Any image by digest: the release names the one it pushed.
+    scripts/release/registry-source.sh "$app" \
+      "ghcr.io/beyonders-studio/$app@sha256:$(printf '0%.0s' {1..64})" "$out/$app.tar.gz" >/dev/null
+    echo "$app: its listing builds."
+  done
+}
+
 # What this branch changed against BASE_REF, committed or not.
 changed_paths() {
   {
@@ -191,14 +207,17 @@ checks_for_changes() {
   if grep -qE '^(apps/[^/]+/backend/|packages/core/|apps/[^/]+/frontend/(orval\.config\.ts$|package\.json$|src/api/)|uv\.lock$|pnpm-lock\.yaml$|biome\.jsonc?$)' <<<"$changed"; then
     echo "codegen"
   fi
+  if grep -qE '^(apps/[^/]+/(backend/|VERSION$|CHANGELOG\.md$)|packages/core/|scripts/release/|uv\.lock$)' <<<"$changed"; then
+    echo "listing"
+  fi
 }
 
 expand() {
   case "$1" in
-    all) echo "ruff format ty migrations biome tsc kit codegen" ;;
-    backend) echo "ruff format ty migrations" ;;
+    all) echo "ruff format ty migrations biome tsc kit codegen listing" ;;
+    backend) echo "ruff format ty migrations listing" ;;
     frontend) echo "biome tsc kit" ;;
-    ruff | format | ty | migrations | biome | tsc | kit | codegen) echo "$1" ;;
+    ruff | format | ty | migrations | biome | tsc | kit | codegen | listing) echo "$1" ;;
     *)
       echo "Unknown check: $1 (see scripts/ci/check --help)" >&2
       exit 2
@@ -207,7 +226,7 @@ expand() {
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  sed -n '2,29p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 

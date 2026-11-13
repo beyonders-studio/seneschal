@@ -4,10 +4,10 @@ and its built pages, all from one origin."""
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
@@ -26,6 +26,21 @@ from seneschal_core.sessions import Sessions
 #: The first path segments that are never a page.
 _NOT_PAGES = frozenset({"api", "v1", ".well-known"})
 
+#: Initiative's phone apps, which frame Hoard's pages from origins of their own,
+#: the same in every deployment.
+_PHONE_APP_ORIGINS = (
+    "https://studio.beyonders.initiative",
+    "capacitor://studio.beyonders.initiative",
+    "capacitor://localhost",
+)
+
+
+def frame_ancestors(parent: str | None) -> str | None:
+    """The policy naming who may frame Hoard's pages, or None to leave framing open."""
+    if parent is None:
+        return None
+    return "frame-ancestors " + " ".join(dict.fromkeys([parent.rstrip("/"), *_PHONE_APP_ORIGINS]))
+
 
 def plugin_for(settings: Settings) -> Plugin:
     return Plugin(
@@ -40,6 +55,7 @@ def plugin_for(settings: Settings) -> Plugin:
             api_url=settings.initiative_api_url,
             public_id=plugin_manifest.PUBLIC_ID,
             key_pem=settings.plugin_private_key_pem,
+            public_api_url=settings.public_api_url,
         ),
         sessions=Sessions(
             app="hoard",
@@ -95,6 +111,17 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
         generate_unique_id_function=_operation_id,
     )
     install(app, plugin)
+
+    framing = frame_ancestors(settings.embed_parent_origin)
+    if framing is not None:
+
+        @app.middleware("http")
+        async def only_initiative_frames(
+            request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        ) -> Response:
+            response = await call_next(request)
+            response.headers["Content-Security-Policy"] = framing
+            return response
 
     app.include_router(api_router)
     app.include_router(

@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
+from httpx2 import ASGITransport, AsyncClient
 
 from hoard import plugin_manifest
-from hoard.app import create_app
+from hoard.app import create_app, frame_ancestors
 from hoard.core.config import Settings
 from seneschal_core.db import ServingLoginRefused
 
 
-async def test_it_answers_that_it_is_up(client):
-    answer = await client.get("/api/v1/healthz")
+async def test_it_answers_that_it_is_up_and_ready(client):
+    for path in ("/api/v1/healthz", "/api/v1/readyz"):
+        answer = await client.get(path)
 
-    assert (answer.status_code, answer.json()) == (200, {"status": "ok"})
+        assert (answer.status_code, answer.json()) == (200, {"status": "ok"})
+
+
+def test_only_initiative_and_its_phone_apps_may_frame_its_pages():
+    assert frame_ancestors(None) is None
+    assert frame_ancestors("https://initiative.example/") == (
+        "frame-ancestors https://initiative.example https://studio.beyonders.initiative "
+        "capacitor://studio.beyonders.initiative capacitor://localhost"
+    )
 
 
 async def test_it_starts_on_the_serving_login_and_refuses_the_owner(settings: Settings):
@@ -95,3 +105,14 @@ async def test_nothing_outside_the_built_pages_is_served(client):
     answer = await client.get("/%2e%2e/beside.txt")
 
     assert "not a page" not in answer.text
+
+
+async def test_its_answers_carry_the_framing_policy(app: FastAPI, settings: Settings):
+    framed = settings.model_copy(update={"embed_parent_origin": "https://initiative.example"})
+    hoard = create_app(framed, app.state.plugin)
+    async with AsyncClient(transport=ASGITransport(app=hoard), base_url="http://test") as client:
+        answer = await client.get("/api/v1/healthz")
+
+    assert answer.headers["content-security-policy"] == frame_ancestors(
+        "https://initiative.example"
+    )

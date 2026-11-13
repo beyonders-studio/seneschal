@@ -410,25 +410,33 @@ async def _available(plugin: Plugin) -> set[int]:
 async def deliver_forever(plugin: Plugin, *, sweep_seconds: float = SWEEP_SECONDS) -> None:
     """Send every organization's due events, again and again, until cancelled:
     an organization's as soon as a commit records some there, and every
-    organization's each ``sweep_seconds``."""
+    organization's each ``sweep_seconds``. An organization a commit woke goes
+    ahead of those a sweep still has to visit."""
     global _courier
     courier = _courier = _Courier()
     swept: float | None = None
     try:
         while True:
             courier.woken.clear()
-            due, courier.due = courier.due, set()
+            sweeping: list[int] = []
             if swept is None or time.monotonic() - swept >= sweep_seconds:
                 swept = time.monotonic()
                 try:
-                    due |= await _available(plugin)
+                    sweeping = sorted(await _available(plugin))
                 except Exception:
                     logger.exception("could not list the organizations to send events for")
-            for organization_id in sorted(due):
-                try:
-                    await deliver(plugin, organization_id)
-                except Exception:
-                    logger.exception("could not send organization %s's events", organization_id)
+            while courier.due or sweeping:
+                if courier.due:
+                    due, courier.due = courier.due, set()
+                    sweeping = [each for each in sweeping if each not in due]
+                    batch = sorted(due)
+                else:
+                    batch = [sweeping.pop(0)]
+                for organization_id in batch:
+                    try:
+                        await deliver(plugin, organization_id)
+                    except Exception:
+                        logger.exception("could not send organization %s's events", organization_id)
             with suppress(TimeoutError):
                 async with asyncio.timeout(sweep_seconds):
                     await courier.woken.wait()

@@ -31,6 +31,24 @@ Each app has its own Docker image, database, plug-in manifest, `VERSION` and
 - `docker compose up -d db`: Postgres 17 for dev and tests, on port 5236.
 - Ports in dev: Hoard's backend on 8300, its Vite dev server on 5300.
 
+## Releasing an app
+
+1. A pull request into `dev` sets `apps/<app>/VERSION` to the new version and
+   renames the changelog's `[Unreleased]` section to `[<version>] - <date>`,
+   with a new empty `[Unreleased]` above it.
+2. Once it merges, tag that commit `<app>-v<version>` (`hoard-v0.2.0`) and push
+   the tag. `publish.yml` builds and scans the image, makes the GitHub Release
+   with the app's registry source (`scripts/release/registry-source.sh`: its
+   listing, built by the plug-in SDK for that image by digest), and asks
+   initiative-packages to pin it. The pin puts it in the packages our
+   deployments read; each runs it on its next deploy.
+
+The listing's runtime (how a deployment runs the image, in the backend's
+`scripts/export_plugin.py`) names only variables the app reads. A change to it,
+a new setting or secret, needs the deployments' infrastructure to agree before
+the release reaches them. `scripts/ci/check listing` builds the listing on
+every pull request.
+
 ## How an app meets Initiative
 
 - **One image per app** serves its API under `/api/v1` and its built pages

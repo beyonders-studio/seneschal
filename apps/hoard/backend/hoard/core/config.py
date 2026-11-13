@@ -35,9 +35,13 @@ class Settings(DatabaseSettings):
     #: ``https://initiative.example.com/api/v1``, or its address inside the deployment.
     initiative_api_url: str
     #: Initiative's API as stores reach it, under which Initiative receives
-    #: Hoard's webhooks: ``https://initiative.example.com/api/v1``. Unset, it
-    #: is :attr:`initiative_api_url`.
+    #: Hoard's webhooks, and whose token URL Hoard's assertions name:
+    #: ``https://initiative.example.com/api/v1``. Unset, it is
+    #: :attr:`initiative_api_url`.
     initiative_public_url: str | None = None
+    #: Initiative's origin, the only page besides its phone apps that may frame
+    #: Hoard's. Unset, framing is not restricted, as in development.
+    embed_parent_origin: str | None = None
     #: Where people's browsers load Hoard's pages. An ``https`` origin marks the
     #: session cookie secure and sends it to the pages Initiative frames.
     app_origin: str = "http://localhost:8300"
@@ -68,6 +72,7 @@ class Settings(DatabaseSettings):
         "plugin_private_key_pem",
         "entitlement_issuer_key_pem",
         "initiative_public_url",
+        "embed_parent_origin",
         mode="before",
     )
     @classmethod

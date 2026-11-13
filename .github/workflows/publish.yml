@@ -5,7 +5,11 @@ name: Publish images
 #
 #   push to dev          every app's image, as :dev and :sha-<short commit>
 #   tag <app>-v<x.y.z>   that app's image, as :<x.y.z>; the version must be the
-#                        one apps/<app>/VERSION holds
+#                        one apps/<app>/VERSION holds. Then its release: the
+#                        GitHub Release, carrying its registry source built for
+#                        that image by digest, and the request that
+#                        initiative-packages pin it into the packages our
+#                        deployments read.
 on:
   push:
     branches: [dev]
@@ -75,6 +79,9 @@ jobs:
       fail-fast: false
       matrix:
         app: ${{ fromJSON(needs.apps.outputs.apps) }}
+    # A tag builds one app, so the one image a release names.
+    outputs:
+      image: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -146,3 +153,91 @@ jobs:
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+
+  release:
+    name: GitHub Release
+    needs: [apps, image]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      app: ${{ steps.source.outputs.app }}
+      sha256: ${{ steps.source.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.21"
+          python-version: "3.12"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install the Python workspace
+        run: uv sync --locked
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.1"
+
+      - name: Build the registry source
+        id: source
+        env:
+          APPS: ${{ needs.apps.outputs.apps }}
+          IMAGE: ${{ needs.image.outputs.image }}
+        run: |
+          app="$(jq -r '.[0]' <<<"$APPS")"
+          sha256="$(scripts/release/registry-source.sh "$app" "$IMAGE" "$app-registry-source.tar.gz")"
+          {
+            echo "app=$app"
+            echo "sha256=$sha256"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create the GitHub Release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: ${{ steps.source.outputs.app }}-registry-source.tar.gz
+
+  pin:
+    name: Pin the release in the packages
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Get the release app's token
+        id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: initiative-packages
+          permission-contents: write
+
+      # initiative-packages checks the release itself, then commits the pin.
+      - name: Send release-pin to initiative-packages
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          OWNER: ${{ github.repository_owner }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          APP: ${{ needs.release.outputs.app }}
+          SHA256: ${{ needs.release.outputs.sha256 }}
+        run: |
+          jq -n --arg repository "$REPOSITORY" --arg tag "$TAG" \
+            --arg asset "$APP-registry-source.tar.gz" --arg sha256 "$SHA256" '{
+              event_type: "release-pin",
+              client_payload: {repository: $repository, tag: $tag, asset: $asset, sha256: $sha256}
+            }' | gh api -X POST "repos/$OWNER/initiative-packages/dispatches" --input -
+          echo "asked initiative-packages to pin $TAG ($SHA256)"
