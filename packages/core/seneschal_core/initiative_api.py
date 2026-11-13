@@ -143,9 +143,13 @@ class InitiativeApi:
         api_url: str,
         public_id: str,
         key_pem: str | None,
+        public_api_url: str | None = None,
         http: httpx2.AsyncClient | None = None,
     ) -> None:
         self.api_url = api_url.rstrip("/")
+        # Initiative holds an assertion's ``aud`` to its own public token URL,
+        # while the calls may go to an address only the deployment reaches.
+        self.token_audience = f"{(public_api_url or api_url).rstrip('/')}{TOKEN_PATH}"
         self.public_id = public_id
         self._key = load_private_key(key_pem) if key_pem else None
         self._kid = key_id(self._key) if self._key else None
@@ -408,7 +412,7 @@ class InitiativeApi:
             {
                 "iss": self.public_id,
                 "sub": subject or self.public_id,
-                "aud": f"{self.api_url}{TOKEN_PATH}",
+                "aud": self.token_audience,
                 "jti": str(uuid.uuid4()),
                 "iat": issued_at,
                 "exp": issued_at + ASSERTION_LIFETIME_SECONDS,

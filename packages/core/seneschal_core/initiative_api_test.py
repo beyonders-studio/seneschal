@@ -69,16 +69,25 @@ async def test_a_long_list_of_references_is_looked_up_in_batches(
     assert (len(people), batches) == (150, [100, 50])
 
 
-async def test_its_assertion_is_signed_for_the_token_endpoint(initiative_stand_in, community_ref):
+async def test_its_assertion_is_signed_for_the_public_token_endpoint(
+    initiative_stand_in, community_ref
+):
+    """The calls go where the deployment reaches Initiative; the assertion names
+    Initiative's public token URL, which is all Initiative takes."""
+    internal = "http://initiative.internal:8173/api/v1"
     sent: list[httpx2.Request] = []
     stand_in_http = initiative_stand_in.http()
 
     async def answer(request: httpx2.Request) -> httpx2.Response:
         sent.append(request)
-        return await stand_in_http.send(request)
+        public = str(request.url).replace(internal, InitiativeStandIn.API_URL)
+        return await stand_in_http.send(
+            httpx2.Request(request.method, public, headers=request.headers, content=request.content)
+        )
 
     api = InitiativeApi(
-        api_url=f"{InitiativeStandIn.API_URL}/",
+        api_url=f"{internal}/",
+        public_api_url=f"{InitiativeStandIn.API_URL}/",
         public_id=initiative_stand_in.public_id,
         key_pem=private_key_pem(initiative_stand_in.plugin_key),
         http=httpx2.AsyncClient(transport=httpx2.MockTransport(answer)),
@@ -89,6 +98,7 @@ async def test_its_assertion_is_signed_for_the_token_endpoint(initiative_stand_i
         await api.aclose()
         await stand_in_http.aclose()
 
+    assert str(sent[0].url) == f"{internal}/plugin-platform/oauth/token"
     form = dict(parse_qsl(sent[0].content.decode()))
     assert (form["grant_type"], form["installation"]) == ("client_credentials", community_ref)
     header = jwt.get_unverified_header(form["client_assertion"])
