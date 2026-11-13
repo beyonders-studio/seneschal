@@ -9,13 +9,14 @@ import {
   useUpdateLotDeclaration,
   useUpdateMaterialDeclaration,
 } from "@/api/generated/declarations/declarations";
-import { Allergen, type DeclarationRead } from "@/api/generated/hoard.schemas";
+import { Allergen, type DeclarationRead, FragranceAllergen } from "@/api/generated/hoard.schemas";
 import { toast } from "@/components/Toaster";
 import { errorMessage } from "@/lib/errors";
 import { useSession } from "@/session";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
+import { Combobox } from "@/ui/combobox";
 import {
   Dialog,
   DialogBody,
@@ -27,11 +28,12 @@ import {
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { listFormat } from "@/ui/lib/intl";
+import { listFormat, numberFormat } from "@/ui/lib/intl";
 import { Switch } from "@/ui/switch";
 
-/** What a material, a product or a lot declares: its allergens and ingredients,
- *  rolled up through recipes. A material, and a bought lot, record their own. */
+/** What a material, a product or a lot declares: its allergens, ingredients and
+ *  EU fragrance allergens, rolled up through recipes. A material, and a bought
+ *  lot, record their own. */
 export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lot"; id: number }) {
   const { t, i18n } = useTranslation("declarations");
   const { read_only } = useSession();
@@ -78,6 +80,9 @@ export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lo
           )}
         </>
       )}
+      {(declared.fragrance_recorded || declared.recorded_fragrance !== null) && (
+        <FragranceDeclaration of={of} declared={declared} />
+      )}
       {of !== "product" && declared.records_own && !read_only && (
         <div>
           <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
@@ -98,7 +103,61 @@ export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lo
   );
 }
 
-/** A material's ingredient name and allergens, or a bought lot's own allergens. */
+/** The EU fragrance allergens past the threshold its label declares them at,
+ *  leave-on or rinse-off, and the materials whose fragrance allergens nobody
+ *  has recorded. */
+function FragranceDeclaration({
+  of,
+  declared,
+}: {
+  of: "material" | "product" | "lot";
+  declared: DeclarationRead;
+}) {
+  const { t, i18n } = useTranslation("declarations");
+  const percent = numberFormat(i18n.resolvedLanguage, {
+    style: "percent",
+    maximumSignificantDigits: 3,
+  });
+  const share = (value: string | undefined) => percent.format(Number(value ?? 0) / 100);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium">{t("fragrance.declares")}</span>
+        {declared.fragrance_allergens.length ? (
+          declared.fragrance_allergens.map((allergen) => (
+            <Badge key={allergen} variant="secondary">
+              {t("fragrance.share", {
+                name: t(`fragrances.${allergen}`),
+                share: share(declared.fragrance_shares[allergen]),
+              })}
+            </Badge>
+          ))
+        ) : (
+          <span className="text-muted-foreground">{t("fragrance.none")}</span>
+        )}
+      </div>
+      <p className="text-muted-foreground">
+        {t(declared.rinse_off ? "fragrance.rinseOff" : "fragrance.leaveOn", {
+          threshold: share(declared.fragrance_threshold),
+        })}
+      </p>
+      {declared.fragrance_undeclared.length > 0 && (
+        <p className="flex items-start gap-2 text-muted-foreground">
+          <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning" />
+          {t("fragrance.undeclared", {
+            names: listFormat(i18n.resolvedLanguage).format(declared.fragrance_undeclared),
+          })}
+        </p>
+      )}
+      {of === "lot" && declared.records_own && declared.recorded_fragrance === null && (
+        <p className="text-muted-foreground">{t("fragrance.fromMaterial")}</p>
+      )}
+    </div>
+  );
+}
+
+/** A material's ingredient name, allergens and fragrance allergens, or a
+ *  bought lot's own. */
 function DeclarationForm({
   of,
   id,
@@ -115,6 +174,11 @@ function DeclarationForm({
   const [name, setName] = useState(declared.ingredient_name ?? "");
   const [known, setKnown] = useState(declared.recorded_allergens !== null);
   const [chosen, setChosen] = useState(new Set(declared.recorded_allergens ?? []));
+  const [fragranceKnown, setFragranceKnown] = useState(declared.recorded_fragrance !== null);
+  const [shares, setShares] = useState<Partial<Record<FragranceAllergen, string>>>(
+    declared.recorded_fragrance ?? {}
+  );
+  const fragrances = Object.values(FragranceAllergen).filter((each) => each in shares);
   const saved = {
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: getReadDeclarationQueryKey(of, id) });
@@ -126,17 +190,26 @@ function DeclarationForm({
   const material = useUpdateMaterialDeclaration({ mutation: saved });
   const lot = useUpdateLotDeclaration({ mutation: saved });
   const allergens = known ? Object.values(Allergen).filter((each) => chosen.has(each)) : null;
+  const fragrance_allergens = fragranceKnown ? shares : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (of === "material") {
       material.mutate({
         materialId: id,
-        data: { ingredient_name: name.trim() || null, allergens },
+        data: { ingredient_name: name.trim() || null, allergens, fragrance_allergens },
       });
     } else {
-      lot.mutate({ lotId: id, data: { allergens } });
+      lot.mutate({ lotId: id, data: { allergens, fragrance_allergens } });
     }
   };
+  const pick = (keys: string[]) =>
+    setShares(
+      Object.fromEntries(
+        Object.values(FragranceAllergen)
+          .filter((each) => keys.includes(each))
+          .map((each) => [each, shares[each] ?? ""])
+      )
+    );
   const toggle = (allergen: Allergen, on: boolean) => {
     const next = new Set(chosen);
     if (on) next.add(allergen);
@@ -174,6 +247,48 @@ function DeclarationForm({
               </div>
             ))}
           </fieldset>
+        )}
+        <div className="flex items-center gap-2">
+          <Switch
+            id="declares-fragrance"
+            checked={fragranceKnown}
+            onCheckedChange={setFragranceKnown}
+          />
+          <Label htmlFor="declares-fragrance">
+            {of === "material" ? t("form.fragranceKnown") : t("form.lotFragranceKnown")}
+          </Label>
+        </div>
+        {fragranceKnown && (
+          <>
+            <Field label={t("form.fragrances")} hint={t("form.fragrancesHint")}>
+              <Combobox
+                multiple
+                items={Object.values(FragranceAllergen).map((each) => ({
+                  value: each,
+                  label: t(`fragrances.${each}`),
+                }))}
+                value={fragrances}
+                onValueChange={pick}
+                placeholder={t("form.fragrancesChoose")}
+                searchPlaceholder={t("form.fragrancesSearch")}
+                emptyMessage={t("form.fragrancesNone")}
+              />
+            </Field>
+            {fragrances.length > 0 && (
+              <div className="grid grid-cols-pair gap-4">
+                {fragrances.map((each) => (
+                  <Field key={each} label={t("form.share", { name: t(`fragrances.${each}`) })}>
+                    <Input
+                      inputMode="decimal"
+                      required
+                      value={shares[each] ?? ""}
+                      onChange={(event) => setShares({ ...shares, [each]: event.target.value })}
+                    />
+                  </Field>
+                ))}
+              </div>
+            )}
+          </>
         )}
       </DialogBody>
       <DialogFooter

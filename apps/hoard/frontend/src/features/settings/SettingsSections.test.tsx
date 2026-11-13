@@ -5,6 +5,12 @@ import { type Answer, openSignedIn, signedIn } from "@/testing";
 
 // The kit's options scroll themselves into view, which jsdom cannot.
 Element.prototype.scrollIntoView ??= () => {};
+// The contact picker measures itself, which jsdom has nothing to do with.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
 
 /** What Settings reads: one of each kind of setting. */
 const SETTINGS: Record<string, Answer> = {
@@ -17,8 +23,15 @@ const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings/locations": {
     status: 200,
     data: [
-      { id: 3, name: null, main: true },
-      { id: 4, name: "Back room", main: false },
+      { id: 3, name: null, main: true, contact_id: 11 },
+      { id: 4, name: "Back room", main: false, contact_id: null },
+    ],
+  },
+  "GET /api/v1/contacts": {
+    status: 200,
+    data: [
+      { id: 11, name: "Corner shop", is_organization: true },
+      { id: 12, name: "Storehouse", is_organization: true },
     ],
   },
   "GET /api/v1/settings/reasons": {
@@ -76,6 +89,8 @@ describe("Settings", () => {
     screen.getByText("Curing");
     screen.getByText("Mould");
     screen.getByText("Euro (EUR)");
+    await screen.findByText("Corner shop");
+    expect(screen.queryByRole("combobox", { name: "Contact for Back room" })).toBeNull();
     expect(screen.getByRole("combobox", { name: "Which lot of Tea goes first" })).toHaveProperty(
       "disabled",
       true
@@ -94,7 +109,7 @@ describe("Settings", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Add unit" }));
     fireEvent.change(await screen.findByLabelText("Unit"), { target: { value: " box " } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByLabelText("Unit")).toBeNull());
     const added = asked.find(
@@ -173,5 +188,24 @@ describe("Settings", () => {
     );
     const changed = asked.find((request) => request.url === "/api/v1/settings/categories/2");
     expect(JSON.parse(changed?.data ?? "")).toEqual({ picking: "first_in" });
+  });
+
+  it("lets an admin pick the contact holding a location's address", async () => {
+    const asked = await openSignedIn("/settings", signedIn({ page: "settings", admin: true }), {
+      ...SETTINGS,
+      "PATCH /api/v1/settings/locations/4": {
+        status: 200,
+        data: { id: 4, name: "Back room", main: false, contact_id: 12 },
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("combobox", { name: "Contact for Back room" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Storehouse" }));
+
+    await waitFor(() =>
+      expect(asked.some((request) => request.url === "/api/v1/settings/locations/4")).toBe(true)
+    );
+    const changed = asked.find((request) => request.url === "/api/v1/settings/locations/4");
+    expect(JSON.parse(changed?.data ?? "")).toEqual({ name: "Back room", contact_id: 12 });
   });
 });

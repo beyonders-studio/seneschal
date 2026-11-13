@@ -12,8 +12,27 @@ const declared = (overrides: Partial<DeclarationRead> = {}): DeclarationRead => 
   ingredients: ["Oolong"],
   allergens: [],
   undeclared: ["Oolong"],
+  recorded_fragrance: null,
+  fragrance_recorded: false,
+  rinse_off: false,
+  fragrance_threshold: "0.001",
+  fragrance_shares: {},
+  fragrance_allergens: [],
+  fragrance_undeclared: ["Oolong"],
   ...overrides,
 });
+
+// The fragrance picker measures itself, which jsdom has nothing to do with.
+globalThis.ResizeObserver ??= class {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
+// The list scrolls the option it marks into view, which jsdom can't.
+Element.prototype.scrollIntoView ??= () => {};
+
+const put = (asked: { method?: string; url?: string; data?: unknown }[]) =>
+  asked.find((request) => request.method === "put" && request.url?.includes("declarations"))?.data;
 
 const opened = (declaration: DeclarationRead) => ({
   ...SETTINGS,
@@ -36,6 +55,28 @@ describe("DeclarationsPanel", () => {
     await screen.findByText("Milk");
     screen.getByText("Tree nuts");
     screen.getByText("Allergens aren't recorded for Oolong.");
+    expect(screen.queryByText("Fragrance allergens to declare")).toBeNull();
+  });
+
+  it("says which fragrance allergens are past the threshold", async () => {
+    await openSignedIn(
+      "/stock/materials/5",
+      signedIn(),
+      opened(
+        declared({
+          recorded_fragrance: { linalool: "0.5", limonene: "0.0005" },
+          fragrance_recorded: true,
+          fragrance_shares: { linalool: "0.5", limonene: "0.0005" },
+          fragrance_allergens: ["linalool"],
+          fragrance_undeclared: ["Rose water"],
+        })
+      )
+    );
+
+    await screen.findByText("Linalool 0.5%");
+    expect(screen.queryByText(/Limonene/)).toBeNull();
+    screen.getByText("Declared past 0.001%, the threshold for a product left on the skin.");
+    screen.getByText("Fragrance allergens aren't recorded for Rose water.");
   });
 
   it("records a material's allergens", async () => {
@@ -51,10 +92,39 @@ describe("DeclarationsPanel", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
-      expect(
-        asked.find((request) => request.method === "put" && request.url?.includes("declarations"))
-          ?.data
-      ).toBe(JSON.stringify({ ingredient_name: "Oolong tea", allergens: ["milk"] }))
+      expect(put(asked)).toBe(
+        JSON.stringify({
+          ingredient_name: "Oolong tea",
+          allergens: ["milk"],
+          fragrance_allergens: null,
+        })
+      )
+    );
+  });
+
+  it("records a material's fragrance allergens", async () => {
+    const asked = await openSignedIn("/stock/materials/5", signedIn(), opened(declared()));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Edit allergens" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByLabelText("Its supplier declares its fragrance allergens"));
+    fireEvent.click(
+      within(dialog).getByRole("combobox", { name: "Fragrance allergens it contains" })
+    );
+    fireEvent.click(await screen.findByRole("option", { name: "Linalool" }));
+    fireEvent.change(await within(dialog).findByLabelText("Linalool, % of it"), {
+      target: { value: "2" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(put(asked)).toBe(
+        JSON.stringify({
+          ingredient_name: null,
+          allergens: null,
+          fragrance_allergens: { linalool: "2" },
+        })
+      )
     );
   });
 

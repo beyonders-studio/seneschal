@@ -476,12 +476,100 @@ export interface ContactRead {
   is_organization: boolean;
 }
 
+export type FragranceAllergen = (typeof FragranceAllergen)[keyof typeof FragranceAllergen];
+
+export const FragranceAllergen = {
+  benzyl_alcohol: "benzyl_alcohol",
+  amyl_cinnamal: "amyl_cinnamal",
+  cinnamyl_alcohol: "cinnamyl_alcohol",
+  citral: "citral",
+  eugenol: "eugenol",
+  hydroxycitronellal: "hydroxycitronellal",
+  isoeugenol: "isoeugenol",
+  amylcinnamyl_alcohol: "amylcinnamyl_alcohol",
+  benzyl_salicylate: "benzyl_salicylate",
+  cinnamal: "cinnamal",
+  coumarin: "coumarin",
+  geraniol: "geraniol",
+  anise_alcohol: "anise_alcohol",
+  benzyl_cinnamate: "benzyl_cinnamate",
+  farnesol: "farnesol",
+  linalool: "linalool",
+  benzyl_benzoate: "benzyl_benzoate",
+  citronellol: "citronellol",
+  hexyl_cinnamal: "hexyl_cinnamal",
+  limonene: "limonene",
+  methyl_2_octynoate: "methyl_2_octynoate",
+  alpha_isomethyl_ionone: "alpha_isomethyl_ionone",
+  evernia_prunastri_extract: "evernia_prunastri_extract",
+  evernia_furfuracea_extract: "evernia_furfuracea_extract",
+  "6_methylcoumarin": "6_methylcoumarin",
+  pinus_mugo: "pinus_mugo",
+  pinus_pumila: "pinus_pumila",
+  cedrus_atlantica_oil_extract: "cedrus_atlantica_oil_extract",
+  turpentine: "turpentine",
+  alpha_terpinene: "alpha_terpinene",
+  terpinolene: "terpinolene",
+  myroxylon_pereirae_oil_extract: "myroxylon_pereirae_oil_extract",
+  rose_ketones: "rose_ketones",
+  "3_propylidenephthalide": "3_propylidenephthalide",
+  lippia_citriodora_absolute: "lippia_citriodora_absolute",
+  methyl_salicylate: "methyl_salicylate",
+  acetyl_cedrene: "acetyl_cedrene",
+  amyl_salicylate: "amyl_salicylate",
+  anethole: "anethole",
+  benzaldehyde: "benzaldehyde",
+  camphor: "camphor",
+  beta_caryophyllene: "beta_caryophyllene",
+  carvone: "carvone",
+  dimethyl_phenethyl_acetate: "dimethyl_phenethyl_acetate",
+  hexadecanolactone: "hexadecanolactone",
+  hexamethylindanopyran: "hexamethylindanopyran",
+  linalyl_acetate: "linalyl_acetate",
+  menthol: "menthol",
+  trimethylcyclopentenyl_methylisopentenol: "trimethylcyclopentenyl_methylisopentenol",
+  salicylaldehyde: "salicylaldehyde",
+  santalol: "santalol",
+  sclareol: "sclareol",
+  terpineol: "terpineol",
+  tetramethyl_acetyloctahydronaphthalenes: "tetramethyl_acetyloctahydronaphthalenes",
+  trimethylbenzenepropanol: "trimethylbenzenepropanol",
+  vanillin: "vanillin",
+  cananga_odorata_oil_extract: "cananga_odorata_oil_extract",
+  cinnamomum_cassia_leaf_oil: "cinnamomum_cassia_leaf_oil",
+  cinnamomum_zeylanicum_bark_oil: "cinnamomum_zeylanicum_bark_oil",
+  citrus_aurantium_flower_oil: "citrus_aurantium_flower_oil",
+  citrus_aurantium_peel_oil: "citrus_aurantium_peel_oil",
+  citrus_aurantium_bergamia_peel_oil: "citrus_aurantium_bergamia_peel_oil",
+  citrus_limon_peel_oil: "citrus_limon_peel_oil",
+  lemongrass_oil: "lemongrass_oil",
+  eucalyptus_globulus_oil: "eucalyptus_globulus_oil",
+  eugenia_caryophyllus_oil: "eugenia_caryophyllus_oil",
+  jasmine_oil_extract: "jasmine_oil_extract",
+  juniperus_virginiana_oil: "juniperus_virginiana_oil",
+  laurus_nobilis_leaf_oil: "laurus_nobilis_leaf_oil",
+  lavandula_oil_extract: "lavandula_oil_extract",
+  mentha_piperita_oil: "mentha_piperita_oil",
+  mentha_viridis_leaf_oil: "mentha_viridis_leaf_oil",
+  narcissus_extract: "narcissus_extract",
+  pelargonium_graveolens_flower_oil: "pelargonium_graveolens_flower_oil",
+  pogostemon_cablin_oil: "pogostemon_cablin_oil",
+  rose_flower_oil_extract: "rose_flower_oil_extract",
+  santalum_album_oil: "santalum_album_oil",
+  eugenyl_acetate: "eugenyl_acetate",
+  geranyl_acetate: "geranyl_acetate",
+  isoeugenyl_acetate: "isoeugenyl_acetate",
+  pinene: "pinene",
+} as const;
+
 export interface DeclarationLotWrite {
   allergens: Allergen[] | null;
+  fragrance_allergens: Partial<Record<FragranceAllergen, number | string>> | null;
 }
 
 export interface DeclarationMaterialWrite {
   allergens: Allergen[] | null;
+  fragrance_allergens: Partial<Record<FragranceAllergen, number | string>> | null;
   ingredient_name: string | null;
 }
 
@@ -492,6 +580,13 @@ export interface DeclarationRead {
   ingredients: string[];
   allergens: Allergen[];
   undeclared: string[];
+  recorded_fragrance: Partial<Record<FragranceAllergen, string>> | null;
+  fragrance_recorded: boolean;
+  rinse_off: boolean;
+  fragrance_threshold: string;
+  fragrance_shares: Partial<Record<FragranceAllergen, string>>;
+  fragrance_allergens: FragranceAllergen[];
+  fragrance_undeclared: string[];
 }
 
 /**
