@@ -55,8 +55,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/.venv/bin:$PATH"
 # Debian's security updates published since the base image was built.
 # Publishing builds this stage afresh every time, so they are the current ones.
+# psql: a deployment makes Hoard's logins with scripts/provision-roles.sql, from this image.
 RUN apt-get update \
     && apt-get dist-upgrade -y \
+    && apt-get install -y --no-install-recommends postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 RUN useradd --create-home --uid 10001 hoard
 COPY --from=backend /app /app
