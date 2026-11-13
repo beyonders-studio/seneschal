@@ -130,17 +130,27 @@ def ship(
     db: WriteSession, main: Location, sell: Callable[..., Awaitable[Any]]
 ) -> Callable[..., Awaitable[Shipment]]:
     """Ship ``quantity`` of an item to a customer on a day of November, from
-    ``lot`` or from whichever is assumed."""
+    ``lot`` or from whichever is assumed; by hand, or as a store's fulfillment,
+    which posts what it sent without naming a lot."""
 
     async def ship(
-        item_id: int, quantity: str, day: int, *, lot: Lot | None = None, customer: int = 9
+        item_id: int,
+        quantity: str,
+        day: int,
+        *,
+        lot: Lot | None = None,
+        customer: int = 9,
+        store: bool = False,
     ) -> Shipment:
         order = await sell((item_id, quantity, "5"), customer_contact_id=customer)
         line_id = (await db.exec(select(OrderLine.id).where(OrderLine.order_id == order.id))).one()
         shipment = await shipments.add(
             db, order, main.id, [Pick(line_id, lot_id=None if lot is None else lot.id)]
         )
-        await shipments.ship(db, shipment, date(2026, 11, day))
+        if store:
+            await shipments.post(db, shipment, date(2026, 11, day))
+        else:
+            await shipments.ship(db, shipment, date(2026, 11, day))
         return shipment
 
     return ship
@@ -201,9 +211,10 @@ async def test_draws_naming_no_lot_count_while_the_lot_held_stock(db: WriteSessi
     await db.flush()
     made.product.category_id = recorded.id
     await db.flush()
-    while_held = await ship(made.chai_item, "1", 4, customer=11)
+    # A store's fulfillment names no lot even where the category records every one.
+    while_held = await ship(made.chai_item, "1", 4, customer=11, store=True)
     await ship(made.chai_item, "4", 5, lot=made.chai)
-    await ship(made.chai_item, "1", 6, customer=12)
+    await ship(made.chai_item, "1", 6, customer=12, store=True)
 
     found = await trace.forward(db, made.chai.id)
 
