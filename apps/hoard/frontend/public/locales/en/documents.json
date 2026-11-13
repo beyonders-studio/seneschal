@@ -1,10 +1,63 @@
 {
   "section": {
     "title": "Documents",
-    "empty": "No documents linked yet."
+    "empty": "No documents linked yet.",
+    "hidden": "A file you can't open",
+    "failed": "The documents couldn't be read.",
+    "unlink": "Unlink {{name}}",
+    "linkFailed": "The file couldn't be linked.",
+    "unlinkFailed": "The file couldn't be unlinked."
+  },
+  "consent": {
+    "needed": "To find and name Initiative's files, Hoard needs your leave to read the files you can open.",
+    "ask": "Ask in Initiative",
+    "asked": "Initiative has asked you to let Hoard read your files. Answer there, then try again.",
+    "failed": "Initiative couldn't be asked. Try again in a moment."
+  },
+  "errors": {
+    "FILES_CONSENT_REQUIRED": "Hoard needs your leave to read your files in Initiative.",
+    "FILE_NOT_FOUND": "That file isn't one you can open.",
+    "ONE_RECORD_REQUIRED": "A document is linked to one lot, product, material or base."
   },
   "backups": {
     "title": "Backups",
-    "none": "Tick the rules you keep records for to see how long backups are kept."
+    "description": "The rules you keep records for, and how long each asks for them to be kept.",
+    "none": "Tick the rules you keep records for to see how long they ask for records to be kept.",
+    "period": "Together they ask for records to be kept for {{period}}.",
+    "years_one": "{{count}} year",
+    "years_other": "{{count}} years",
+    "months_one": "{{count}} month",
+    "months_other": "{{count}} months",
+    "saveFailed": "The rules couldn't be saved.",
+    "regimes": {
+      "us_one_up_one_back": {
+        "name": "United States: food, one up and one back",
+        "asks": "6 months to 2 years, by shelf life"
+      },
+      "us_food_traceability": {
+        "name": "United States: foods on the Food Traceability List",
+        "asks": "2 years"
+      },
+      "us_organic": {
+        "name": "United States: organic certification",
+        "asks": "5 years"
+      },
+      "us_cosmetics": {
+        "name": "United States: cosmetics",
+        "asks": "6 years for adverse events, 3 for a small business"
+      },
+      "eu_food": {
+        "name": "European Union and United Kingdom: food traceability",
+        "asks": "5 years, by the guidance; less for perishables"
+      },
+      "eu_cosmetics": {
+        "name": "European Union and United Kingdom: cosmetics",
+        "asks": "10 years after a product's last batch"
+      },
+      "canada_food": {
+        "name": "Canada: food traceability",
+        "asks": "2 years"
+      }
+    }
   }
 }
