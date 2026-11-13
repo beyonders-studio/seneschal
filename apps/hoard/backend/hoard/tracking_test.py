@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -308,15 +309,19 @@ async def test_events_are_sent_after_the_commit_and_retried_in_order(
 
         await _until(tried)
         assert initiative_stand_in.events == []
-
-        initiative_stand_in.routes[EMIT] = emit
-        await db.execute(
-            update(OutboxEvent).values(next_attempt_at=datetime.now(UTC) - timedelta(seconds=1))
-        )
-        await db.commit()
-        await tracking.deliver(plugin, db.organization_id)
     finally:
+        # Stopped before the retry below, which would otherwise race it for
+        # the organization's outbox.
         delivering.cancel()
+        with suppress(asyncio.CancelledError):
+            await delivering
+
+    initiative_stand_in.routes[EMIT] = emit
+    await db.execute(
+        update(OutboxEvent).values(next_attempt_at=datetime.now(UTC) - timedelta(seconds=1))
+    )
+    await db.commit()
+    await tracking.deliver(plugin, db.organization_id)
 
     assert await _outbox(serving_database, db.organization_id) == []
     sent = [body for community, body in initiative_stand_in.events if community == community_ref]
