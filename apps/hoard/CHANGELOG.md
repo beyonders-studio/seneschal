@@ -6,6 +6,12 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
+### Fixed
+
+- Hoard can be listed in the marketplace: its first release's notes were longer than a listing holds.
+
 ## [0.1.0] - 2026-11-13
 
 ### Added

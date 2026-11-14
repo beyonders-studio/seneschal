@@ -47,6 +47,9 @@ DESCRIPTION = (
 #: add a community contact, as Hoard adds suppliers.
 MIN_APP_VERSION = "0.79.0"
 
+#: The longest release notes a listing holds (the marketplace's listing schema).
+RELEASE_NOTES_LIMIT = 5000
+
 #: How a deployment runs Hoard from a package, with no code of its own for it
 #: (``registration.runtime``). Every name is one Hoard reads
 #: (``hoard.core.config``); the deployment supplies the values. Nothing here
@@ -89,7 +92,10 @@ RUNTIME: dict[str, Any] = {
 
 
 def release_notes(version: str) -> str | None:
-    """This version's ``CHANGELOG.md`` section, verbatim; None when it is empty."""
+    """This version's ``CHANGELOG.md`` section, verbatim; None when it is empty.
+
+    Refuses a section longer than a listing holds, before a release is tagged.
+    """
     changelog = (APP_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     match = re.search(
         rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## \[|\Z)",
@@ -98,7 +104,13 @@ def release_notes(version: str) -> str | None:
     )
     if match is None:
         raise SystemExit(f"CHANGELOG.md has no '## [{version}]' section to release")
-    return match.group(1).strip() or None
+    notes = match.group(1).strip()
+    if len(notes) > RELEASE_NOTES_LIMIT:
+        raise SystemExit(
+            f"CHANGELOG.md's {version} section is {len(notes)} characters; "
+            f"a listing holds {RELEASE_NOTES_LIMIT}"
+        )
+    return notes or None
 
 
 def listed_plugin(image: str, version: str) -> dict[str, Any]:
