@@ -2,20 +2,22 @@ import { Lock } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { SearchField } from "@/features/search/SearchField";
 import { IndustryPicker } from "@/features/setups/IndustryPicker";
 import { useSession } from "@/session";
 import { Alert, AlertDescription, AlertTitle } from "@/ui/alert";
 
 /** One of Hoard's pages: its title, for screen readers alone since
- *  Initiative's tabs already show it, a notice while Hoard is read-only, the
- *  question of which kind of business this is the first time Hoard is opened,
- *  and what the page holds. */
+ *  Initiative's tabs already show it, the search field, a notice while Hoard
+ *  is read-only, the question of which kind of business this is the first
+ *  time Hoard is opened, and what the page holds. */
 export function HoardPage({ title, children }: { title: string; children: ReactNode }) {
   const { t } = useTranslation();
   const { read_only } = useSession();
   return (
     <div className="flex min-h-full flex-col gap-4 p-4 sm:p-6">
       <h1 className="sr-only">{title}</h1>
+      <SearchField />
       {read_only && (
         <Alert>
           <Lock aria-hidden />

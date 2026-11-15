@@ -1,0 +1,46 @@
+{
+  "field": {
+    "label": "Search Hoard",
+    "placeholder": "Search records, codes and lot numbers (Ctrl K)",
+    "suggestions": "Suggestions",
+    "exact": "Exact code",
+    "nothing": "No suggestions. Press Enter to search everything."
+  },
+  "kinds": {
+    "material": "Material",
+    "base": "Base",
+    "product": "Product",
+    "lot": "Lot",
+    "run": "Production run",
+    "purchase": "Purchase",
+    "order": "Order",
+    "stocktake": "Stocktake",
+    "hold": "Hold"
+  },
+  "tabs": {
+    "material": "Materials",
+    "base": "Bases",
+    "product": "Products",
+    "lot": "Lots",
+    "run": "Production runs",
+    "purchase": "Purchases",
+    "order": "Orders",
+    "stocktake": "Stocktakes",
+    "hold": "Holds"
+  },
+  "results": {
+    "title": "Search",
+    "heading": "Results for “{{query}}”",
+    "kinds": "Kinds of record",
+    "all": "All",
+    "includeArchived": "Include archived",
+    "archived": "Archived",
+    "syntax": "Put words in quotes to find them together, a - before a word to leave it out, and or between words to find either.",
+    "empty": "Type in the search field to look through Hoard's records.",
+    "loading": "Searching…",
+    "nothing": "Nothing matches “{{query}}”",
+    "nothingHint": "Check the spelling, or try fewer words.",
+    "didYouMean": "Did you mean…",
+    "pages": "Result pages"
+  }
+}

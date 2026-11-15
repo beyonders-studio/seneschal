@@ -21,6 +21,7 @@ export * from "./purchases/purchases";
 export * from "./recipes/recipes";
 export * from "./reports/reports";
 export * from "./runs/runs";
+export * from "./search/search";
 export * from "./settings/settings";
 export * from "./setups/setups";
 export * from "./shipments/shipments";
