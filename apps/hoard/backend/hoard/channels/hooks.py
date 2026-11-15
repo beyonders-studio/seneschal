@@ -13,7 +13,8 @@ in ``body["connection"]``:
   if those values were its own.
 * ``webhook``: a delivery Initiative checked and routed here. What it says
   changed is left as a nudge (:class:`~hoard.records.StoreNudge`), which
-  ``hoard.sync`` works.
+  ``hoard.sync`` works. One nudge waits per record: an order's keeps the
+  newest body delivered for it.
 
 and the schedules, by ``body["schedule"]``:
 
@@ -110,6 +111,64 @@ async def _subscribe(connector: channels.Connector, address: str) -> None:
             await connector.subscribe(address)
 
 
+def _newer(
+    connector: channels.Connector, body: Mapping[str, Any], held: Mapping[str, Any] | None
+) -> bool:
+    """Whether an order's webhook ``body`` describes it as the store changed
+    it no earlier than ``held`` does."""
+    if held is None:
+        return True
+    found, kept = connector.webhook_order(body), connector.webhook_order(held)
+    if found is None or kept is None:
+        return found is not None
+    return (
+        found.updated_at is None or kept.updated_at is None or found.updated_at >= kept.updated_at
+    )
+
+
+async def _leave(
+    db: WriteSession, connector: channels.Connector, store: Store, nudge: channels.Nudge
+) -> None:
+    """Leave ``nudge`` for the worker: a new one, or the one waiting for its
+    record, given the body when it is the newer. A waiting nudge the worker
+    finishes meanwhile leaves a new one."""
+    for _ in range(2):
+        made = await db.execute(
+            insert(StoreNudge)
+            .values(
+                organization_id=db.organization_id,
+                store_id=store.id,
+                topic=nudge.topic.value,
+                external_id=nudge.external_id,
+                body=None if nudge.body is None else dict(nudge.body),
+            )
+            .on_conflict_do_nothing(
+                index_elements=["organization_id", "store_id", "topic", "external_id"],
+                index_where=text("done_at IS NULL"),
+            )
+            .returning(col(StoreNudge.id))
+        )
+        if made.first() is not None:
+            return
+        waiting = (
+            await db.exec(
+                select(StoreNudge)
+                .where(
+                    StoreNudge.store_id == store.id,
+                    StoreNudge.topic == nudge.topic.value,
+                    StoreNudge.external_id == nudge.external_id,
+                    col(StoreNudge.done_at).is_(None),
+                )
+                .with_for_update()
+            )
+        ).first()
+        if waiting is not None:
+            if nudge.body is not None and _newer(connector, nudge.body, waiting.body):
+                waiting.body = dict(nudge.body)
+                await db.flush()
+            return
+
+
 def hooks(address: str) -> dict[str, HookHandler]:
     """The hooks and schedules of Hoard's store connections, with
     Initiative's webhook ``address`` for Hoard."""
@@ -156,7 +215,8 @@ def hooks(address: str) -> dict[str, HookHandler]:
         headers, body = call.body.get("headers"), call.body.get("body")
         if not isinstance(headers, dict) or not isinstance(body, str):
             raise HookBodyInvalid("a webhook carries its headers and body")
-        nudge = channels.connector_for(channel, {}).parse_webhook(
+        connector = channels.connector_for(channel, {})
+        nudge = connector.parse_webhook(
             {str(name).lower(): str(value) for name, value in headers.items()}, body
         )
         if nudge is None:
@@ -165,19 +225,7 @@ def hooks(address: str) -> dict[str, HookHandler]:
             store = await _store(db, channel)
             if store is None or not store.connected:
                 return
-            await db.execute(
-                insert(StoreNudge)
-                .values(
-                    organization_id=db.organization_id,
-                    store_id=store.id,
-                    topic=nudge.topic.value,
-                    external_id=nudge.external_id,
-                )
-                .on_conflict_do_nothing(
-                    index_elements=["organization_id", "store_id", "topic", "external_id"],
-                    index_where=text("done_at IS NULL"),
-                )
-            )
+            await _leave(db, connector, store, nudge)
             await db.commit()
 
     async def schedule(call: HookCall) -> None:

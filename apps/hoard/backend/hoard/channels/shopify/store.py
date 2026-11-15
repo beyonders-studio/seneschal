@@ -5,16 +5,22 @@
   or a store whose app lacks a permission in :data:`REQUIRED_SCOPES`.
 * **Webhooks** are subscribed per topic in :data:`TOPICS`, aimed at the
   address Hoard is given. A delivery names the order, product or inventory
-  item that changed, by its Admin API id.
+  item that changed, by its Admin API id. An order's delivery
+  (:data:`ORDER_BODY_TOPICS`) keeps its body, the order in the store's REST
+  shape, which is read as the order when the store no longer returns it to
+  Hoard: one created more than :data:`HISTORY_DAYS` days ago.
 * **Products** are read and written live: title, description, status,
   options, variants and their prices and SKUs, images, and the sales
   channels showing it.
 * **Stock** is set as the ``available`` quantity of an inventory item at a
   location, one setting a call, each with its own idempotency key and the
   quantity Hoard last knew the store held.
-* **Orders** carry their lines, the fulfillments sent, and, where the store
-  granted a fulfillment order permission, the parts still to send: a
-  scheduled part carries the fulfillment order's id and the day it is due.
+* **Orders** carry their lines, each with how many it sells now and how
+  many were refunded, the total refunded, the customer's number and nothing
+  else about them, the fulfillments sent, and, where the store granted a
+  fulfillment order permission, the parts still to send: a scheduled part
+  carries the fulfillment order's id and the day it is due. An order's
+  refunds are read only where a line sells fewer than were ordered.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
 * **Pushing a fulfillment** stays off (:data:`PUSH_FULFILLMENTS`) until the
@@ -57,6 +63,7 @@ logger = logging.getLogger(__name__)
 
 #: The permissions a store's app is granted for Hoard to connect.
 REQUIRED_SCOPES = (
+    "read_customers",
     "read_locations",
     "read_orders",
     "write_files",
@@ -91,6 +98,9 @@ TOPICS = (
     "PRODUCTS_DELETE",
     "INVENTORY_LEVELS_UPDATE",
 )
+
+#: The webhook topics whose body is the order whole.
+ORDER_BODY_TOPICS = frozenset({"orders/create", "orders/updated", "orders/cancelled"})
 
 #: How many days back the store lets Hoard read orders.
 HISTORY_DAYS = 60
@@ -417,7 +427,27 @@ class ShopifyConnector:
             node.get("lineItems"), queries.LINES_PAGE, {"id": order_id}, ("order", "lineItems")
         )
         fulfillments = [*await self._fulfillments(order_id), *await self._due(order_id)]
-        return _store_order(node, lines, fulfillments)
+        return _store_order(node, lines, fulfillments, await self._refunded(order_id, lines))
+
+    async def _refunded(
+        self, order_id: str, lines: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Decimal]:
+        """How many of each of the order's lines were refunded, by line id:
+        read only where a line sells fewer than were ordered."""
+        if not any(
+            _count(line.get("currentQuantity")) < _count(line.get("quantity")) for line in lines
+        ):
+            return {}
+        data = await self.client.query(queries.REFUNDS, {"id": order_id})
+        items: list[dict[str, Any]] = []
+        for refund in (data.get("order") or {}).get("refunds") or []:
+            items += await self._rest(
+                refund.get("refundLineItems"),
+                queries.REFUND_LINES_PAGE,
+                {"id": refund["id"]},
+                ("refund", "refundLineItems"),
+            )
+        return _quantities(items, "quantity")
 
     async def _fulfillments(self, order_id: str) -> list[StoreFulfillment]:
         data = await self.client.query(queries.FULFILLMENTS, {"id": order_id})
@@ -538,17 +568,15 @@ class ShopifyConnector:
             return None
         if not isinstance(payload, dict):
             return None
-        api_id = payload.get("admin_graphql_api_id")
-        if (
-            field == "id"
-            and isinstance(api_id, str)
-            and api_id.startswith(f"gid://shopify/{kind}/")
-        ):
-            return Nudge(nudge_topic, api_id)
-        number = payload.get(field)
-        if isinstance(number, bool) or not isinstance(number, int | str) or not str(number):
+        external_id = (
+            _gid(kind, payload.get("admin_graphql_api_id")) if field == "id" else None
+        ) or _gid(kind, payload.get(field))
+        if external_id is None:
             return None
-        return Nudge(nudge_topic, f"gid://shopify/{kind}/{number}")
+        return Nudge(nudge_topic, external_id, payload if topic in ORDER_BODY_TOPICS else None)
+
+    def webhook_order(self, body: Mapping[str, Any]) -> StoreOrder | None:
+        return _webhook_order(body)
 
     async def import_history(self) -> AsyncIterator[StoreOrder]:
         start = datetime.now(UTC) - timedelta(days=HISTORY_DAYS)
@@ -570,7 +598,8 @@ class ShopifyConnector:
             else:
                 lines[str(parent)].append(row)
         for order_id, node in orders.items():
-            yield _store_order(node, lines.get(order_id, []), [])
+            rows = lines.get(order_id, [])
+            yield _store_order(node, rows, [], await self._refunded(order_id, rows))
 
     async def _finished(self, operation_id: str) -> str | None:
         """The address of a bulk query's result once it finished; None when
@@ -761,7 +790,9 @@ def _store_order(
     node: Mapping[str, Any],
     lines: Sequence[Mapping[str, Any]],
     fulfillments: Sequence[StoreFulfillment],
+    refunded: Mapping[str, Decimal],
 ) -> StoreOrder:
+    customer = _id(node.get("customer"))
     return StoreOrder(
         id=str(node["id"]),
         number=str(node.get("name") or ""),
@@ -770,14 +801,15 @@ def _store_order(
             StoreLine(
                 id=str(line["id"]),
                 title=str(line.get("name") or ""),
-                # Excludes what was removed or refunded.
-                quantity=Decimal(int(line.get("currentQuantity") or 0)),
+                quantity=Decimal(_count(line.get("quantity"))),
                 price=_money(line.get("originalUnitPriceSet")),
                 product_id=_id(line.get("product")),
                 variant_id=_id(line.get("variant")),
                 sku=line.get("sku") or None,
                 bundle_id=_id(line.get("lineItemGroup")),
                 selling_plan=(line.get("sellingPlan") or {}).get("sellingPlanId"),
+                current_quantity=Decimal(_count(line.get("currentQuantity"))),
+                refunded_quantity=refunded.get(str(line["id"]), Decimal(0)),
             )
             for line in lines
         ],
@@ -788,8 +820,102 @@ def _store_order(
         shipping=_money(node.get("totalShippingPriceSet")),
         tax=_money(node.get("totalTaxSet")),
         discount=_money(node.get("totalDiscountsSet")),
+        refunded=_money(node.get("totalRefundedSet")),
+        # The number at the end of the customer's id.
+        customer=None if customer is None else customer.rsplit("/", 1)[-1],
         fulfillments=list(fulfillments),
         updated_at=_datetime(node.get("updatedAt")),
+    )
+
+
+#: A webhook's fulfillment statuses that Hoard copies.
+_SENT = frozenset({"success", "cancelled"})
+
+
+def _webhook_order(body: Mapping[str, Any]) -> StoreOrder | None:
+    """An order as a webhook's body describes it, in the store's REST shape:
+    its ids as numbers, which become Admin API ids."""
+    order_id = _gid("Order", body.get("admin_graphql_api_id")) or _gid("Order", body.get("id"))
+    if order_id is None:
+        return None
+    refunded_lines: dict[str, Decimal] = defaultdict(Decimal)
+    refunded = Decimal(0)
+    for refund in _list(body.get("refunds")):
+        for item in _list(refund.get("refund_line_items")):
+            line_id = _gid("LineItem", item.get("line_item_id"))
+            if line_id is not None:
+                refunded_lines[line_id] += _count(item.get("quantity"))
+        for transaction in _list(refund.get("transactions")):
+            if transaction.get("kind") == "refund" and transaction.get("status") == "success":
+                refunded += _decimal(transaction.get("amount")) or Decimal(0)
+    lines = []
+    for item in _list(body.get("line_items")):
+        line_id = _gid("LineItem", item.get("admin_graphql_api_id")) or _gid(
+            "LineItem", item.get("id")
+        )
+        if line_id is None:
+            continue
+        current = item.get("current_quantity")
+        lines.append(
+            StoreLine(
+                id=line_id,
+                title=str(item.get("name") or ""),
+                quantity=Decimal(_count(item.get("quantity"))),
+                price=_decimal(item.get("price")) or Decimal(0),
+                product_id=_gid("Product", item.get("product_id")),
+                variant_id=_gid("ProductVariant", item.get("variant_id")),
+                sku=item.get("sku") or None,
+                bundle_id=_gid("LineItemGroup", item.get("sales_line_item_group_id")),
+                selling_plan=_gid("SellingPlan", item.get("selling_plan_id")),
+                current_quantity=None if current is None else Decimal(_count(current)),
+                refunded_quantity=refunded_lines.get(line_id, Decimal(0)),
+            )
+        )
+    fulfillments = []
+    for sent in _list(body.get("fulfillments")):
+        fulfillment_id = _gid("Fulfillment", sent.get("admin_graphql_api_id")) or _gid(
+            "Fulfillment", sent.get("id")
+        )
+        if fulfillment_id is None or sent.get("status") not in _SENT:
+            continue
+        sent_lines: dict[str, Decimal] = defaultdict(Decimal)
+        for item in _list(sent.get("line_items")):
+            line_id = _gid("LineItem", item.get("admin_graphql_api_id")) or _gid(
+                "LineItem", item.get("id")
+            )
+            if line_id is not None:
+                sent_lines[line_id] += _count(item.get("quantity"))
+        fulfillments.append(
+            StoreFulfillment(
+                id=fulfillment_id,
+                location_id=_gid("Location", sent.get("location_id")),
+                lines=dict(sent_lines),
+                shipped_at=_datetime(sent.get("created_at")),
+                cancelled=sent.get("status") == "cancelled",
+                tracking_number=sent.get("tracking_number") or None,
+                tracking_company=sent.get("tracking_company") or None,
+                tracking_url=sent.get("tracking_url") or None,
+            )
+        )
+    customer = body.get("customer")
+    # Of the customer, only their number.
+    number = customer.get("id") if isinstance(customer, dict) else None
+    return StoreOrder(
+        id=order_id,
+        number=str(body.get("name") or ""),
+        ordered_at=_datetime(body.get("processed_at")) or datetime.now(UTC),
+        lines=lines,
+        paid=body.get("financial_status") in ("paid", "partially_refunded", "refunded"),
+        cancelled=body.get("cancelled_at") is not None,
+        fulfilled=body.get("fulfillment_status") == "fulfilled",
+        currency=body.get("currency"),
+        shipping=_money(body.get("total_shipping_price_set")),
+        tax=_money(body.get("total_tax_set")),
+        discount=_money(body.get("total_discounts_set")),
+        refunded=refunded,
+        customer=str(number) if _count(number) else None,
+        fulfillments=fulfillments,
+        updated_at=_datetime(body.get("updated_at")),
     )
 
 
@@ -827,8 +953,31 @@ def _id(node: object) -> str | None:
 
 
 def _money(bag: object) -> Decimal:
-    money = bag.get("shopMoney") if isinstance(bag, dict) else None
+    """An amount in the store's currency, in the Admin API's shape or the
+    REST one."""
+    money = (bag.get("shopMoney") or bag.get("shop_money")) if isinstance(bag, dict) else None
     return _decimal(money.get("amount") if isinstance(money, dict) else None) or Decimal(0)
+
+
+def _gid(kind: str, value: object) -> str | None:
+    """The Admin API id of the store's ``kind`` of record, from that id or the
+    record's number; None for neither."""
+    if isinstance(value, bool) or not isinstance(value, int | str) or not str(value):
+        return None
+    prefix = f"gid://shopify/{kind}/"
+    if isinstance(value, str) and value.startswith("gid://"):
+        return value if value.startswith(prefix) else None
+    return f"{prefix}{value}"
+
+
+def _list(value: object) -> list[dict[str, Any]]:
+    """The objects of a list in a webhook's body."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _count(value: object) -> int:
+    """A whole quantity the store gave, or none."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _decimal(value: object) -> Decimal | None:

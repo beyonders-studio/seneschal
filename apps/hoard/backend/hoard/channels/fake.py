@@ -4,6 +4,8 @@ what Hoard asked of it.
 
 Its webhooks name what changed in an ``x-topic`` header (a
 :class:`~hoard.channels.NudgeTopic`) and the record's id as the body's ``id``.
+An order's webhook (:meth:`FakeConnector.order_webhook`) also says which of
+the orders it delivered it describes, as the body's ``delivery``.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ import json
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from typing import Any
 
 from hoard.channels import (
     Capabilities,
@@ -58,6 +61,8 @@ class FakeConnector:
     #: Each push asked for, and each fulfillment pushed with its order's id.
     pushes: list[StockSet] = field(default_factory=list)
     fulfillments: list[tuple[str, StoreFulfillment]] = field(default_factory=list)
+    #: The orders its order webhooks described, by delivery.
+    delivered: list[StoreOrder] = field(default_factory=list)
 
     def _checked(self) -> None:
         if self.refuse is not None:
@@ -142,13 +147,30 @@ class FakeConnector:
         self.fulfillments.append((order_id, made))
         return str(made.id)
 
+    def order_webhook(self, order: StoreOrder) -> tuple[dict[str, str], str]:
+        """The headers and body of the webhook the store sends about
+        ``order`` as it is now."""
+        self.delivered.append(order)
+        body = {"id": order.id, "delivery": len(self.delivered) - 1}
+        return {"x-topic": NudgeTopic.ORDER.value}, json.dumps(body)
+
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:
         try:
             topic = NudgeTopic(headers.get("x-topic", ""))
-            record = json.loads(body).get("id")
+            payload = json.loads(body)
+            record = payload.get("id")
         except (ValueError, AttributeError):
             return None
-        return Nudge(topic, str(record)) if record is not None else None
+        if record is None:
+            return None
+        kept = topic is NudgeTopic.ORDER and "delivery" in payload
+        return Nudge(topic, str(record), payload if kept else None)
+
+    def webhook_order(self, body: Mapping[str, Any]) -> StoreOrder | None:
+        delivery = body.get("delivery")
+        if isinstance(delivery, int) and 0 <= delivery < len(self.delivered):
+            return self.delivered[delivery]
+        return None
 
     async def import_history(self) -> AsyncIterator[StoreOrder]:
         self._checked()

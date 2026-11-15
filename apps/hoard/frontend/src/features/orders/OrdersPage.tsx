@@ -12,6 +12,7 @@ import { useMoney } from "@/lib/money";
 import { useSession } from "@/session";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Input } from "@/ui/input";
 import { PaginationBar } from "@/ui/pagination-bar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { StatusMessage } from "@/ui/status-message";
@@ -49,8 +50,8 @@ export function useOrderFor(): (
       : contact(order.customer_contact_id);
 }
 
-/** The orders list, under Orders: the latest first, filtered by status, and
- *  adding one by hand. */
+/** The orders list, under Orders: the latest first, filtered by status or by
+ *  a store's customer number, and adding one by hand. */
 export function OrdersPage() {
   const { t } = useTranslation("orders");
   const navigate = useNavigate();
@@ -59,13 +60,17 @@ export function OrdersPage() {
   const { date, location } = useMovementLabels();
   const orderFor = useOrderFor();
   const [status, setStatus] = useState<OrderStatus | null>(null);
+  const [customer, setCustomer] = useState("");
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
+  const storeCustomer = customer.trim();
   const orders = useListOrders({
     offset: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
     ...(status ? { status } : {}),
+    ...(storeCustomer ? { store_customer: storeCustomer } : {}),
   });
+  const filtered = status !== null || storeCustomer !== "";
 
   const add = (
     <Button onClick={() => setAdding(true)} disabled={read_only}>
@@ -78,7 +83,7 @@ export function OrdersPage() {
   if (orders.isError) body = <StatusMessage onRetry={() => void orders.refetch()} />;
   else if (!orders.data)
     body = <p className="text-muted-foreground">{t("hoard:common.loading")}</p>;
-  else if (orders.data.total === 0 && !status)
+  else if (orders.data.total === 0 && !filtered)
     body = (
       <StatusMessage
         icon={<ShoppingCart />}
@@ -125,7 +130,7 @@ export function OrdersPage() {
           </TableBody>
         </Table>
         {orders.data.items.length === 0 && (
-          <p className="text-sm text-muted-foreground">{t("list.noneOfStatus")}</p>
+          <p className="text-sm text-muted-foreground">{t("list.noneMatch")}</p>
         )}
         {orders.data.total > PAGE_SIZE && (
           <PaginationBar
@@ -141,27 +146,40 @@ export function OrdersPage() {
 
   return (
     <section className="flex flex-col gap-4">
-      {orders.data?.total || status ? (
+      {orders.data?.total || filtered ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Select
-            value={status ?? ALL}
-            onValueChange={(next) => {
-              setStatus(isStatus(next) ? next : null);
-              setPage(1);
-            }}
-          >
-            <SelectTrigger className="w-48" aria-label={t("list.filter")}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>{t("list.all")}</SelectItem>
-              {Object.values(OrderStatus).map((one) => (
-                <SelectItem key={one} value={one}>
-                  {t(`status.${one}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={status ?? ALL}
+              onValueChange={(next) => {
+                setStatus(isStatus(next) ? next : null);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-48" aria-label={t("list.filter")}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>{t("list.all")}</SelectItem>
+                {Object.values(OrderStatus).map((one) => (
+                  <SelectItem key={one} value={one}>
+                    {t(`status.${one}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input
+              type="search"
+              className="w-48"
+              value={customer}
+              aria-label={t("list.customer")}
+              placeholder={t("list.customer")}
+              onChange={(event) => {
+                setCustomer(event.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
           {add}
         </div>
       ) : null}

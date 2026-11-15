@@ -231,7 +231,7 @@ async def _left(db: WriteSession, shipment: Shipment, line: ShipmentLine) -> Dec
     """What ``line``'s order line has left to ship besides ``line`` itself."""
     order_line = await db.get_one(OrderLine, line.order_line_id)
     holding = await orders.held(db, shipment.order_id)
-    return order_line.quantity - holding[order_line.id] + line.quantity
+    return orders.selling(order_line) - holding[order_line.id] + line.quantity
 
 
 async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[Pick]) -> Shipment:
@@ -242,7 +242,7 @@ async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[
     to_ship = {line.id: line for line in orders.shippable(await orders.lines(db, order.id))}
     holding = await orders.held(db, order.id)
     if not picks:
-        picks = [Pick(id_) for id_, line in to_ship.items() if line.quantity > holding[id_]]
+        picks = [Pick(id_) for id_, line in to_ship.items() if orders.selling(line) > holding[id_]]
     if not picks:
         raise ShipmentRefused(ShipmentError.SHIPMENT_EMPTY)
     shipment = Shipment(
@@ -253,7 +253,7 @@ async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[
         line = to_ship.get(pick.order_line_id)
         if line is None:
             raise ShipmentRefused(ShipmentError.SHIPMENT_LINE_NOT_SHIPPABLE)
-        left = line.quantity - holding[line.id]
+        left = orders.selling(line) - holding[line.id]
         quantity = left if pick.quantity is None else pick.quantity
         if quantity <= 0 or quantity > left:
             raise ShipmentRefused(ShipmentError.SHIPMENT_OVER_ORDER)

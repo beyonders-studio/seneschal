@@ -19,10 +19,13 @@ from hoard.channels import (
     StockSet,
     StoreFulfillment,
     StoreImage,
+    StoreLine,
+    StoreOrder,
     StoreProduct,
     StoreVariant,
     connector_for,
 )
+from hoard.channels.shopify import queries
 from hoard.channels.shopify.fake import FakeShop
 from hoard.channels.shopify.store import REQUIRED_SCOPES, TOPICS, ShopifyConnector
 from hoard.records import Channel
@@ -80,7 +83,9 @@ async def test_check_names_the_permissions_missing():
     with pytest.raises(ConnectRefused) as refused:
         await shop.connector().check()
     assert refused.value.code is ConnectError.STORE_SCOPES_MISSING
-    assert refused.value.detail == "read_orders, write_files, write_inventory, write_publications"
+    assert refused.value.detail == (
+        "read_customers, read_orders, write_files, write_inventory, write_publications"
+    )
     # Writing a resource covers reading it.
     shop.scopes = [scope.replace("read_", "write_") for scope in REQUIRED_SCOPES]
     await shop.connector().check()
@@ -485,6 +490,8 @@ def _order_node(lines: dict[str, Any]) -> dict[str, Any]:
         "totalShippingPriceSet": _money("8.00"),
         "totalTaxSet": _money("3.90"),
         "totalDiscountsSet": None,
+        "totalRefundedSet": _money("12.50"),
+        "customer": {"id": "gid://shopify/Customer/99"},
         "lineItems": lines,
     }
 
@@ -494,6 +501,7 @@ def _line(number: int, quantity: int, **extra: Any) -> dict[str, Any]:
         "id": f"gid://shopify/LineItem/{number}",
         "name": f"Tea {number}",
         "sku": f"TEA-{number}",
+        "quantity": quantity,
         "currentQuantity": quantity,
         "originalUnitPriceSet": _money("12.50"),
         "product": {"id": PRODUCT},
@@ -504,8 +512,37 @@ def _line(number: int, quantity: int, **extra: Any) -> dict[str, Any]:
     }
 
 
+def _refunds(shop: FakeShop) -> None:
+    """One unit of line 1 refunded, its lines read on a second page."""
+    shop.answer(
+        "HoardRefunds",
+        {
+            "order": {
+                "refunds": [
+                    {
+                        "id": "gid://shopify/Refund/5",
+                        "refundLineItems": _page([], cursor="r1"),
+                    }
+                ]
+            }
+        },
+    )
+    shop.answer(
+        "HoardRefundLinesPage",
+        {
+            "refund": {
+                "refundLineItems": _page(
+                    [{"quantity": 1, "lineItem": {"id": "gid://shopify/LineItem/1"}}]
+                )
+            }
+        },
+    )
+
+
 def _orders(shop: FakeShop) -> None:
-    shop.answer("HoardOrder", {"order": _order_node(_page([_line(1, 2)], cursor="l1"))})
+    line = _line(1, 3, currentQuantity=2)
+    shop.answer("HoardOrder", {"order": _order_node(_page([line], cursor="l1"))})
+    _refunds(shop)
     shop.answer(
         "HoardLinesPage",
         {
@@ -601,18 +638,26 @@ async def test_an_order_carries_its_lines_and_fulfillments():
     assert (order.id, order.number, order.currency) == (ORDER, "#1007", "CAD")
     assert order.ordered_at == datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
     assert (order.paid, order.cancelled, order.fulfilled) == (True, False, False)
-    assert (order.shipping, order.tax, order.discount) == (
+    assert (order.shipping, order.tax, order.discount, order.refunded) == (
         Decimal("8.00"),
         Decimal("3.90"),
         Decimal(0),
+        Decimal("12.50"),
     )
+    # Of the customer, only the number at the end of their id.
+    assert order.customer == "99"
+    assert "customer { id }" in queries.ORDER_FIELDS
+    assert queries.ORDER_FIELDS.count("customer") == 1
     first, second = order.lines
     assert (first.id, first.quantity, first.price, first.sku) == (
         "gid://shopify/LineItem/1",
-        Decimal(2),
+        Decimal(3),
         Decimal("12.50"),
         "TEA-1",
     )
+    assert (first.current_quantity, first.refunded_quantity) == (Decimal(2), Decimal(1))
+    assert (second.current_quantity, second.refunded_quantity) == (Decimal(1), Decimal(0))
+    assert shop.variables("HoardRefunds") == [{"id": ORDER}]
     assert (second.bundle_id, second.selling_plan) == (
         "gid://shopify/LineItemGroup/3",
         "gid://shopify/SellingPlan/4",
@@ -726,15 +771,22 @@ async def test_the_history_import_reads_a_bulk_query():
             "bulkOperation": {"status": next(statuses), "url": "https://files.example/1.jsonl"}
         },
     )
+    _refunds(shop)
     order = {key: value for key, value in _order_node({}).items() if key != "lineItems"}
     shop.files["https://files.example/1.jsonl"] = [
         json.dumps(order),
-        json.dumps({**_line(1, 2), "__parentId": ORDER}),
+        json.dumps({**_line(1, 3, currentQuantity=2), "__parentId": ORDER}),
         json.dumps({**order, "id": "gid://shopify/Order/8", "name": "#1008"}),
         json.dumps({**_line(2, 1), "__parentId": ORDER}),
     ]
     orders = [order async for order in shop.connector().import_history()]
     assert [(order.number, len(order.lines)) for order in orders] == [("#1007", 2), ("#1008", 0)]
+    assert [
+        (line.quantity, line.current_quantity, line.refunded_quantity) for line in orders[0].lines
+    ] == [(3, 2, 1), (1, 1, 0)]
+    assert orders[0].customer == "99"
+    # Only the order with a line selling fewer than were ordered has its refunds read.
+    assert shop.variables("HoardRefunds") == [{"id": ORDER}]
     query = shop.variables("HoardBulkRun")[0]["query"]
     assert "orders(query: \"created_at:>='" in query
     assert shop.slept == [1.0]
@@ -761,9 +813,9 @@ async def test_a_failed_bulk_query_is_a_refusal():
         (
             "orders/updated",
             {"id": 7, "admin_graphql_api_id": ORDER},
-            Nudge(NudgeTopic.ORDER, ORDER),
+            Nudge(NudgeTopic.ORDER, ORDER, {"id": 7, "admin_graphql_api_id": ORDER}),
         ),
-        ("orders/cancelled", {"id": 7}, Nudge(NudgeTopic.ORDER, ORDER)),
+        ("orders/cancelled", {"id": 7}, Nudge(NudgeTopic.ORDER, ORDER, {"id": 7})),
         ("refunds/create", {"id": 3, "order_id": 7}, Nudge(NudgeTopic.ORDER, ORDER)),
         ("products/delete", {"id": 1}, Nudge(NudgeTopic.PRODUCT, PRODUCT)),
         (
@@ -784,3 +836,103 @@ def test_a_webhook_names_what_changed(topic: str, body: dict[str, Any], nudge: N
 def test_a_webhook_that_is_not_json_is_ignored():
     connector = connector_for(Channel.SHOPIFY, {})
     assert connector.parse_webhook({"x-shopify-topic": "orders/create"}, "not json") is None
+
+
+def test_an_order_webhook_body_reads_as_the_order():
+    connector = connector_for(Channel.SHOPIFY, {})
+    body = {
+        "id": 7,
+        "admin_graphql_api_id": ORDER,
+        "name": "#1007",
+        "processed_at": "2026-11-02T04:30:00-05:00",
+        "updated_at": "2026-11-20T10:00:00-05:00",
+        "cancelled_at": None,
+        "financial_status": "partially_refunded",
+        "fulfillment_status": "fulfilled",
+        "currency": "CAD",
+        "total_shipping_price_set": {"shop_money": {"amount": "8.00"}},
+        "total_tax_set": {"shop_money": {"amount": "3.90"}},
+        "total_discounts_set": {"shop_money": {"amount": "0.00"}},
+        "customer": {"id": 99, "first_name": "Ada", "email": "ada@example.com", "phone": "555"},
+        "line_items": [
+            {
+                "id": 1,
+                "admin_graphql_api_id": "gid://shopify/LineItem/1",
+                "name": "Tea 1",
+                "sku": "TEA-1",
+                "price": "12.50",
+                "quantity": 3,
+                "current_quantity": 2,
+                "product_id": 1,
+                "variant_id": 1,
+                "sales_line_item_group_id": None,
+                "selling_plan_id": None,
+            }
+        ],
+        "fulfillments": [
+            {
+                "id": 8,
+                "admin_graphql_api_id": "gid://shopify/Fulfillment/8",
+                "status": "success",
+                "created_at": "2026-11-03T08:00:00Z",
+                "location_id": 1,
+                "tracking_number": "1Z",
+                "tracking_company": "Post",
+                "tracking_url": None,
+                "line_items": [{"id": 1, "quantity": 2}],
+            },
+            {"id": 9, "status": "failure", "line_items": [{"id": 1, "quantity": 1}]},
+        ],
+        "refunds": [
+            {
+                "id": 5,
+                "refund_line_items": [{"line_item_id": 1, "quantity": 1}],
+                "transactions": [
+                    {"kind": "refund", "status": "success", "amount": "12.50"},
+                    {"kind": "refund", "status": "failure", "amount": "12.50"},
+                ],
+            }
+        ],
+    }
+
+    order = connector.webhook_order(body)
+
+    assert order == StoreOrder(
+        id=ORDER,
+        number="#1007",
+        ordered_at=datetime(2026, 11, 2, 9, 30, tzinfo=UTC),
+        lines=[
+            StoreLine(
+                id="gid://shopify/LineItem/1",
+                title="Tea 1",
+                quantity=Decimal(3),
+                price=Decimal("12.50"),
+                product_id=PRODUCT,
+                variant_id="gid://shopify/ProductVariant/1",
+                sku="TEA-1",
+                current_quantity=Decimal(2),
+                refunded_quantity=Decimal(1),
+            )
+        ],
+        paid=True,
+        fulfilled=True,
+        currency="CAD",
+        shipping=Decimal("8.00"),
+        tax=Decimal("3.90"),
+        discount=Decimal(0),
+        refunded=Decimal("12.50"),
+        # Of the customer, only their number.
+        customer="99",
+        fulfillments=[
+            StoreFulfillment(
+                id="gid://shopify/Fulfillment/8",
+                location_id="gid://shopify/Location/1",
+                lines={"gid://shopify/LineItem/1": Decimal(2)},
+                shipped_at=datetime(2026, 11, 3, 8, tzinfo=UTC),
+                tracking_number="1Z",
+                tracking_company="Post",
+            )
+        ],
+        updated_at=datetime(2026, 11, 20, 15, tzinfo=UTC),
+    )
+    assert connector.webhook_order({"name": "#1007"}) is None

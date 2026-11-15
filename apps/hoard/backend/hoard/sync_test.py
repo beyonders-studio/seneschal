@@ -1,6 +1,8 @@
 """Store orders in, against a store kept in memory: orders copied, claiming
-stock once paid; bundles split; fulfillments shipped; cancellations; the
-history import; the nudge worker; and the reconcile."""
+stock once paid; refunds; older copies skipped; bundles split; fulfillments
+shipped; cancellations; the history import; the nudge worker, with the
+webhook's body for an order the store no longer returns; and the
+reconcile."""
 
 from __future__ import annotations
 
@@ -217,6 +219,81 @@ async def test_a_store_order_commits_once_paid_and_ships_with_its_fulfillment(
     assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (10, 2)
 
 
+async def test_a_refund_before_shipping_releases_what_the_line_committed(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    sold: Sold,
+    lot,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    noted: list[int] = []
+
+    async def note_changed(_db: WriteSession, item_id: int) -> None:
+        noted.append(item_id)
+
+    monkeypatch.setattr(listings, "note_changed", note_changed)
+    tea = await sold("Tea", "v-tea")
+    await lot(tea.id, "T-1", "10")
+    paid = _order(_line("l-1", "v-tea", "3"), paid=True, customer="99")
+    order = await sync.copy_order(db, store, fake, paid)
+    assert (await committed(db, tea.id), order.store_customer) == (3, "99")
+    noted.clear()
+
+    # Two of the three refunded: the line commits the one it still sells.
+    refunded = _line("l-1", "v-tea", "3", current_quantity=Decimal(1), refunded_quantity=Decimal(2))
+    order = await sync.copy_order(
+        db, store, fake, replace(paid, lines=[refunded], refunded=Decimal(10))
+    )
+    [line] = await _lines(db, order)
+    assert (line.quantity, line.current_quantity, line.refunded_quantity) == (3, 1, 2)
+    assert (order.status, order.refunded, await committed(db, tea.id)) == (OrderStatus.OPEN, 10, 1)
+    assert noted == [tea.id]
+
+    whole = replace(refunded, current_quantity=Decimal(0), refunded_quantity=Decimal(3))
+    await sync.copy_order(db, store, fake, replace(paid, lines=[whole]))
+    assert (await committed(db, tea.id), await on_hand(db, tea.id)) == (0, 10)
+
+
+async def test_a_refund_after_shipping_moves_no_stock(
+    db: WriteSession, store: Store, fake: FakeConnector, sold: Sold, lot
+):
+    tea = await sold("Tea", "v-tea")
+    await lot(tea.id, "T-1", "10")
+    shipped = _order(
+        _line("l-1", "v-tea", "2"),
+        paid=True,
+        fulfilled=True,
+        fulfillments=[_sent("f-1", {"l-1": "2"})],
+    )
+    await sync.copy_order(db, store, fake, shipped)
+    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (8, 0)
+
+    refunded = _line("l-1", "v-tea", "2", current_quantity=Decimal(0), refunded_quantity=Decimal(2))
+    order = await sync.copy_order(db, store, fake, replace(shipped, lines=[refunded]))
+
+    [shipment] = await _shipments(db, order)
+    assert (order.status, shipment.status) == (OrderStatus.SHIPPED, ShipmentStatus.SHIPPED)
+    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (8, 0)
+
+
+async def test_an_older_copy_never_replaces_a_newer_one(
+    db: WriteSession, store: Store, fake: FakeConnector, sold: Sold
+):
+    tea = await sold("Tea", "v-tea")
+    newer = datetime(2026, 11, 12, tzinfo=UTC)
+    paid = _order(_line("l-1", "v-tea", "2"), paid=True, updated_at=newer)
+    await sync.copy_order(db, store, fake, paid)
+
+    older = replace(paid, cancelled=True, updated_at=newer - timedelta(minutes=1))
+    order = await sync.copy_order(db, store, fake, older)
+
+    assert (order.status, order.store_updated_at) == (OrderStatus.OPEN, newer)
+    assert await committed(db, tea.id) == 2
+    order = await sync.copy_order(db, store, fake, replace(older, updated_at=newer))
+    assert order.status is OrderStatus.CANCELLED
+
+
 async def test_a_line_of_an_unlisted_product_waits_for_its_listing(
     db: WriteSession, store: Store, fake: FakeConnector, sold: Sold
 ):
@@ -425,6 +502,47 @@ async def test_the_worker_refetches_what_each_nudge_names(
     [nudge] = waiting.all()
     assert nudge.attempts == 1
     assert nudge.next_attempt_at > datetime.now(UTC)
+
+
+async def test_an_order_the_store_no_longer_returns_is_kept_from_its_webhook(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    sold: Sold,
+    plugin: Plugin,
+    organization_id: int,
+    initiative_stand_in: InitiativeStandIn,
+    community_ref: str,
+):
+    initiative_stand_in.connections[community_ref] = {"shopify": {"shop": "tea.myshopify.com"}}
+    tea = await sold("Tea", "v-tea")
+    paid = _order(_line("l-1", "v-tea", "2"), paid=True, updated_at=LONG_AGO)
+    await sync.copy_order(db, store, fake, paid)
+    refunded = _line("l-1", "v-tea", "2", current_quantity=Decimal(0), refunded_quantity=Decimal(2))
+    # The store answers neither order any more; Hoard holds only the first.
+    for found in (
+        replace(paid, lines=[refunded], updated_at=LONG_AGO + timedelta(days=70)),
+        _order(_line("l-9", "v-tea", "1"), order_id="o-9", number="#1009", paid=True),
+    ):
+        nudge = fake.parse_webhook(*fake.order_webhook(found))
+        assert nudge is not None and nudge.body is not None
+        db.add(
+            StoreNudge(
+                organization_id=db.organization_id,
+                store_id=store.id,
+                topic=nudge.topic.value,
+                external_id=nudge.external_id,
+                body=dict(nudge.body),
+            )
+        )
+    await db.commit()
+
+    await sync.work(plugin, organization_id)
+
+    [order] = (await db.exec(select(Order).execution_options(populate_existing=True))).all()
+    [line] = await _lines(db, order)
+    assert (order.external_id, line.current_quantity, line.refunded_quantity) == ("o-1", 0, 2)
+    assert await committed(db, tea.id) == 0
 
 
 async def test_the_reconcile_copies_in_what_changed(

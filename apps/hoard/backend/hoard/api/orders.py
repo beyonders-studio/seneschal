@@ -4,8 +4,10 @@ in from a store, with their lines and what each commits (``hoard.orders``).
 An order is read whole: its lines, how much of each its shipments hold and
 have shipped, and its shipments, each with its lines, their lots and what came
 back of them (``hoard.api.shipments`` changes those). A hand order names its
-customer by an Initiative contact's id; a store's order names the store and its
-number there instead, and its lines change only in the store.
+customer by an Initiative contact's id; a store's order names the store, its
+number there and the store's number for its customer instead, with that
+customer's other orders, and its lines change only in the store. Orders are
+listed by status, or by a store's customer.
 """
 
 from __future__ import annotations
@@ -66,6 +68,10 @@ CHANGE_REFUSED: Responses = {
     },
     422: {"description": "ORDER_ITEM_NOT_SOLD"},
 }
+
+
+#: How orders are listed: the latest first.
+LATEST_FIRST = (col(Order.ordered_on).desc(), col(Order.id).desc())
 
 
 class OrderCodeError(StrEnum):
@@ -130,7 +136,13 @@ class OrderShipmentRead(BaseModel):
 class OrderLineRead(BaseModel):
     id: int
     item: AdjustmentItem
+    #: How many were ordered.
     quantity: Decimal
+    #: How many it sells now: for a store's line, after the store's edits and
+    #: refunds; otherwise its quantity.
+    current_quantity: Decimal
+    #: How many the store refunded.
+    refunded_quantity: Decimal
     #: What one sold for.
     price: Decimal
     #: The bundle's line, for one of its parts.
@@ -152,6 +164,8 @@ class OrderSummary(BaseModel):
     #: The store it was copied from, and its number there.
     store_id: int | None
     external_number: str | None
+    #: The store's number for its customer.
+    store_customer: str | None
     #: The customer: an Initiative contact's id.
     customer_contact_id: int | None
     location_id: int
@@ -163,12 +177,23 @@ class OrderSummary(BaseModel):
     total: Decimal
 
 
+class CustomerOrder(BaseModel):
+    """Another order of the same store's customer."""
+
+    id: int
+    code: str
+
+
 class OrderRead(OrderSummary):
     external_id: str | None
     initiative_id: int | None
     shipping: Decimal
     tax: Decimal
     discount: Decimal
+    #: What the store has refunded of it.
+    refunded: Decimal
+    #: The store customer's other orders, the latest first.
+    customer_orders: list[CustomerOrder]
     delivery_address: str | None
     lines: list[OrderLineRead]
     shipments: list[OrderShipmentRead]
@@ -184,6 +209,7 @@ def _summary(order: Order, value: Decimal) -> dict[str, Any]:
         "code": order.code,
         "store_id": order.store_id,
         "external_number": order.external_number,
+        "store_customer": order.store_customer,
         "customer_contact_id": order.customer_contact_id,
         "location_id": order.location_id,
         "ordered_on": order.ordered_on,
@@ -305,6 +331,18 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
     back = await _returns(db, held)
     choices = await _choices(db, sent, held)
     value = sum((line.quantity * line.price for line in order_lines), Decimal(0))
+    others: list[Order] = []
+    if order.store_customer is not None:
+        found = await db.exec(
+            select(Order)
+            .where(
+                Order.store_id == order.store_id,
+                Order.store_customer == order.store_customer,
+                Order.id != order.id,
+            )
+            .order_by(*LATEST_FIRST)
+        )
+        others = list(found.all())
     return OrderRead(
         **_summary(order, value),
         external_id=order.external_id,
@@ -312,12 +350,16 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
         shipping=order.shipping,
         tax=order.tax,
         discount=order.discount,
+        refunded=order.refunded,
+        customer_orders=[CustomerOrder(id=other.id, code=other.code) for other in others],
         delivery_address=order.delivery_address,
         lines=[
             OrderLineRead(
                 id=line.id,
                 item=items[line.item_id],
                 quantity=line.quantity,
+                current_quantity=orders.selling(line),
+                refunded_quantity=line.refunded_quantity,
                 price=line.price,
                 bundle_line_id=line.bundle_line_id,
                 held=holding[line.id],
@@ -387,24 +429,28 @@ async def list_orders(
     db: OrganizationSessionDep,
     page: PageDep,
     order_status: Annotated[OrderStatus | None, Query(alias="status")] = None,
+    store_customer: Annotated[str | None, Query(max_length=64)] = None,
 ) -> Page[OrderSummary]:
-    """Orders, the latest first: of one status, or all."""
+    """Orders, the latest first: all, or those of one status, or of a store's
+    customer, by the store's number for them."""
     value = (
         select(OrderLine.order_id, func.sum(OrderLine.quantity * OrderLine.price).label("value"))
         .group_by(col(OrderLine.order_id))
         .subquery()
     )
-    counted = select(func.count()).select_from(Order)
-    query = select(Order, value.c.value).outerjoin(value, value.c.order_id == col(Order.id))
+    conditions = []
     if order_status is not None:
-        counted = counted.where(Order.status == order_status)
-        query = query.where(Order.status == order_status)
-    total = (await db.exec(counted)).one()
-    rows = await db.exec(
-        query.order_by(col(Order.ordered_on).desc(), col(Order.id).desc())
-        .offset(page.offset)
-        .limit(page.limit)
+        conditions.append(Order.status == order_status)
+    if store_customer:
+        conditions.append(Order.store_customer == store_customer)
+    counted = select(func.count()).select_from(Order).where(*conditions)
+    query = (
+        select(Order, value.c.value)
+        .outerjoin(value, value.c.order_id == col(Order.id))
+        .where(*conditions)
     )
+    total = (await db.exec(counted)).one()
+    rows = await db.exec(query.order_by(*LATEST_FIRST).offset(page.offset).limit(page.limit))
     return Page(
         items=[OrderSummary(**_summary(order, value or Decimal(0))) for order, value in rows.all()],
         total=total,

@@ -5,13 +5,15 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 from sqlmodel import select
 
 from hoard import channels, push, sync
-from hoard.channels import ConnectError
+from hoard.channels import ConnectError, StoreOrder
 from hoard.channels.fake import FakeConnector
 from hoard.channels.hooks import webhook_address
 from hoard.records import Channel, Store, StoreNudge
@@ -114,6 +116,26 @@ async def test_a_webhook_leaves_one_nudge_per_record_while_it_waits(
     ]
     refused = await call("webhook", {"connection": "shopify", "headers": [], "body": "{}"})
     assert refused.status_code == 400
+
+
+async def test_an_orders_waiting_nudge_keeps_the_newest_body_delivered(
+    call, store: FakeConnector, serving_database, organization_id
+):
+    await call("after_connect", {"connection": "shopify", "values": TYPED})
+    first = datetime(2026, 11, 12, 9, tzinfo=UTC)
+    order = StoreOrder(id="o-1", number="#1001", ordered_at=first, lines=[])
+    for minutes in (5, 1, 10, 7):
+        headers, body = store.order_webhook(
+            replace(order, updated_at=first + timedelta(minutes=minutes))
+        )
+        delivered = {"connection": "shopify", "headers": headers, "body": body}
+        assert (await call("webhook", delivered)).status_code == 204
+
+    async with serving_database.organization_session(organization_id) as db:
+        [nudge] = (await db.exec(select(StoreNudge))).all()
+    assert nudge.body is not None
+    kept = store.webhook_order(nudge.body)
+    assert kept is not None and kept.updated_at == first + timedelta(minutes=10)
 
 
 async def test_clearing_the_connection_unsubscribes_and_disconnects_its_store(
