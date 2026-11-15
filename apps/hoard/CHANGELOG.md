@@ -6,6 +6,12 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-14
+
+### Fixed
+
+- Hoard starts on a server that runs it from the marketplace package: the image now carries the script that sets up its database logins.
+
 ## [0.1.1] - 2026-11-13
 
 ### Fixed
