@@ -13,15 +13,6 @@
     "bakery_food": {
       "name": "Bakery and food",
       "units": {
-        "g": "g",
-        "kg": "kg",
-        "oz": "oz",
-        "lb": "lb",
-        "ml": "mL",
-        "l": "L",
-        "fl_oz": "fl oz",
-        "each": "Each",
-        "dozen": "Dozen",
         "case": "Case"
       },
       "categories": {
@@ -74,16 +65,6 @@
     },
     "cosmetics_soap": {
       "name": "Cosmetics and soap",
-      "units": {
-        "g": "g",
-        "kg": "kg",
-        "oz": "oz",
-        "lb": "lb",
-        "ml": "mL",
-        "l": "L",
-        "fl_oz": "fl oz",
-        "each": "Each"
-      },
       "categories": {
         "oil_butter": "Oil and butter",
         "lye": "Lye",
@@ -128,14 +109,6 @@
     "drinks": {
       "name": "Tea, coffee and drinks",
       "units": {
-        "g": "g",
-        "kg": "kg",
-        "oz": "oz",
-        "lb": "lb",
-        "ml": "mL",
-        "l": "L",
-        "fl_oz": "fl oz",
-        "each": "Each",
         "bottle_50ml": "Bottle, 50 mL",
         "bottle_200ml": "Bottle, 200 mL",
         "bottle_375ml": "Bottle, 375 mL",
@@ -207,15 +180,6 @@
     "restaurant_bar": {
       "name": "Restaurant, café and bar",
       "units": {
-        "g": "g",
-        "kg": "kg",
-        "oz": "oz",
-        "lb": "lb",
-        "ml": "mL",
-        "l": "L",
-        "fl_oz": "fl oz",
-        "each": "Each",
-        "dozen": "Dozen",
         "case": "Case",
         "bunch": "Bunch",
         "bottle_375ml": "Bottle, 375 mL",

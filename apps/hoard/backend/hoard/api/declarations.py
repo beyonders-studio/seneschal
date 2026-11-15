@@ -61,8 +61,11 @@ class DeclarationRead(BaseModel):
     recorded_allergens: list[Allergen] | None
     #: What an ingredient list calls a material, when not its name.
     ingredient_name: str | None
-    #: What it is made of, the heaviest first.
+    #: What it is made of, the heaviest first, then those Hoard can't weigh.
     ingredients: list[str]
+    #: The ingredients Hoard can't weigh, whose place in the list isn't
+    #: known; while there are any, the fragrance shares are incomplete.
+    unweighed: list[str]
     #: The allergens it contains, rolled up.
     allergens: list[Allergen]
     #: The materials in it whose allergens are not recorded.
@@ -108,6 +111,7 @@ def _read(
         recorded_allergens=None if recorded is None else [Allergen(key) for key in recorded],
         ingredient_name=ingredient_name,
         ingredients=declared.ingredients,
+        unweighed=declared.unweighed,
         allergens=declared.allergens,
         undeclared=declared.undeclared,
         recorded_fragrance=_recorded(fragrance),

@@ -9,14 +9,28 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
+from fastapi import status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard.api.properties import HoardPropertySummary, values_of
+from hoard.api.settings import SettingsError
 from hoard.holds import held_lots
-from hoard.records import Lot, RecordKind, StockLevel
+from hoard.records import (
+    Adjustment,
+    Lot,
+    ProductionRun,
+    ProductionRunLine,
+    PurchaseLine,
+    Recipe,
+    RecipeLine,
+    RecordKind,
+    StockLevel,
+    StocktakeRow,
+)
+from seneschal_core.api import refuse
 
 #: A name or code someone types.
 Text = Annotated[str, Field(min_length=1, max_length=200)]
@@ -110,3 +124,23 @@ def lot_read(lot: Lot, on_hold: bool, properties: list[HoardPropertySummary]) ->
     return ItemLotRead.model_validate(
         {**lot.model_dump(), "on_hold": on_hold, "properties": properties}
     )
+
+
+async def require_tracking_unit(db: AsyncSession, item_id: int, was: int, now: int) -> None:
+    """Refuse (409 ``TRACKING_UNIT_IN_USE``) changing a material's or a base's
+    tracking unit once anything records a number in it: its stock movements,
+    purchases and stocktake counts, a recipe line naming it, its own recipe,
+    or a run making or using it. Before then it changes freely."""
+    if was == now:
+        return
+    for held in (
+        select(Adjustment.id).where(Adjustment.item_id == item_id),
+        select(PurchaseLine.id).where(PurchaseLine.material_id == item_id),
+        select(StocktakeRow.id).where(StocktakeRow.item_id == item_id),
+        select(RecipeLine.id).where(RecipeLine.item_id == item_id),
+        select(Recipe.id).where(Recipe.base_id == item_id),
+        select(ProductionRun.id).where(ProductionRun.item_id == item_id),
+        select(ProductionRunLine.id).where(ProductionRunLine.item_id == item_id),
+    ):
+        if (await db.exec(held.limit(1))).first() is not None:
+            raise refuse(status.HTTP_409_CONFLICT, SettingsError.TRACKING_UNIT_IN_USE)

@@ -6,13 +6,14 @@ is a product whose recipe holds variations, of other products or other
 bundles, and whose own variations take no recipe of their own. Nothing is made,
 at any depth, from itself.
 
-A recipe scales to any quantity of its output, and shows each line's share of
-the batch by weight (:func:`percents`).
+A line is written by amount or as parts of a ratio, in any unit that converts
+to its item's tracking unit, and keeps its quantity in the tracking unit,
+which ``hoard.units`` derives from what was written. A recipe scales to any
+quantity of its output, and shows each line's share of the batch by weight.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
@@ -22,22 +23,19 @@ from sqlalchemy import delete, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import store_fields
+from hoard import store_fields, units
 from hoard.records import (
-    PLACES,
-    Base,
     Item,
     ItemKind,
     Material,
     Product,
     Recipe,
     RecipeLine,
+    Unit,
     Variation,
 )
+from hoard.units import UnitError, UnitRefused
 from seneschal_core.db import WriteSession
-
-#: A line's share of its recipe, as a percentage to two places.
-PERCENT_PLACES = Decimal("0.01")
 
 
 class RecipeError(StrEnum):
@@ -58,17 +56,20 @@ class RecipeError(StrEnum):
 
 
 class RecipeRefused(Exception):
-    def __init__(self, code: RecipeError) -> None:
+    def __init__(self, code: RecipeError | UnitError) -> None:
         super().__init__(code.value)
         self.code = code
 
 
 @dataclass(frozen=True)
 class Line:
-    """An item a batch takes, and how much of it, in its tracking unit."""
+    """An item a batch takes, and the number written for it: its amount, or
+    its parts of a ratio, in ``unit_id``, or its tracking unit when none is
+    given."""
 
     item_id: int
-    quantity: Decimal
+    written: Decimal
+    unit_id: int | None = None
 
 
 async def _output_items(db: AsyncSession, recipe: Recipe) -> set[int]:
@@ -163,10 +164,58 @@ async def _check_new(db: AsyncSession, recipe: Recipe) -> None:
         raise RecipeRefused(RecipeError.RECIPE_EXISTS)
 
 
+@dataclass(frozen=True)
+class Worked:
+    """A recipe's lines worked out for one batch (``hoard.units.recipe``), with
+    the unit each was written in, its item's tracking unit, and its share of
+    the batch by weight."""
+
+    figures: units.Figures
+    units: list[Unit | None]
+    tracking: list[Unit | None]
+    percents: list[Decimal | None]
+
+
+async def work_out(db: AsyncSession, recipe: Recipe, lines: Sequence[Line]) -> Worked:
+    """``lines`` of ``recipe`` worked out for one batch, by amount or by ratio
+    as the recipe is written. Refused for a line in a unit that doesn't
+    convert to its item's tracking unit, a ratio with no line measured like
+    its total, and a line that converts to less than Hoard keeps."""
+    known = await units.load(db)
+    tracked = await units.tracking_units(db, [line.item_id for line in lines])
+    tracking = [known.get(tracked.get(line.item_id, 0)) for line in lines]
+    written = [
+        known.get(line.unit_id) if line.unit_id is not None else unit
+        for line, unit in zip(lines, tracking, strict=True)
+    ]
+    if any(not units.converts(*pair) for pair in zip(written, tracking, strict=True)):
+        raise RecipeRefused(UnitError.UNIT_NOT_CONVERTIBLE)
+    total_unit = known.get(recipe.total_unit_id or 0)
+    if recipe.by_ratio and (recipe.total is None or total_unit is None):
+        raise RecipeRefused(UnitError.RECIPE_RATIO_TOTAL)
+    try:
+        figures = units.recipe(
+            [
+                units.RecipeLine(line.written, unit, track)
+                for line, unit, track in zip(lines, written, tracking, strict=True)
+            ],
+            total=recipe.total if recipe.by_ratio else None,
+            total_unit=total_unit,
+        )
+    except UnitRefused as refused:
+        raise RecipeRefused(refused.code) from None
+    weights = [
+        units.grams(quantity, track)
+        for quantity, track in zip(figures.quantities, tracking, strict=True)
+    ]
+    return Worked(figures, written, tracking, units.percents(weights))
+
+
 async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recipe:
     """Save ``recipe`` holding ``lines``, in their order, in place of any it
-    held. A bundle's recipe marks its product as a bundle. What Hoard works
-    out of a product, such as its allergens, is sent to each store mapping it
+    held, each line's quantity derived from what was written. A bundle's
+    recipe marks its product as a bundle. What Hoard works out of a product,
+    such as its allergens, is sent to each store mapping it
     (``hoard.store_fields``)."""
     if len({line.item_id for line in lines}) != len(lines):
         raise RecipeRefused(RecipeError.RECIPE_LINE_REPEATED)
@@ -174,6 +223,9 @@ async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recip
     await _check_bundle(db, recipe)
     await _check_kinds(db, recipe, lines)
     await _check_cycle(db, recipe, lines)
+    worked = await work_out(db, recipe, lines)
+    if not recipe.by_ratio:
+        recipe.total = recipe.total_unit_id = None
     recipe.organization_id = db.organization_id
     db.add(recipe)
     await db.flush()
@@ -183,10 +235,14 @@ async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recip
             organization_id=db.organization_id,
             recipe_id=recipe.id,
             item_id=line.item_id,
-            quantity=line.quantity,
+            quantity=quantity,
+            written=line.written,
+            unit_id=None if unit is None else unit.id,
             position=position,
         )
-        for position, line in enumerate(lines)
+        for position, (line, quantity, unit) in enumerate(
+            zip(lines, worked.figures.quantities, worked.units, strict=True)
+        )
     )
     if recipe.product_id is not None:
         product = await db.get_one(Product, recipe.product_id)
@@ -220,41 +276,3 @@ async def lines_of(db: AsyncSession, recipe_ids: Iterable[int]) -> dict[int, lis
     for line in found:
         held[line.recipe_id].append(line)
     return held
-
-
-async def tracking_units(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, int]:
-    """The unit each material or base among ``item_ids`` is counted in. A
-    variation counts in units of itself, and has none."""
-    ids = list(item_ids)
-    units: dict[int, int] = {}
-    for kind in (Material, Base):
-        found = await db.exec(select(kind.id, kind.tracking_unit_id).where(col(kind.id).in_(ids)))
-        units |= dict(found.all())
-    return units
-
-
-def scale(batch_quantity: Decimal, quantity: Decimal | None) -> Decimal:
-    """How many batches make ``quantity``: one, when no quantity is asked for."""
-    return Decimal(1) if quantity is None else quantity / batch_quantity
-
-
-def scaled(quantity: Decimal, factor: Decimal) -> Decimal:
-    """``quantity`` of a line, ``factor`` batches over."""
-    return (quantity * factor).quantize(PLACES)
-
-
-def percents(lines: Sequence[tuple[int | None, Decimal]]) -> list[Decimal | None]:
-    """Each line's share of the recipe by weight, from its ``(unit, quantity)``:
-    its share of the lines in the unit most of them are in (the earliest such
-    line's, when units tie), as a percentage. A line in another unit, or in
-    none, has no share."""
-    counts = Counter(unit for unit, _ in lines if unit is not None)
-    if not counts:
-        return [None] * len(lines)
-    most = max(counts.values())
-    weighed = next(unit for unit, _ in lines if unit is not None and counts[unit] == most)
-    total = sum((quantity for unit, quantity in lines if unit == weighed), Decimal(0))
-    return [
-        (quantity * 100 / total).quantize(PERCENT_PLACES) if unit == weighed else None
-        for unit, quantity in lines
-    ]

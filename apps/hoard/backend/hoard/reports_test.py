@@ -220,6 +220,7 @@ async def test_the_allergen_matrix_is_each_active_products_allergens(
                     recipe_id=recipe.id,
                     item_id=item_id,
                     quantity=Decimal(200),
+                    written=Decimal(200),
                 )
             )
     await db.commit()

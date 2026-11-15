@@ -1,22 +1,6 @@
 {
   "base_word": "base",
-  "units": [
-    "g",
-    "kg",
-    "oz",
-    "lb",
-    "ml",
-    "l",
-    "fl_oz",
-    "each",
-    "dozen",
-    "case",
-    "bunch",
-    "bottle_375ml",
-    "bottle_750ml",
-    "bottle_1l",
-    "bottle_1750ml"
-  ],
+  "units": ["case", "bunch", "bottle_375ml", "bottle_750ml", "bottle_1l", "bottle_1750ml"],
   "categories": [
     { "key": "produce", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "meat_poultry", "kinds": ["material"], "picking": "earliest_expiry" },

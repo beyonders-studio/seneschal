@@ -1,6 +1,6 @@
 {
   "base_word": "base",
-  "units": ["g", "kg", "oz", "lb", "ml", "l", "fl_oz", "each", "dozen", "case"],
+  "units": ["case"],
   "categories": [
     { "key": "flour_grain", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "sugar_sweetener", "kinds": ["material"], "picking": "earliest_expiry" },

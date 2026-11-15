@@ -31,6 +31,7 @@ async def test_a_material_records_what_its_supplier_declares(
         "recorded_allergens": ["milk", "tree_nuts"],
         "ingredient_name": "Hazelnut flavour syrup",
         "ingredients": ["Hazelnut flavour syrup"],
+        "unweighed": [],
         "allergens": ["milk", "tree_nuts"],
         "undeclared": [],
         "recorded_fragrance": None,

@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 from sqlmodel import col, select
 
-from hoard import setups
+from hoard import setups, units
 from hoard.records import (
     AdjustmentReason,
     Category,
@@ -147,7 +147,7 @@ async def test_a_renamed_property_is_found_by_its_key(db: WriteSession):
 async def test_a_setup_wants_every_word(db: WriteSession):
     drinks = setups.setups()["drinks"]
     words = _words(drinks)
-    del words["units.g"]
+    del words["units.bottle_750ml"]
 
     with pytest.raises(setups.SetupRefused):
         await setups.add(db, drinks, words)
@@ -164,3 +164,11 @@ async def test_a_setups_hold_reasons_keep_their_keys_beside_the_defaults(db: Wri
     # A default the organization has keeps its own name; another is added named.
     assert [*reasons.all()][-2:] == [("recall", None), ("tasting", "<hold_reasons.tasting>")]
     assert "hold_reasons.curing" in held.words()
+
+
+async def test_the_standard_units_are_no_start_and_no_setup_brings_one(db: WriteSession):
+    await units.add_standard(db)
+
+    assert not await setups.started(db)
+    for setup in setups.setups().values():
+        assert [unit for unit in setup.units if units.match(unit)] == []

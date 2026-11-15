@@ -1,7 +1,10 @@
 """Materials: what Hoard buys and never makes, and their stock per location.
 
 A material's average cost is sent only to a member who sees costs; none is
-taken, since purchases and starting stock set it (``hoard.costing``).
+taken, since purchases and starting stock set it (``hoard.costing``). Bought
+and tracked in standard units of one measure, its purchase conversion is
+theirs (``hoard.units``), and only otherwise the number sent. Its tracking
+unit is fixed once anything records a number in it.
 """
 
 from __future__ import annotations
@@ -15,14 +18,15 @@ from sqlalchemy import func, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import stock
+from hoard import stock, units
 from hoard.api import items
 from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found, refused_as, require_references
 from hoard.api.shapes import Page, PageDep
-from hoard.records import CategoryKind, Item, Material, RecordKind
-from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
+from hoard.records import CategoryKind, Item, Material, RecordKind, Unit
+from hoard.units import UnitRefused
+from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 
@@ -33,8 +37,8 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "IN_USE"},
-    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN"},
+    409: {"description": "IN_USE, TRACKING_UNIT_IN_USE"},
+    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, AMOUNT_TOO_SMALL"},
 }
 
 
@@ -49,6 +53,9 @@ class MaterialRead(BaseModel):
     purchase_unit_id: int | None
     #: Tracking units in one purchase unit.
     purchase_conversion: Decimal
+    #: What one tracking unit weighs, in grams, for a material not tracked by
+    #: weight; only declarations read it.
+    unit_weight: Decimal | None
     low_stock_limit: Decimal | None
     category_id: int | None
     #: The preferred supplier: an Initiative contact's id.
@@ -75,7 +82,10 @@ class MaterialWrite(BaseModel):
     inventoriable: bool = True
     tracking_unit_id: int
     purchase_unit_id: int | None = None
+    #: Taken only for units that don't convert by themselves.
     purchase_conversion: items.Positive = Decimal(1)
+    #: Kept only for a material not tracked by weight.
+    unit_weight: items.Positive | None = None
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
     supplier_contact_id: int | None = None
@@ -116,7 +126,27 @@ async def _write(db: AsyncSession, material: Material, body: MaterialWrite) -> N
         units=(body.tracking_unit_id, body.purchase_unit_id),
         category_id=body.category_id,
     )
-    material.sqlmodel_update(body.model_dump())
+    if material.id is not None:
+        await items.require_tracking_unit(
+            db, material.id, material.tracking_unit_id, body.tracking_unit_id
+        )
+    tracking = await db.get_one(Unit, body.tracking_unit_id)
+    bought = (
+        None if body.purchase_unit_id is None else await db.get_one(Unit, body.purchase_unit_id)
+    )
+    try:
+        conversion = units.purchase_conversion(bought, tracking)
+    except UnitRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+    material.sqlmodel_update(
+        body.model_dump()
+        | {
+            "purchase_conversion": conversion or body.purchase_conversion,
+            "unit_weight": None
+            if units.measure(tracking) is units.Measure.MASS
+            else body.unit_weight,
+        }
+    )
 
 
 @router.get("", responses=_READ)

@@ -2,8 +2,15 @@
 
 A run makes a variation or a base from its recipe, in batches. Opening it
 fills its lines from the recipe: each line's quantity times the planned
-batches. The lines are the run's own from then on, so a later change to the
-recipe leaves them as they are; changing the planned batches scales them.
+batches. A run can instead make as much as an amount of one of its lines
+allows: it plans the batches that take exactly that amount (``hoard.units.use``).
+The lines are the run's own from then on, so a later change to the recipe
+leaves them as they are; changing the planned batches scales them.
+
+What a run would take is planned beside what is **usable** at its location:
+what is available (``hoard.orders.available``), less what lots past their
+expiry date hold, since nobody plans to use them up. A line needing more is
+short by the difference, which completing does not refuse.
 
 A line consumes the lot someone recorded on it. Completing a run assumes a lot
 for each line that names none: the item's lots at the run's location that hold
@@ -28,14 +35,15 @@ events, and names no lot of what it consumes.
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 from enum import StrEnum
 
 from sqlalchemy import delete, func
 from sqlmodel import col, or_, select
 
-from hoard import costing, events, holds
+from hoard import costing, events, holds, orders, recipes, units
 from hoard.holds import HoldError
 from hoard.records import (
     PLACES,
@@ -49,7 +57,8 @@ from hoard.records import (
     RunStatus,
 )
 from hoard.stock import StockError, draw_lots
-from seneschal_core.db import WriteSession
+from hoard.units import UnitError, UnitRefused
+from seneschal_core.db import OrganizationSession, WriteSession
 
 
 class RunError(StrEnum):
@@ -67,15 +76,19 @@ class RunError(StrEnum):
     RUN_CODE_TAKEN = "RUN_CODE_TAKEN"
     #: The lot is not one of the line's item at the run's location.
     RUN_LOT_MISMATCH = "RUN_LOT_MISMATCH"
+    #: The item to make as much as it allows is not one of its recipe's lines.
+    RUN_NOT_IN_RECIPE = "RUN_NOT_IN_RECIPE"
 
 
 class RunRefused(Exception):
-    def __init__(self, code: RunError | StockError | HoldError) -> None:
+    def __init__(
+        self, code: RunError | StockError | HoldError | UnitError | recipes.RecipeError
+    ) -> None:
         super().__init__(code.value)
         self.code = code
 
 
-async def recipe_for(db: WriteSession, item_id: int) -> Recipe | None:
+async def recipe_for(db: OrganizationSession, item_id: int) -> Recipe | None:
     """The recipe that makes ``item_id``, a variation or a base."""
     found = await db.exec(
         select(Recipe).where(or_(Recipe.variation_id == item_id, Recipe.base_id == item_id))
@@ -100,36 +113,165 @@ async def next_code(db: WriteSession) -> str:
     return f"R-{(latest or 0) + 1:04d}"
 
 
-async def open_run(db: WriteSession, run: ProductionRun, *, quiet: bool = False) -> ProductionRun:
-    """Add ``run``, not started or in progress, with its lines from its item's
-    recipe times its planned batches. A ``quiet`` run records no event."""
-    recipe = await recipe_for(db, run.item_id)
-    if recipe is None:
-        raise RunRefused(RunError.RUN_NO_RECIPE)
-    run.organization_id = db.organization_id
-    run.recipe_id = recipe.id
-    if run.status is RunStatus.IN_PROGRESS:
-        run.started_on = run.started_on or date.today()
-    db.add(run)
-    await db.flush()
-    recipe_lines = await db.exec(
+async def _recipe_lines(db: OrganizationSession, recipe: Recipe) -> list[RecipeLine]:
+    found = await db.exec(
         select(RecipeLine)
         .where(RecipeLine.recipe_id == recipe.id)
         .order_by(col(RecipeLine.position), col(RecipeLine.id))
     )
-    for line in recipe_lines.all():
+    return list(found.all())
+
+
+@dataclass(frozen=True)
+class Planned:
+    """What a run would take of its recipe: its batches, kept to six places,
+    what they make, and each line's quantity."""
+
+    batches: Decimal
+    makes: Decimal
+    lines: list[RecipeLine]
+    quantities: list[Decimal]
+
+
+async def planned(
+    db: OrganizationSession,
+    recipe: Recipe,
+    batches: Decimal,
+    use: tuple[int, Decimal] | None,
+) -> Planned:
+    """``recipe``'s lines over ``batches``; or, with ``use``, an item among
+    them and an amount of it in its tracking unit, over the batches that take
+    exactly that amount of it, the other lines scaled from what was written
+    (``hoard.units.use``)."""
+    lines = await _recipe_lines(db, recipe)
+    try:
+        if use is None:
+            quantities = [units.scaled(line.quantity, batches) for line in lines]
+        else:
+            item_id, amount = use
+            index = next((at for at, line in enumerate(lines) if line.item_id == item_id), None)
+            if index is None:
+                raise RunRefused(RunError.RUN_NOT_IN_RECIPE)
+            written = [recipes.Line(line.item_id, line.written, line.unit_id) for line in lines]
+            worked = await recipes.work_out(db, recipe, written)
+            took = units.use(worked.figures, index, amount)
+            batches, quantities = took.batches, took.quantities
+        kept = units.kept(batches)
+        if any(quantity <= 0 for quantity in quantities):
+            raise UnitRefused(UnitError.AMOUNT_TOO_SMALL)
+    except (UnitRefused, recipes.RecipeRefused) as refused:
+        raise RunRefused(refused.code) from None
+    return Planned(kept, units.scaled(recipe.batch_quantity, batches), lines, quantities)
+
+
+async def open_run(
+    db: WriteSession,
+    run: ProductionRun,
+    *,
+    quiet: bool = False,
+    use: tuple[int, Decimal] | None = None,
+) -> ProductionRun:
+    """Add ``run``, not started or in progress, with its lines from its item's
+    recipe times its planned batches, or, with ``use``, the batches that take
+    exactly an amount of one line (:func:`planned`). A ``quiet`` run records
+    no event."""
+    recipe = await recipe_for(db, run.item_id)
+    if recipe is None:
+        raise RunRefused(RunError.RUN_NO_RECIPE)
+    plan = await planned(db, recipe, run.planned_batches, use)
+    run.organization_id = db.organization_id
+    run.recipe_id = recipe.id
+    run.planned_batches = plan.batches
+    if run.status is RunStatus.IN_PROGRESS:
+        run.started_on = run.started_on or date.today()
+    db.add(run)
+    await db.flush()
+    for line, quantity in zip(plan.lines, plan.quantities, strict=True):
         db.add(
             ProductionRunLine(
                 organization_id=db.organization_id,
                 run_id=run.id,
                 item_id=line.item_id,
-                quantity=(line.quantity * run.planned_batches).quantize(PLACES),
+                quantity=quantity,
             )
         )
     await db.flush()
     if run.status is RunStatus.IN_PROGRESS and not quiet:
         await events.record(db, await events.run_event(db, events.EventName.RUN_STARTED, run))
     return run
+
+
+async def usable(db: OrganizationSession, item_id: int, location_id: int, today: date) -> Decimal:
+    """What a run at ``location_id`` can plan to use of an item: what is
+    available there, less what its expired lots hold."""
+    return await orders.available(db, item_id, location_id) - await orders.expired(
+        db, item_id, location_id, today
+    )
+
+
+@dataclass(frozen=True)
+class PlanLine:
+    item_id: int
+    quantity: Decimal
+    #: What is usable at the run's location.
+    usable: Decimal
+    #: How much more it takes than is usable; None when it is not short.
+    short: Decimal | None
+
+
+@dataclass(frozen=True)
+class Plan:
+    """A run as it would be opened, beside what is usable at its location."""
+
+    batches: Decimal
+    #: What it makes, in its output's unit.
+    makes: Decimal
+    lines: list[PlanLine]
+    #: The most batches what is usable makes: the scarcest line's; None for a
+    #: recipe with no lines.
+    most: Decimal | None
+    #: With ``use``, while a line is short, the most of the named item those
+    #: batches use.
+    most_use: Decimal | None = None
+
+
+def short(quantity: Decimal, can_use: Decimal) -> Decimal | None:
+    """How much more than ``can_use`` a line takes, or None when it is not short."""
+    return quantity - can_use if quantity > can_use else None
+
+
+async def plan(
+    db: OrganizationSession,
+    item_id: int,
+    location_id: int,
+    batches: Decimal,
+    use: tuple[int, Decimal] | None,
+    today: date,
+) -> Plan:
+    """What a run of ``item_id`` at ``location_id`` would take, as
+    :func:`open_run` would plan it, each line beside what is usable there."""
+    recipe = await recipe_for(db, item_id)
+    if recipe is None:
+        raise RunRefused(RunError.RUN_NO_RECIPE)
+    took = await planned(db, recipe, batches, use)
+    lines: list[PlanLine] = []
+    most: Decimal | None = None
+    for line, quantity in zip(took.lines, took.quantities, strict=True):
+        can_use = await usable(db, line.item_id, location_id, today)
+        lines.append(PlanLine(line.item_id, quantity, can_use, short(quantity, can_use)))
+        covers = max(can_use, Decimal(0)) / line.quantity
+        most = covers if most is None else min(most, covers)
+    most_use = None
+    if use is not None and most is not None and any(line.short for line in lines):
+        named = next(line for line in took.lines if line.item_id == use[0])
+        most_use = units.scaled(named.quantity, most, down=True)
+    return Plan(
+        batches=took.batches,
+        makes=took.makes,
+        lines=lines,
+        most=None if most is None else most.quantize(PLACES, rounding=ROUND_DOWN),
+        most_use=most_use,
+    )
 
 
 def not_completed(run: ProductionRun) -> None:
@@ -142,7 +284,7 @@ async def plan_batches(db: WriteSession, run: ProductionRun, batches: Decimal) -
     """Plan ``batches`` for a run not yet completed, scaling its lines."""
     not_completed(run)
     for line in await lines(db, run.id):
-        line.quantity = (line.quantity * batches / run.planned_batches).quantize(PLACES)
+        line.quantity = units.scaled(line.quantity, batches / run.planned_batches)
     run.planned_batches = batches
     await db.flush()
 

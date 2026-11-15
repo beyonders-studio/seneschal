@@ -26,8 +26,9 @@ import type {
   PageRecipeRead,
   ReadRecipeParams,
   RecipeCreate,
+  RecipePreview,
   RecipeRead,
-  RecipeWrite,
+  RecipeWriteInput,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -275,7 +276,9 @@ export const useCreateRecipe = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getCreateRecipeMutationOptions(options), queryClient);
 };
 /**
- * A recipe: as one batch, or scaled to make ``quantity`` of its output.
+ * A recipe: as one batch, scaled to make ``quantity`` of its output, or
+ * scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
+ * or that item's tracking unit. That line then takes exactly the amount.
  * @summary Read Recipe
  */
 export const readRecipe = (
@@ -296,7 +299,7 @@ export const getReadRecipeQueryKey = (recipeId: number, params?: ReadRecipeParam
 
 export const getReadRecipeQueryOptions = <
   TData = Awaited<ReturnType<typeof readRecipe>>,
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
 >(
   recipeId: number,
   params?: ReadRecipeParams,
@@ -323,15 +326,17 @@ export const getReadRecipeQueryOptions = <
 };
 
 export type ReadRecipeQueryResult = NonNullable<Awaited<ReturnType<typeof readRecipe>>>;
-export type ReadRecipeQueryError = ErrorType<void | HTTPValidationError>;
+export type ReadRecipeQueryError = ErrorType<void>;
 
 /**
- * A recipe: as one batch, or scaled to make ``quantity`` of its output.
+ * A recipe: as one batch, scaled to make ``quantity`` of its output, or
+ * scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
+ * or that item's tracking unit. That line then takes exactly the amount.
  * @summary Read Recipe
  */
 export function useReadRecipe<
   TData = Awaited<ReturnType<typeof readRecipe>>,
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
 >(
   recipeId: number,
   params: undefined | ReadRecipeParams,
@@ -350,12 +355,14 @@ export function useReadRecipe<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A recipe: as one batch, or scaled to make ``quantity`` of its output.
+ * A recipe: as one batch, scaled to make ``quantity`` of its output, or
+ * scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
+ * or that item's tracking unit. That line then takes exactly the amount.
  * @summary Read Recipe
  */
 export function useReadRecipe<
   TData = Awaited<ReturnType<typeof readRecipe>>,
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
 >(
   recipeId: number,
   params?: ReadRecipeParams,
@@ -374,12 +381,14 @@ export function useReadRecipe<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A recipe: as one batch, or scaled to make ``quantity`` of its output.
+ * A recipe: as one batch, scaled to make ``quantity`` of its output, or
+ * scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
+ * or that item's tracking unit. That line then takes exactly the amount.
  * @summary Read Recipe
  */
 export function useReadRecipe<
   TData = Awaited<ReturnType<typeof readRecipe>>,
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
 >(
   recipeId: number,
   params?: ReadRecipeParams,
@@ -390,12 +399,14 @@ export function useReadRecipe<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A recipe: as one batch, or scaled to make ``quantity`` of its output.
+ * A recipe: as one batch, scaled to make ``quantity`` of its output, or
+ * scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
+ * or that item's tracking unit. That line then takes exactly the amount.
  * @summary Read Recipe
  */
 export function useReadRecipe<
   TData = Awaited<ReturnType<typeof readRecipe>>,
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
 >(
   recipeId: number,
   params?: ReadRecipeParams,
@@ -419,7 +430,7 @@ export function useReadRecipe<
  */
 export const updateRecipe = (
   recipeId: number,
-  recipeWrite: BodyType<RecipeWrite>,
+  recipeWriteInput: BodyType<RecipeWriteInput>,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
@@ -428,7 +439,7 @@ export const updateRecipe = (
       url: `/api/v1/recipes/${recipeId}`,
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      data: recipeWrite,
+      data: recipeWriteInput,
       signal,
     },
     options
@@ -474,9 +485,9 @@ export const getUpdateRecipeMutationOptions = <
 };
 
 export type UpdateRecipeMutationResult = NonNullable<Awaited<ReturnType<typeof updateRecipe>>>;
-export type UpdateRecipeMutationBody = BodyType<RecipeWrite>;
+export type UpdateRecipeMutationBody = BodyType<RecipeWriteInput>;
 export type UpdateRecipeMutationError = ErrorType<void>;
-export type UpdateRecipeMutationVariables = { recipeId: number; data: BodyType<RecipeWrite> };
+export type UpdateRecipeMutationVariables = { recipeId: number; data: BodyType<RecipeWriteInput> };
 
 /** @summary Update Recipe */
 export const useUpdateRecipe = <TError = ErrorType<void>, TContext = unknown>(
@@ -578,4 +589,95 @@ export const useDeleteRecipe = <TError = ErrorType<void>, TContext = unknown>(
   TContext
 > => {
   return useMutation(getDeleteRecipeMutationOptions(options), queryClient);
+};
+/**
+ * A draft recipe worked out for one batch, and written the other way,
+ * saving nothing. Its output, when sent, is what a switch to a ratio totals
+ * the lines measured like.
+ * @summary Preview Recipe
+ */
+export const previewRecipe = (
+  recipeCreate: BodyType<RecipeCreate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<RecipePreview>(
+    {
+      url: `/api/v1/recipes/preview`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: recipeCreate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPreviewRecipeMutationKey = () => ["previewRecipe"] as const;
+
+export const getPreviewRecipeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewRecipe>>,
+    TError,
+    PreviewRecipeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof previewRecipe>>,
+  TError,
+  PreviewRecipeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getPreviewRecipeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof previewRecipe>>,
+    PreviewRecipeMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return previewRecipe(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PreviewRecipeMutationResult = NonNullable<Awaited<ReturnType<typeof previewRecipe>>>;
+export type PreviewRecipeMutationBody = BodyType<RecipeCreate>;
+export type PreviewRecipeMutationError = ErrorType<void>;
+export type PreviewRecipeMutationVariables = { data: BodyType<RecipeCreate> };
+
+/**
+ * A draft recipe worked out for one batch, and written the other way,
+ * saving nothing. Its output, when sent, is what a switch to a ratio totals
+ * the lines measured like.
+ * @summary Preview Recipe
+ */
+export const usePreviewRecipe = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof previewRecipe>>,
+      TError,
+      PreviewRecipeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof previewRecipe>>,
+  TError,
+  PreviewRecipeMutationVariables,
+  TContext
+> => {
+  return useMutation(getPreviewRecipeMutationOptions(options), queryClient);
 };

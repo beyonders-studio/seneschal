@@ -330,6 +330,7 @@ async def test_a_bundle_is_split_into_its_parts(
                 recipe_id=recipe.id,
                 item_id=item.id,
                 quantity=Decimal(quantity),
+                written=Decimal(quantity),
             )
         )
     await db.flush()

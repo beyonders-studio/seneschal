@@ -2,14 +2,17 @@
 units, categories with their picking rules, locations and adjustment reasons. Every member reads them; only a community admin changes
 them (:data:`~hoard.api.deps.AdminDep`).
 
-An organization starts with its main location and the default adjustment
-reasons, which Hoard makes itself the first time each list is read.
+An organization starts with its main location, the default adjustment reasons
+and Hoard's standard units (``hoard.units``), which Hoard makes itself the
+first time each list is read. A standard unit is never renamed or removed,
+and no unit of the organization's own is named like one.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
+from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Any
 
@@ -20,7 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import stock
+from hoard import stock, units
 from hoard.api.deps import AdminDep, HoardError
 from hoard.records import (
     AdjustmentReason,
@@ -62,6 +65,10 @@ class SettingsError(StrEnum):
     UNIT_UNKNOWN = "UNIT_UNKNOWN"
     #: The category named is not one of the organization's for this kind of record.
     CATEGORY_UNKNOWN = "CATEGORY_UNKNOWN"
+    #: A standard unit keeps its name, and stays.
+    UNIT_STANDARD = "UNIT_STANDARD"
+    #: Numbers are recorded in an item's tracking unit, so it stays.
+    TRACKING_UNIT_IN_USE = "TRACKING_UNIT_IN_USE"
 
 
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
@@ -69,7 +76,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "ADMIN_ONLY, READ_ONLY"},
     404: {"description": "NOT_FOUND"},
-    409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION"},
+    409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD"},
     422: {"description": "NAME_REQUIRED"},
 }
 
@@ -95,7 +102,22 @@ class SettingsUpdate(BaseModel):
 
 class SettingsUnitRead(BaseModel):
     id: int
+    #: A standard unit's is its standard name: pages call it by the words for
+    #: its key.
     name: str
+    #: Which standard unit it is, by key; null for a unit of the
+    #: organization's own.
+    standard: str | None
+    #: What a standard unit measures.
+    measure: units.Measure | None
+    #: The names a standard unit is found by.
+    aliases: list[str]
+
+
+class UnitConversion(BaseModel):
+    #: How many of the one unit make one of the other; null when they don't
+    #: convert by themselves, and a number is typed in.
+    factor: Decimal | None
 
 
 class SettingsUnitWrite(BaseModel):
@@ -252,34 +274,85 @@ def _settings(settings: OrganizationSettings) -> SettingsRead:
     return SettingsRead.model_validate(settings, from_attributes=True)
 
 
+def _unit(unit: Unit) -> SettingsUnitRead:
+    return SettingsUnitRead(
+        id=unit.id,
+        name=unit.name,
+        standard=unit.standard,
+        measure=units.measure(unit),
+        aliases=units.aliases(unit.standard) if unit.standard else [],
+    )
+
+
+async def _units(db: AsyncSession) -> list[Unit]:
+    """The standard units in their order, then the organization's own by name."""
+    order = {unit.key: position for position, unit in enumerate(units.STANDARD_UNITS)}
+    found = await db.exec(select(Unit).order_by(col(Unit.name)))
+    return sorted(found, key=lambda unit: order.get(unit.standard or "", len(order)))
+
+
 @router.get("/units", responses=_READ)
-async def list_settings_units(db: OrganizationSessionDep) -> list[SettingsUnitRead]:
-    """The units stock is counted and bought in, by name."""
-    units = await db.exec(select(Unit).order_by(col(Unit.name)))
-    return [SettingsUnitRead.model_validate(unit, from_attributes=True) for unit in units]
+async def list_settings_units(
+    db: OrganizationSessionDep, organization: OrganizationDep, plugin: PluginDep
+) -> list[SettingsUnitRead]:
+    """The units stock is counted and bought in: Hoard's standard units, which
+    an organization that lacks any of them is given, then its own by name."""
+    found = await _units(db)
+    standard = sum(unit.standard is not None for unit in found)
+    if standard < len(units.STANDARD_UNITS) and await _made_by_hoard(
+        organization, plugin, units.add_standard
+    ):
+        found = await _units(db)
+    return [_unit(unit) for unit in found]
+
+
+@router.get("/units/conversion", responses=_READ)
+async def read_unit_conversion(
+    db: OrganizationSessionDep, from_unit_id: int, to_unit_id: int
+) -> UnitConversion:
+    """How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+    are standard units of one measure: as a purchase converts."""
+    source, target = await found(db, Unit, from_unit_id), await found(db, Unit, to_unit_id)
+    return UnitConversion(factor=units.purchase_conversion(source, target))
+
+
+def _own_name(name: str) -> str:
+    """``name`` for a unit of the organization's own, refused when it names a
+    standard unit."""
+    if units.match(name) is not None:
+        raise refuse(status.HTTP_409_CONFLICT, SettingsError.NAME_TAKEN)
+    return name
+
+
+async def _own_unit(db: AsyncSession, unit_id: int) -> Unit:
+    """The organization's own unit ``unit_id``, refused for a standard unit."""
+    unit = await found(db, Unit, unit_id)
+    if unit.standard is not None:
+        raise refuse(status.HTTP_409_CONFLICT, SettingsError.UNIT_STANDARD)
+    return unit
 
 
 @router.post("/units", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
 async def create_settings_unit(
     body: SettingsUnitWrite, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsUnitRead:
-    unit = Unit(organization_id=db.organization_id, name=body.name)
+    unit = Unit(organization_id=db.organization_id, name=_own_name(body.name))
     await _save(db, unit)
-    return SettingsUnitRead.model_validate(unit, from_attributes=True)
+    return _unit(unit)
 
 
 @router.patch("/units/{unit_id}", responses=_CHANGE)
 async def update_settings_unit(
     unit_id: int, body: SettingsUnitWrite, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsUnitRead:
-    unit = await found(db, Unit, unit_id)
-    await _save(db, unit, name=body.name)
-    return SettingsUnitRead.model_validate(unit, from_attributes=True)
+    unit = await _own_unit(db, unit_id)
+    await _save(db, unit, name=_own_name(body.name))
+    return _unit(unit)
 
 
 @router.delete("/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
 async def delete_settings_unit(unit_id: int, _admin: AdminDep, db: WriteSessionDep) -> None:
-    await _remove(db, await found(db, Unit, unit_id))
+    await _remove(db, await _own_unit(db, unit_id))
 
 
 @router.get("/categories", responses=_READ)

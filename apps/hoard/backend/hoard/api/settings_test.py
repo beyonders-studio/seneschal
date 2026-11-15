@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlmodel import select
 
+from hoard import units
 from hoard.records import AdjustmentReason, DefaultReason, OrganizationSettings, Unit
 from seneschal_core.db import WriteSession
 
@@ -37,7 +38,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
 #: A change to each kind of setting, as a method, path and body.
 CHANGES = [
     ("PUT", "/api/v1/settings", {"currency": "EUR"}),
-    ("POST", "/api/v1/settings/units", {"name": "kg"}),
+    ("POST", "/api/v1/settings/units", {"name": "Jar"}),
     ("POST", "/api/v1/settings/categories", {"kind": "material", "name": "Tea"}),
     ("POST", "/api/v1/settings/locations", {"name": "Back room"}),
     ("POST", "/api/v1/settings/reasons", {"name": "Spilled"}),
@@ -78,15 +79,16 @@ async def test_an_organization_starts_with_its_main_location_and_reasons_made_by
 
 
 async def test_names_stay_unique_and_what_records_name_stays(
-    client, sign_in, db: WriteSession, unit: Unit, material
+    client, sign_in, db: WriteSession, material
 ):
     await sign_in(client, admin=True)
-    await material("Oolong")
+    jar = (await client.post("/api/v1/settings/units", json={"name": "Jar"})).json()
+    await material("Oolong", tracking_unit_id=jar["id"])
     await db.commit()
 
-    taken = await client.post("/api/v1/settings/units", json={"name": unit.name})
+    taken = await client.post("/api/v1/settings/units", json={"name": "Jar"})
     assert (taken.status_code, taken.json()) == (409, {"detail": "NAME_TAKEN"})
-    in_use = await client.delete(f"/api/v1/settings/units/{unit.id}")
+    in_use = await client.delete(f"/api/v1/settings/units/{jar['id']}")
     assert (in_use.status_code, in_use.json()) == (409, {"detail": "IN_USE"})
 
     main = (await client.get("/api/v1/settings/locations")).json()[0]
@@ -112,3 +114,45 @@ async def test_names_stay_unique_and_what_records_name_stays(
         "Packaging",
         "recorded",
     )
+
+
+async def test_an_organization_has_the_standard_units_which_stay_as_they_are(
+    client, sign_in, db: WriteSession
+):
+    await sign_in(client)
+
+    listed = (await client.get("/api/v1/settings/units")).json()
+    again = (await client.get("/api/v1/settings/units")).json()
+
+    assert listed == again
+    assert [unit["standard"] for unit in listed] == [unit.key for unit in units.STANDARD_UNITS]
+    gram = next(unit for unit in listed if unit["standard"] == "gram")
+    assert (gram["name"], gram["measure"]) == ("g", "mass")
+    assert {"g", "grams", "gramme"} <= set(gram["aliases"])
+    made = (await db.exec(select(Unit))).all()
+    assert {unit.created_by for unit in made} == {None}
+
+    await sign_in(client, admin=True)
+    for name in ("kg", "Kilos", "fl. oz"):
+        spelled = await client.post("/api/v1/settings/units", json={"name": name})
+        assert (spelled.status_code, spelled.json()) == (409, {"detail": "NAME_TAKEN"})
+    jar = (await client.post("/api/v1/settings/units", json={"name": "Jar"})).json()
+    assert (jar["standard"], jar["measure"], jar["aliases"]) == (None, None, [])
+    renamed = await client.patch(f"/api/v1/settings/units/{gram['id']}", json={"name": "Gram"})
+    removed = await client.delete(f"/api/v1/settings/units/{gram['id']}")
+    for refused in (renamed, removed):
+        assert (refused.status_code, refused.json()) == (409, {"detail": "UNIT_STANDARD"})
+    as_kg = await client.patch(f"/api/v1/settings/units/{jar['id']}", json={"name": "kg"})
+    assert (as_kg.status_code, as_kg.json()) == (409, {"detail": "NAME_TAKEN"})
+
+    kilogram = next(unit for unit in listed if unit["standard"] == "kilogram")
+    conversions = [
+        (
+            await client.get(
+                "/api/v1/settings/units/conversion",
+                params={"from_unit_id": source["id"], "to_unit_id": gram["id"]},
+            )
+        ).json()
+        for source in (kilogram, jar)
+    ]
+    assert conversions == [{"factor": "1000.000000"}, {"factor": None}]

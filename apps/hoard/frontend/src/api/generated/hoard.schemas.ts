@@ -586,6 +586,7 @@ export interface DeclarationRead {
   recorded_allergens: Allergen[] | null;
   ingredient_name: string | null;
   ingredients: string[];
+  unweighed: string[];
   allergens: Allergen[];
   undeclared: string[];
   recorded_fragrance: Partial<Record<FragranceAllergen, string>> | null;
@@ -1318,6 +1319,7 @@ export interface MaterialDetail {
   tracking_unit_id: number;
   purchase_unit_id: number | null;
   purchase_conversion: string;
+  unit_weight: string | null;
   low_stock_limit: string | null;
   category_id: number | null;
   supplier_contact_id: number | null;
@@ -1334,6 +1336,7 @@ export interface MaterialRead {
   tracking_unit_id: number;
   purchase_unit_id: number | null;
   purchase_conversion: string;
+  unit_weight: string | null;
   low_stock_limit: string | null;
   category_id: number | null;
   supplier_contact_id: number | null;
@@ -1357,6 +1360,7 @@ export interface MaterialWrite {
   tracking_unit_id: number;
   purchase_unit_id?: number | null;
   purchase_conversion?: number | string;
+  unit_weight?: number | string | null;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
   supplier_contact_id?: number | null;
@@ -1386,6 +1390,18 @@ export interface Me {
   read_only: boolean;
   plan: string | null;
 }
+
+/**
+ * What a standard unit measures.
+ */
+export type Measure = (typeof Measure)[keyof typeof Measure];
+
+export const Measure = {
+  mass: "mass",
+  volume: "volume",
+  length: "length",
+  count: "count",
+} as const;
 
 export interface MemberName {
   member_ref: string;
@@ -1635,6 +1651,17 @@ export interface PagePurchaseSummary {
   total: number;
 }
 
+export interface RecipeLineRead {
+  item: AdjustmentItem;
+  unit_id: number | null;
+  written: string;
+  amount: string;
+  ratio: string;
+  tracking_unit_id: number | null;
+  quantity: string;
+  percent: string | null;
+}
+
 /**
  * What a recipe makes.
  */
@@ -1646,16 +1673,15 @@ export const RecipeOutput = {
   bundle: "bundle",
 } as const;
 
-export interface RecipeLineRead {
-  item: AdjustmentItem;
-  unit_id: number | null;
-  quantity: string;
-  percent: string | null;
-}
-
 export type RecipeReadAttributes = { [key: string]: string };
 
 export interface RecipeRead {
+  by_ratio: boolean;
+  total: string | null;
+  total_unit_id: number | null;
+  batch_quantity: string;
+  batches: string;
+  lines: RecipeLineRead[];
   id: number;
   output: RecipeOutput;
   output_id: number;
@@ -1663,10 +1689,7 @@ export interface RecipeRead {
   name: string;
   attributes: RecipeReadAttributes;
   unit_id: number | null;
-  batch_quantity: string;
-  batches: string;
   minutes: number | null;
-  lines: RecipeLineRead[];
 }
 
 export interface PageRecipeRead {
@@ -1984,9 +2007,10 @@ export interface PurchaseUpdate {
   tax?: number | string | null;
 }
 
-export interface RecipeLineWrite {
+export interface RecipeLineWriteInput {
   item_id: number;
-  quantity: number | string;
+  written: number | string;
+  unit_id?: number | null;
 }
 
 /**
@@ -1995,21 +2019,65 @@ export interface RecipeLineWrite {
 export interface RecipeCreate {
   batch_quantity?: number | string;
   minutes?: number | null;
+  by_ratio?: boolean;
+  total?: number | string | null;
+  total_unit_id?: number | null;
   /** @maxItems 200 */
-  lines: RecipeLineWrite[];
+  lines: RecipeLineWriteInput[];
   variation_id?: number | null;
   base_id?: number | null;
   product_id?: number | null;
 }
 
+export interface RecipeLineWriteOutput {
+  item_id: number;
+  written: string;
+  unit_id?: number | null;
+}
+
 /**
- * A recipe as an edit leaves it: its lines, in their order.
+ * A recipe as an edit leaves it: its lines, in their order. Written by
+ * ratio, its ingredients total and that total's unit are sent too.
  */
-export interface RecipeWrite {
+export interface RecipeWriteOutput {
+  batch_quantity?: string;
+  minutes?: number | null;
+  by_ratio?: boolean;
+  total?: string | null;
+  total_unit_id?: number | null;
+  /** @maxItems 200 */
+  lines: RecipeLineWriteOutput[];
+}
+
+/**
+ * A draft worked out, and the same draft written the other way: by
+ * amount for one by ratio, keeping its amounts; by ratio for one by
+ * amount, its amounts divided by a common factor where they have one and
+ * its ingredients total that of the lines measured like its output. Null
+ * for a bundle, which counts whole variations.
+ */
+export interface RecipePreview {
+  by_ratio: boolean;
+  total: string | null;
+  total_unit_id: number | null;
+  batch_quantity: string;
+  batches: string;
+  lines: RecipeLineRead[];
+  switched: RecipeWriteOutput | null;
+}
+
+/**
+ * A recipe as an edit leaves it: its lines, in their order. Written by
+ * ratio, its ingredients total and that total's unit are sent too.
+ */
+export interface RecipeWriteInput {
   batch_quantity?: number | string;
   minutes?: number | null;
+  by_ratio?: boolean;
+  total?: number | string | null;
+  total_unit_id?: number | null;
   /** @maxItems 200 */
-  lines: RecipeLineWrite[];
+  lines: RecipeLineWriteInput[];
 }
 
 /**
@@ -2108,11 +2176,22 @@ export interface RunComplete {
   completed_on?: string | null;
 }
 
+/**
+ * Making as much as an amount of one of the recipe's lines allows: the
+ * run plans the batches that take exactly that amount of it.
+ */
+export interface RunUse {
+  item_id: number;
+  amount?: number | string | null;
+  unit_id?: number | null;
+}
+
 export interface RunCreate {
   item_id: number;
-  code?: string | null;
   planned_batches?: number | string;
   location_id?: number | null;
+  use?: RunUse | null;
+  code?: string | null;
   start?: boolean;
   deadline_on?: string | null;
   expires_on?: string | null;
@@ -2137,6 +2216,7 @@ export interface RunLineRead {
   lot: RunLot | null;
   assumed: boolean;
   lots: RunLot[];
+  short?: string | null;
   unit_cost?: string | null;
   cost?: string | null;
 }
@@ -2147,6 +2227,50 @@ export interface RunLineRead {
 export interface RunLineUpdate {
   quantity?: number | string | null;
   lot_id?: number | null;
+}
+
+/**
+ * What a run makes: a variation or a base with a recipe, at a location
+ * (the main one when not given), over its planned batches or the batches
+ * that ``use`` an amount of one line.
+ */
+export interface RunPlan {
+  item_id: number;
+  planned_batches?: number | string;
+  location_id?: number | null;
+  use?: RunUse | null;
+}
+
+export interface RunPreviewLine {
+  item: AdjustmentItem;
+  unit_id: number | null;
+  quantity: string;
+  usable: string;
+  short: string | null;
+}
+
+/**
+ * The line a run makes as much of as it allows.
+ */
+export interface RunUseRead {
+  item_id: number;
+  unit_id: number | null;
+  amount: string;
+  usable: string;
+  expired: string;
+  most: string | null;
+}
+
+/**
+ * A run as it would be opened, saving nothing.
+ */
+export interface RunPreview {
+  batches: string;
+  quantity: string;
+  unit_id: number | null;
+  lines: RunPreviewLine[];
+  most_batches: string | null;
+  use: RunUseRead | null;
 }
 
 export interface RunRead {
@@ -2167,6 +2291,7 @@ export interface RunRead {
   cost?: string | null;
   unit_cost?: string | null;
   recipe_id: number | null;
+  recipe_changed: boolean;
   labour_minutes: number | null;
   expires_on: string | null;
   output_lot: RunLot | null;
@@ -2305,6 +2430,9 @@ export interface SettingsReasonWrite {
 export interface SettingsUnitRead {
   id: number;
   name: string;
+  standard: string | null;
+  measure: Measure | null;
+  aliases: string[];
 }
 
 export interface SettingsUnitWrite {
@@ -2762,6 +2890,10 @@ export interface TrackingRead {
   retry_at: string | null;
 }
 
+export interface UnitConversion {
+  factor: string | null;
+}
+
 export type Healthz200 = { [key: string]: string };
 
 export type Readyz200 = { [key: string]: string };
@@ -2782,6 +2914,11 @@ export type SearchRecordsParams = {
 export type SuggestRecordsParams = {
   /** @maxLength 200 */
   q: string;
+};
+
+export type ReadUnitConversionParams = {
+  from_unit_id: number;
+  to_unit_id: number;
 };
 
 export type ListSettingsCategoriesParams = {
@@ -2900,6 +3037,9 @@ export type ListRecipesParams = {
 
 export type ReadRecipeParams = {
   quantity?: number | string | null;
+  ingredient_id?: number | null;
+  amount?: number | string | null;
+  unit_id?: number | null;
 };
 
 export type ListRunsParams = {

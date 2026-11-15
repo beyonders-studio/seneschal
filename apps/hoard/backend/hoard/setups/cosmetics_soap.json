@@ -1,6 +1,6 @@
 {
   "base_word": "base",
-  "units": ["g", "kg", "oz", "lb", "ml", "l", "fl_oz", "each"],
+  "units": [],
   "categories": [
     { "key": "oil_butter", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "lye", "kinds": ["material"], "picking": "earliest_expiry" },

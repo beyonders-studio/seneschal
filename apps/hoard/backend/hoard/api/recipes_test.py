@@ -3,7 +3,7 @@ they make, edited and removed; a bundle's holds variations."""
 
 from __future__ import annotations
 
-from hoard.records import Product
+from hoard.records import Product, Unit
 from hoard.stock import add_product
 from seneschal_core.db import WriteSession
 
@@ -25,8 +25,8 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
             "batch_quantity": "500",
             "minutes": 20,
             "lines": [
-                {"item_id": tea.id, "quantity": "300"},
-                {"item_id": syrup.id, "quantity": "200"},
+                {"item_id": tea.id, "written": "300"},
+                {"item_id": syrup.id, "written": "200"},
             ],
         },
     )
@@ -54,22 +54,22 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
     assert (neither.status_code, neither.json()) == (422, {"detail": "REQUEST_INVALID"})
     cycle = await client.post(
         "/api/v1/recipes",
-        json={"base_id": syrup.id, "lines": [{"item_id": spice.id, "quantity": "1"}]},
+        json={"base_id": syrup.id, "lines": [{"item_id": spice.id, "written": "1"}]},
     )
     assert (cycle.status_code, cycle.json()) == (422, {"detail": "RECIPE_CYCLE"})
     product = await client.post(
         "/api/v1/recipes",
-        json={"variation_id": latte_one.id, "lines": [{"item_id": latte_one.id, "quantity": "1"}]},
+        json={"variation_id": latte_one.id, "lines": [{"item_id": latte_one.id, "written": "1"}]},
     )
     assert (product.status_code, product.json()) == (422, {"detail": "RECIPE_LINE_KIND"})
     await client.post(
         "/api/v1/recipes",
-        json={"variation_id": latte_one.id, "lines": [{"item_id": spice.id, "quantity": "5"}]},
+        json={"variation_id": latte_one.id, "lines": [{"item_id": spice.id, "written": "5"}]},
     )
 
     edited = await client.put(
         f"/api/v1/recipes/{recipe['id']}",
-        json={"batch_quantity": "250", "lines": [{"item_id": tea.id, "quantity": "250"}]},
+        json={"batch_quantity": "250", "lines": [{"item_id": tea.id, "written": "250"}]},
     )
     assert [line["quantity"] for line in edited.json()["lines"]] == ["250.000000"]
     of_latte = (await client.get("/api/v1/recipes", params={"product_id": latte.id})).json()
@@ -94,11 +94,11 @@ async def test_a_bundle_s_recipe_holds_variations_and_marks_its_product(
 
     refused = await client.post(
         "/api/v1/recipes",
-        json={"product_id": box.id, "lines": [{"item_id": tea.id, "quantity": "1"}]},
+        json={"product_id": box.id, "lines": [{"item_id": tea.id, "written": "1"}]},
     )
     made = await client.post(
         "/api/v1/recipes",
-        json={"product_id": box.id, "lines": [{"item_id": tin.id, "quantity": "3"}]},
+        json={"product_id": box.id, "lines": [{"item_id": tin.id, "written": "3"}]},
     )
 
     assert (refused.status_code, refused.json()) == (422, {"detail": "RECIPE_LINE_KIND"})
@@ -109,3 +109,104 @@ async def test_a_bundle_s_recipe_holds_variations_and_marks_its_product(
     ]
     await db.refresh(box)
     assert box.bundle
+
+
+async def test_a_ratio_reads_beside_its_amounts_and_a_draft_switches_both_ways(
+    client, sign_in, db: WriteSession, unit, material, base
+):
+    catnip, chamomile, rose_hip, lychee = [
+        await material(name) for name in ("Catnip", "Chamomile", "Rose hip", "Lychee")
+    ]
+    alyx = await base("Alyx batch")
+    kilograms = Unit(organization_id=db.organization_id, name="kg", standard="kilogram")
+    db.add(kilograms)
+    await db.commit()
+    await sign_in(client)
+    lines = [
+        {"item_id": catnip.id, "written": "2"},
+        {"item_id": chamomile.id, "written": "1"},
+        {"item_id": rose_hip.id, "written": "1"},
+        {"item_id": lychee.id, "written": "0.1"},
+    ]
+
+    ratio = {
+        "base_id": alyx.id,
+        "by_ratio": True,
+        "total": "931",
+        "total_unit_id": unit.id,
+        "lines": lines,
+    }
+    made = await client.post("/api/v1/recipes", json={**ratio, "batch_quantity": "908"})
+    recipe = made.json()
+    used = await client.get(
+        f"/api/v1/recipes/{recipe['id']}",
+        params={"ingredient_id": rose_hip.id, "amount": "0.3", "unit_id": kilograms.id},
+    )
+
+    assert made.status_code == 201, made.text
+    assert (recipe["total"], recipe["total_unit_id"]) == ("931.000000", unit.id)
+    assert [(line["ratio"], line["amount"]) for line in recipe["lines"]] == [
+        ("2.000000", "454.146341"),
+        ("1.000000", "227.073171"),
+        ("1.000000", "227.073171"),
+        ("0.100000", "22.707317"),
+    ]
+    assert [line["quantity"] for line in used.json()["lines"]] == [
+        "600.000000",
+        "300.000000",
+        "300.000000",
+        "30.000000",
+    ]
+    by_amount = (await client.post("/api/v1/recipes/preview", json=ratio)).json()["switched"]
+    assert (by_amount["by_ratio"], by_amount["total"]) == (False, None)
+    assert [line["written"] for line in by_amount["lines"]] == [
+        "454.146341",
+        "227.073171",
+        "227.073171",
+        "22.707317",
+    ]
+
+    preview = (
+        await client.post(
+            "/api/v1/recipes/preview",
+            json={
+                "base_id": alyx.id,
+                "batch_quantity": "908",
+                "lines": [
+                    {"item_id": catnip.id, "written": "0.454", "unit_id": kilograms.id},
+                    {"item_id": chamomile.id, "written": "227"},
+                    {"item_id": rose_hip.id, "written": "227"},
+                ],
+            },
+        )
+    ).json()
+    assert [(line["ratio"], line["quantity"]) for line in preview["lines"]] == [
+        ("1.000000", "454.000000"),
+        ("500.000000", "227.000000"),
+        ("500.000000", "227.000000"),
+    ]
+    by_ratio = preview["switched"]
+    assert (by_ratio["by_ratio"], by_ratio["total"], by_ratio["total_unit_id"]) == (
+        True,
+        "908.000000",
+        unit.id,
+    )
+    # Parts are each line's number in its own unit, so 0.454 kg stays 0.454.
+    assert [line["written"] for line in by_ratio["lines"]] == [
+        "0.454000",
+        "227.000000",
+        "227.000000",
+    ]
+    in_grams = (
+        await client.post(
+            "/api/v1/recipes/preview",
+            json={
+                "base_id": alyx.id,
+                "lines": [
+                    {"item_id": item.id, "written": written}
+                    for item, written in ((catnip, "454"), (chamomile, "227"), (rose_hip, "227"))
+                ],
+            },
+        )
+    ).json()["switched"]
+    assert [line["written"] for line in in_grams["lines"]] == ["2.000000", "1.000000", "1.000000"]

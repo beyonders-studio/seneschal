@@ -3,7 +3,8 @@
 kind of business this is: the answer adds its setup, or, for a business Hoard
 has none for, starts blank. Either way it is asked once.
 
-A setup brings units, categories (its kinds of item, each for the kinds of
+A setup brings units of its own (Hoard's standard units every organization
+has already, ``hoard.units``), categories (its kinds of item, each for the kinds of
 record it sorts, with the rule for which of its lots goes first), properties
 of records, each with its key, adjustment reasons for waste, hold reasons,
 each with its key, and the word for a base. Adding one adds what the
@@ -39,6 +40,7 @@ from hoard.records import (
     Category,
     CategoryKind,
     HoldReason,
+    Item,
     OrganizationSettings,
     Picking,
     PropertyDefinition,
@@ -161,10 +163,18 @@ async def added(db: AsyncSession, setup: Setup) -> bool:
 
 async def started(db: AsyncSession) -> bool:
     """Whether the organization has begun on its own: an admin chose to start
-    blank, or it has a unit, which whatever holds stock is counted in."""
+    blank, or it has a category, an item or a unit of its own. Hoard's
+    standard units, which every organization is given, don't count."""
     if (await db.exec(select(OrganizationSettings.started_blank))).first():
         return True
-    return (await db.exec(select(func.count()).select_from(Unit))).one() > 0
+    for held in (
+        select(Category.id),
+        select(Item.id),
+        select(Unit.id).where(col(Unit.standard).is_(None)),
+    ):
+        if (await db.exec(held.limit(1))).first() is not None:
+            return True
+    return False
 
 
 async def start_blank(db: WriteSession) -> None:

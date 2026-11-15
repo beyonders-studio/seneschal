@@ -9,8 +9,12 @@ what its recipe's variations do, and any other product what its variations do
 together. A lot a production run made declares what the run consumed, lot by
 lot, and so does the run.
 
-Ingredients are listed by weight, the heaviest first: each line's quantity is
-taken as a weight, as a recipe made by weight is. Allergens are the keys of
+Ingredients are listed by weight, the heaviest first. A material is weighed
+by its tracking unit when that measures mass, and otherwise by what one of its
+units weighs, when someone recorded it (``Material.unit_weight``). One that
+can't be weighed is never counted as any weight: it is listed **unweighed**,
+after those that are, since its place isn't known, and its fragrance
+allergens count for nothing, so the shares are incomplete. Allergens are the keys of
 :class:`~hoard.records.Allergen`, the US's nine and the EU's fourteen. A
 material whose allergens nobody has recorded is listed as undeclared, so a
 declaration never reads as free of what it was never checked for.
@@ -34,6 +38,7 @@ from decimal import Decimal, InvalidOperation
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard import units
 from hoard.events import item_name
 from hoard.records import (
     Allergen,
@@ -46,6 +51,7 @@ from hoard.records import (
     ProductionRunLine,
     Recipe,
     RecipeLine,
+    Unit,
     Variation,
 )
 
@@ -166,7 +172,7 @@ FRAGRANCE_ALLERGENS: tuple[str, ...] = (
 
 @dataclass(frozen=True)
 class Declaration:
-    #: What it is made of, the heaviest first.
+    #: What it is made of, the heaviest first, then those it can't weigh.
     ingredients: list[str]
     #: The allergens it contains, in :class:`Allergen`'s order.
     allergens: list[Allergen]
@@ -182,15 +188,19 @@ class Declaration:
     fragrance_recorded: bool = False
     #: Whether it takes the rinse-off threshold rather than the leave-on one.
     rinse_off: bool = False
+    #: The ingredients in it Hoard can't weigh, whose place in the list isn't
+    #: known, by name.
+    unweighed: list[str] = field(default_factory=list)
 
 
 @dataclass
 class _Mix:
-    """What one unit of something holds: each ingredient's weight, its
-    allergens, each fragrance allergen's weight, and the materials whose
-    allergens are unknown."""
+    """What one unit of something holds: each ingredient's weight in grams,
+    the ingredients it can't weigh, its allergens, each fragrance allergen's
+    weight, and the materials whose allergens are unknown."""
 
     weights: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
+    unweighed: set[str] = field(default_factory=set)
     allergens: set[str] = field(default_factory=set)
     undeclared: set[str] = field(default_factory=set)
     fragrance: dict[str, Decimal] = field(default_factory=lambda: defaultdict(Decimal))
@@ -202,6 +212,7 @@ class _Mix:
             self.weights[ingredient] += weight * scale
         for allergen, weight in other.fragrance.items():
             self.fragrance[allergen] += weight * scale
+        self.unweighed |= other.unweighed
         self.allergens |= other.allergens
         self.undeclared |= other.undeclared
         self.fragrance_undeclared |= other.fragrance_undeclared
@@ -227,7 +238,9 @@ class _Mix:
             ingredients=[
                 name
                 for name, _ in sorted(self.weights.items(), key=lambda entry: (-entry[1], entry[0]))
-            ],
+                if name not in self.unweighed
+            ]
+            + sorted(self.unweighed),
             allergens=[allergen for allergen in Allergen if allergen in self.allergens],
             undeclared=sorted(self.undeclared),
             fragrance_allergens=[
@@ -237,6 +250,7 @@ class _Mix:
             fragrance_undeclared=sorted(self.fragrance_undeclared),
             fragrance_recorded=self.fragrance_recorded,
             rinse_off=rinse_off,
+            unweighed=sorted(self.unweighed),
         )
 
 
@@ -257,10 +271,18 @@ def _fragrance(declared: dict[str, str]) -> dict[str, Decimal] | None:
 
 
 def _material(
-    material: Material, allergens: list[str] | None, fragrance: dict[str, str] | None
+    material: Material,
+    weight: Decimal | None,
+    allergens: list[str] | None,
+    fragrance: dict[str, str] | None,
 ) -> _Mix:
+    """One tracking unit of a material, weighing ``weight`` grams when known."""
     mix = _Mix()
-    mix.weights[material.ingredient_name or material.name] = Decimal(1)
+    name = material.ingredient_name or material.name
+    if weight is None:
+        mix.unweighed.add(name)
+    else:
+        mix.weights[name] = weight
     if allergens is None:
         mix.undeclared.add(material.name)
     else:
@@ -269,7 +291,9 @@ def _material(
     if weights is None:
         mix.fragrance_undeclared.add(material.name)
     else:
-        mix.fragrance.update(weights)
+        mix.fragrance.update(
+            {allergen: share * (weight or 0) for allergen, share in weights.items()}
+        )
         mix.fragrance_recorded = True
     return mix
 
@@ -280,6 +304,15 @@ class Declarations:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self._items: dict[int, _Mix] = {}
+        self._units: dict[int, Unit] | None = None
+
+    async def _weight(self, material: Material) -> Decimal | None:
+        """What one tracking unit of a material weighs in grams, when Hoard knows."""
+        if self._units is None:
+            self._units = await units.load(self.db)
+        return units.grams(
+            Decimal(1), self._units.get(material.tracking_unit_id), material.unit_weight
+        )
 
     async def _recipe(self, recipe: Recipe, seen: frozenset[int]) -> _Mix:
         mix = _Mix()
@@ -299,7 +332,12 @@ class Declarations:
         if item.kind is ItemKind.MATERIAL:
             material = await self.db.get(Material, item_id)
             if material is not None:
-                mix = _material(material, material.allergens, material.fragrance_allergens)
+                mix = _material(
+                    material,
+                    await self._weight(material),
+                    material.allergens,
+                    material.fragrance_allergens,
+                )
         else:
             column = Recipe.base_id if item.kind is ItemKind.BASE else Recipe.variation_id
             recipe = (await self.db.exec(select(Recipe).where(column == item_id))).first()
@@ -322,7 +360,7 @@ class Declarations:
                 if lot.fragrance_allergens is not None
                 else material.fragrance_allergens
             )
-            return _material(material, known, fragrance)
+            return _material(material, await self._weight(material), known, fragrance)
         run = (
             await self.db.exec(select(ProductionRun).where(ProductionRun.output_lot_id == lot.id))
         ).first()

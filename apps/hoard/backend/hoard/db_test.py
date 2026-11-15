@@ -1,11 +1,14 @@
-"""Hoard's migrated database keeps organizations apart."""
+"""Hoard's migrated database keeps organizations apart, and its migrations
+carry what is recorded forward."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 
+import psycopg
 import pytest
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlalchemy.exc import DBAPIError
 
 from hoard.db import downgrade, upgrade
@@ -78,3 +81,61 @@ def test_the_migrations_go_down_and_up_again():
 
     with migrated_database("hoard_round_trip", round_trip):
         pass
+
+
+def test_the_units_migration_matches_standard_units_and_merges_their_twins():
+    def migrate(made: AppDatabase) -> None:
+        upgrade(made.owner_url, made.serving_login, "0015")
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            [org] = (
+                db.execute(
+                    "INSERT INTO organizations (community_ref, plugin_install_id) "
+                    "VALUES ('units', 1) RETURNING id"
+                ).fetchone()
+                or ()
+            )
+
+            def row(sql: str, *values: object) -> int:
+                [found] = db.execute(sql, (org, *values)).fetchone() or ()
+                return found
+
+            unit = {
+                name: row(
+                    "INSERT INTO units (organization_id, name) VALUES (%s, %s) RETURNING id", name
+                )
+                for name in ("g", "Grams", "KG", "T", "Jar")
+            }
+
+            def material(name: str, tracking: str, bought: str, conversion: str) -> None:
+                item = row(
+                    "INSERT INTO items (organization_id, kind) VALUES (%s, 'material') RETURNING id"
+                )
+                db.execute(
+                    "INSERT INTO materials (id, organization_id, name, tracking_unit_id, "
+                    "purchase_unit_id, purchase_conversion) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (item, org, name, unit[tracking], unit[bought], conversion),
+                )
+
+            material("Catnip", "Grams", "KG", "999")
+            material("Honey", "g", "Jar", "250")
+            material("Salt", "g", "Grams", "3")
+
+        upgrade(made.owner_url, made.serving_login)
+
+    with migrated_database("hoard_units", migrate) as made:
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            units = db.execute("SELECT name, standard FROM units ORDER BY id").fetchall()
+            materials = db.execute(
+                "SELECT m.name, tracked.name, bought.name, m.purchase_conversion FROM materials m "
+                "JOIN units tracked ON tracked.id = m.tracking_unit_id "
+                "LEFT JOIN units bought ON bought.id = m.purchase_unit_id ORDER BY m.name"
+            ).fetchall()
+
+    assert units == [("g", "gram"), ("kg", "kilogram"), ("T", None), ("Jar", None)]
+    assert materials == [
+        ("Catnip", "g", "kg", Decimal("1000.000000")),
+        ("Honey", "g", "Jar", Decimal("250.000000")),
+        ("Salt", "g", None, Decimal("1.000000")),
+    ]
