@@ -952,9 +952,10 @@ export function useReadStoreProduct<
 }
 
 /**
- * Write a product's edits to the store, and answer it as the store keeps
- * it now, kept as Hoard's copy. Its listings are kept, and those not yet
- * linked matched again.
+ * Write a product's edits to the store, while the store holds the version
+ * they started from, and answer it as the store keeps it now, kept as
+ * Hoard's copy. Its listings are kept, and those not yet linked matched
+ * again.
  * @summary Save Store Product
  */
 export const saveStoreProduct = (
@@ -1026,9 +1027,10 @@ export type SaveStoreProductMutationVariables = {
 };
 
 /**
- * Write a product's edits to the store, and answer it as the store keeps
- * it now, kept as Hoard's copy. Its listings are kept, and those not yet
- * linked matched again.
+ * Write a product's edits to the store, while the store holds the version
+ * they started from, and answer it as the store keeps it now, kept as
+ * Hoard's copy. Its listings are kept, and those not yet linked matched
+ * again.
  * @summary Save Store Product
  */
 export const useSaveStoreProduct = <

@@ -499,7 +499,7 @@ export const useUpdateOrder = <TError = ErrorType<void | HTTPValidationError>, T
   return useMutation(getUpdateOrderMutationOptions(options), queryClient);
 };
 /**
- * Delete a hand order with its shipments, while none of them has shipped.
+ * Delete an order with its shipments, while none of them has shipped.
  * @summary Delete Order
  */
 export const deleteOrder = (
@@ -554,7 +554,7 @@ export type DeleteOrderMutationError = ErrorType<void>;
 export type DeleteOrderMutationVariables = { orderId: number };
 
 /**
- * Delete a hand order with its shipments, while none of them has shipped.
+ * Delete an order with its shipments, while none of them has shipped.
  * @summary Delete Order
  */
 export const useDeleteOrder = <TError = ErrorType<void>, TContext = unknown>(
@@ -739,7 +739,7 @@ export const useReopenOrder = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getReopenOrderMutationOptions(options), queryClient);
 };
 /**
- * Sell a variation on a hand order; a bundle comes with its parts.
+ * Sell a variation on an order; a bundle comes with its parts.
  * @summary Create Order Line
  */
 export const createOrderLine = (
@@ -806,7 +806,7 @@ export type CreateOrderLineMutationError = ErrorType<void>;
 export type CreateOrderLineMutationVariables = { orderId: number; data: BodyType<OrderLineCreate> };
 
 /**
- * Sell a variation on a hand order; a bundle comes with its parts.
+ * Sell a variation on an order; a bundle comes with its parts.
  * @summary Create Order Line
  */
 export const useCreateOrderLine = <TError = ErrorType<void>, TContext = unknown>(
@@ -829,7 +829,7 @@ export const useCreateOrderLine = <TError = ErrorType<void>, TContext = unknown>
   return useMutation(getCreateOrderLineMutationOptions(options), queryClient);
 };
 /**
- * Change a hand order's line: no less than its shipments hold of it.
+ * Change an order's line: no less than its shipments hold of it.
  * @summary Update Order Line
  */
 export const updateOrderLine = (
@@ -901,7 +901,7 @@ export type UpdateOrderLineMutationVariables = {
 };
 
 /**
- * Change a hand order's line: no less than its shipments hold of it.
+ * Change an order's line: no less than its shipments hold of it.
  * @summary Update Order Line
  */
 export const useUpdateOrderLine = <TError = ErrorType<void>, TContext = unknown>(
@@ -924,7 +924,7 @@ export const useUpdateOrderLine = <TError = ErrorType<void>, TContext = unknown>
   return useMutation(getUpdateOrderLineMutationOptions(options), queryClient);
 };
 /**
- * Remove a hand order's line, with a bundle's parts, while no shipment holds them.
+ * Remove an order's line, with a bundle's parts, while no shipment holds them.
  * @summary Delete Order Line
  */
 export const deleteOrderLine = (
@@ -985,7 +985,7 @@ export type DeleteOrderLineMutationError = ErrorType<void>;
 export type DeleteOrderLineMutationVariables = { orderId: number; lineId: number };
 
 /**
- * Remove a hand order's line, with a bundle's parts, while no shipment holds them.
+ * Remove an order's line, with a bundle's parts, while no shipment holds them.
  * @summary Delete Order Line
  */
 export const useDeleteOrderLine = <TError = ErrorType<void>, TContext = unknown>(

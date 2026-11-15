@@ -459,6 +459,7 @@ export const useUnshipShipment = <TError = ErrorType<void>, TContext = unknown>(
 };
 /**
  * Change how much a pending shipment's line sends, or the lot it draws.
+ * Only its lot changes while the order's store manages the order.
  * @summary Update Shipment Line
  */
 export const updateShipmentLine = (
@@ -531,6 +532,7 @@ export type UpdateShipmentLineMutationVariables = {
 
 /**
  * Change how much a pending shipment's line sends, or the lot it draws.
+ * Only its lot changes while the order's store manages the order.
  * @summary Update Shipment Line
  */
 export const useUpdateShipmentLine = <TError = ErrorType<void>, TContext = unknown>(

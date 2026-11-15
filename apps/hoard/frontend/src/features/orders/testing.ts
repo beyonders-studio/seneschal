@@ -68,6 +68,8 @@ export const orderRead = (overrides: Partial<OrderRead> = {}): OrderRead => ({
   code: "O-0005",
   store_id: null,
   external_id: null,
+  managed_by_store: null,
+  store_url: null,
   external_number: null,
   store_customer: null,
   customer_orders: [],

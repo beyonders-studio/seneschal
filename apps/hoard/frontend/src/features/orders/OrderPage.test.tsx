@@ -160,20 +160,23 @@ describe("OrderPage", () => {
     });
   });
 
-  it("keeps a store's order's lines as the store has them, with its customer's other orders", async () => {
+  it("shows a synced store's order as the store has it, with a link to it there", async () => {
     await openSignedIn("/orders/5", undefined, {
       ...ANSWERS,
       "GET /api/v1/orders/5": {
         status: 200,
         data: orderRead({
           store_id: 1,
-          external_id: "gid://order/1",
+          external_id: "gid://shopify/Order/1001",
+          managed_by_store: "shopify",
+          store_url: "https://tea.myshopify.com/admin/orders/1001",
           external_number: "#1001",
           customer_contact_id: null,
           store_customer: "99",
           customer_orders: [{ id: 8, code: "SH-1008" }],
           refunded: "5.000000",
           lines: [orderLine({ current_quantity: "3.000000", refunded_quantity: "1.000000" })],
+          shipments: [shipped, orderShipment({ id: 13, lines: [shipmentLine({ id: 14 })] })],
         }),
       },
     });
@@ -183,10 +186,39 @@ describe("OrderPage", () => {
     expect(screen.getByRole("link", { name: "SH-1008" }).getAttribute("href")).toBe("/orders/8");
     expect(screen.getByText("3 of 4 ordered")).toBeTruthy();
     expect(screen.getByText("1 refunded")).toBeTruthy();
-    expect(screen.getByText("0 of 3")).toBeTruthy();
     expect(screen.getByText("Refunded")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add item" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Open in Shopify" }).getAttribute("href")).toBe(
+      "https://tea.myshopify.com/admin/orders/1001"
+    );
+    screen.getByText(/This order is managed in Shopify/);
+    for (const name of ["Edit", "Cancel order", "Delete", "Add item", "New shipment", "Ship"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+    expect(screen.queryByRole("button", { name: "Actions for Shipment 1" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Actions for Chai" })).toBeNull();
+    // Which lot a shipment draws, and what comes back, are still recorded here.
+    expect(screen.getByRole("combobox", { name: "Lot" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Return" })).toBeTruthy();
+  });
+
+  it("lets Hoard change a store's order while the store isn't synced", async () => {
+    await openSignedIn("/orders/5", undefined, {
+      ...ANSWERS,
+      "GET /api/v1/orders/5": {
+        status: 200,
+        data: orderRead({
+          store_id: 1,
+          external_id: "gid://shopify/Order/1001",
+          external_number: "#1001",
+          customer_contact_id: null,
+        }),
+      },
+    });
+
+    await screen.findByText(/Store order #1001/);
+    expect(screen.queryByRole("link", { name: "Open in Shopify" })).toBeNull();
+    for (const name of ["Edit", "Cancel order", "Delete", "Add item", "New shipment"]) {
+      expect(screen.getByRole("button", { name })).toBeTruthy();
+    }
   });
 });
