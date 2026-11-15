@@ -24,6 +24,7 @@ import { useChangesSettings } from "@/features/settings/NamedList";
 import { useLocationName } from "@/features/settings/names";
 import { SettingsSection } from "@/features/settings/SettingsSection";
 import { PushLog } from "@/features/stores/PushLog";
+import { DifferingFields, StoreFieldsSettings } from "@/features/stores/StoreFields";
 import { SyncWizard } from "@/features/stores/SyncWizard";
 import { useStoreName, useStoreReason } from "@/features/stores/words";
 import { errorMessage } from "@/lib/errors";
@@ -58,6 +59,7 @@ function StoreCard({ store }: { store: StoreRead }) {
   const changes = useChangesSettings();
   const queryClient = useQueryClient();
   const [showingLog, setShowingLog] = useState(false);
+  const [showingFields, setShowingFields] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [removing, setRemoving] = useState(false);
   const refresh = useRefreshStore({
@@ -145,11 +147,16 @@ function StoreCard({ store }: { store: StoreRead }) {
       {synced && (
         <>
           <StoreLocations store={store} changes={changes} />
-          <div>
+          <DifferingFields store={store} changes={changes} />
+          <div className="flex flex-wrap gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowingFields(!showingFields)}>
+              {showingFields ? t("section.hideFields") : t("section.showFields")}
+            </Button>
             <Button variant="ghost" size="sm" onClick={() => setShowingLog(!showingLog)}>
               {showingLog ? t("section.hideLog") : t("section.showLog")}
             </Button>
           </div>
+          {showingFields && <StoreFieldsSettings store={store} changes={changes} />}
           {showingLog && <PushLog storeId={store.id} />}
         </>
       )}

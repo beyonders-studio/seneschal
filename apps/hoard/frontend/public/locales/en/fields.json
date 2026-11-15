@@ -51,6 +51,9 @@
     "PROPERTY_INVALID": "A choice needs its options, and money its currency.",
     "PROPERTY_UNKNOWN": "That property isn't one this record has.",
     "VALUE_INVALID": "That value doesn't fit the property.",
-    "LAYOUT_UNKNOWN": "Hoard doesn't draw that layout."
+    "LAYOUT_UNKNOWN": "Hoard doesn't draw that layout.",
+    "STORE_FIELD_VALUE_INVALID": "A store's field this property fills can't hold that value.",
+    "STORE_UNREACHABLE": "The store this property is kept in couldn't be reached, so nothing was saved. Try again in a moment.",
+    "STORE_NOT_CONNECTED": "The store this property is kept in isn't connected."
   }
 }

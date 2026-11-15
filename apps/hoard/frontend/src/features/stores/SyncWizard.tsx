@@ -16,6 +16,7 @@ import {
 } from "@/api/generated/stores/stores";
 import { toast } from "@/components/Toaster";
 import { useLocationName } from "@/features/settings/names";
+import { type FieldChoices, FieldsStep, fieldsBody } from "@/features/stores/StoreFields";
 import { errorMessage } from "@/lib/errors";
 import { DialogBody, DialogFooter } from "@/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
@@ -27,12 +28,15 @@ import { WizardDialog } from "@/ui/wizard-dialog";
  *  location named as the store names it, or nowhere. */
 export type LocationChoice = { location: number } | "new" | "nothing";
 
-/** What the wizard's steps have chosen, sent with the sync once it starts.
- *  Each store location's choice, by the store's id for it, once its step has
- *  read them. */
+/** What the wizard's steps have chosen, sent with the sync once it starts:
+ *  each store location's choice, by the store's id for it, and what each of
+ *  the store's fields fills, each once its step has read them. */
 export interface SyncDraft {
   locations: Record<string, LocationChoice> | null;
+  fields: FieldChoices | null;
 }
+
+const EMPTY: SyncDraft = { locations: null, fields: null };
 
 /** The sync a draft asks for. */
 export function syncBody(draft: SyncDraft): StoreSyncWrite {
@@ -46,6 +50,7 @@ export function syncBody(draft: SyncDraft): StoreSyncWrite {
               : { external_id, location_id: choice.location },
           ]
     ),
+    fields: fieldsBody(draft.fields ?? {}),
   };
 }
 
@@ -75,7 +80,8 @@ interface Step {
 
 /**
  * Syncing a pending store, for an admin: what syncing does, where each store
- * location's stock goes, then what happens afterwards, with **Sync now**.
+ * location's stock goes, what each of its fields fills, then what happens
+ * afterwards, with **Sync now**.
  * Each step is an entry of `steps`, between the first and the last, reading
  * and setting the one `draft` the sync is sent from (`syncBody`).
  */
@@ -92,11 +98,11 @@ export function SyncWizard({
   const queryClient = useQueryClient();
   const channel = t(`channels.${store.channel}`);
   const [at, setAt] = useState(0);
-  const [draft, setDraft] = useState<SyncDraft>({ locations: null });
+  const [draft, setDraft] = useState<SyncDraft>(EMPTY);
   const close = (next: boolean) => {
     if (!next) {
       setAt(0);
-      setDraft({ locations: null });
+      setDraft(EMPTY);
     }
     onOpenChange(next);
   };
@@ -129,6 +135,18 @@ export function SyncWizard({
         />
       ),
       ready: draft.locations !== null,
+    },
+    {
+      id: "fields",
+      description: t("sync.fields.description"),
+      body: (
+        <FieldsStep
+          store={store}
+          choices={draft.fields}
+          onChange={(fields) => setDraft((now) => ({ ...now, fields }))}
+        />
+      ),
+      ready: draft.fields !== null,
     },
     {
       id: "after",

@@ -25,6 +25,9 @@ import type {
   JobRead,
   ListStorePushesParams,
   PageStorePushRead,
+  StoreFieldChoiceWrite,
+  StoreFieldDifferenceRead,
+  StoreFieldRead,
   StoreLocationFound,
   StoreLocationRead,
   StoreLocationWrite,
@@ -1150,4 +1153,565 @@ export const useCreateStoreProduct = <
   TContext
 > => {
   return useMutation(getCreateStoreProductMutationOptions(options), queryClient);
+};
+/**
+ * The fields the store defines for its products and variants, read from
+ * the store now, each with what Hoard suggests it fill and what it fills.
+ * @summary List Store Fields
+ */
+export const listStoreFields = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreFieldRead[]>(
+    { url: `/api/v1/stores/${storeId}/fields`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListStoreFieldsQueryKey = (storeId: number) => {
+  return [`/api/v1/stores/${storeId}/fields`] as const;
+};
+
+export const getListStoreFieldsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStoreFields>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListStoreFieldsQueryKey(storeId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listStoreFields>>> = ({ signal }) =>
+    listStoreFields(storeId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: storeId !== null && storeId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListStoreFieldsQueryResult = NonNullable<Awaited<ReturnType<typeof listStoreFields>>>;
+export type ListStoreFieldsQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The fields the store defines for its products and variants, read from
+ * the store now, each with what Hoard suggests it fill and what it fills.
+ * @summary List Store Fields
+ */
+export function useListStoreFields<
+  TData = Awaited<ReturnType<typeof listStoreFields>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreFields>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreFields>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The fields the store defines for its products and variants, read from
+ * the store now, each with what Hoard suggests it fill and what it fills.
+ * @summary List Store Fields
+ */
+export function useListStoreFields<
+  TData = Awaited<ReturnType<typeof listStoreFields>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreFields>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreFields>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The fields the store defines for its products and variants, read from
+ * the store now, each with what Hoard suggests it fill and what it fills.
+ * @summary List Store Fields
+ */
+export function useListStoreFields<
+  TData = Awaited<ReturnType<typeof listStoreFields>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The fields the store defines for its products and variants, read from
+ * the store now, each with what Hoard suggests it fill and what it fills.
+ * @summary List Store Fields
+ */
+export function useListStoreFields<
+  TData = Awaited<ReturnType<typeof listStoreFields>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreFields>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListStoreFieldsQueryOptions(storeId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Map one of a synced store's fields to what it fills, making the new
+ * property it asks for, and read its values in, as the sync does, as a job.
+ * @summary Map Store Field
+ */
+export const mapStoreField = (
+  storeId: number,
+  storeFieldChoiceWrite: BodyType<StoreFieldChoiceWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<JobRead>(
+    {
+      url: `/api/v1/stores/${storeId}/fields`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: storeFieldChoiceWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getMapStoreFieldMutationKey = () => ["mapStoreField"] as const;
+
+export const getMapStoreFieldMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof mapStoreField>>,
+    TError,
+    MapStoreFieldMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof mapStoreField>>,
+  TError,
+  MapStoreFieldMutationVariables,
+  TContext
+> => {
+  const mutationKey = getMapStoreFieldMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof mapStoreField>>,
+    MapStoreFieldMutationVariables
+  > = (props) => {
+    const { storeId, data } = props ?? {};
+
+    return mapStoreField(storeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type MapStoreFieldMutationResult = NonNullable<Awaited<ReturnType<typeof mapStoreField>>>;
+export type MapStoreFieldMutationBody = BodyType<StoreFieldChoiceWrite>;
+export type MapStoreFieldMutationError = ErrorType<void>;
+export type MapStoreFieldMutationVariables = {
+  storeId: number;
+  data: BodyType<StoreFieldChoiceWrite>;
+};
+
+/**
+ * Map one of a synced store's fields to what it fills, making the new
+ * property it asks for, and read its values in, as the sync does, as a job.
+ * @summary Map Store Field
+ */
+export const useMapStoreField = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof mapStoreField>>,
+      TError,
+      MapStoreFieldMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof mapStoreField>>,
+  TError,
+  MapStoreFieldMutationVariables,
+  TContext
+> => {
+  return useMutation(getMapStoreFieldMutationOptions(options), queryClient);
+};
+/**
+ * Leave one of the store's fields out: it is read and written no more.
+ * What it filled stays.
+ * @summary Unmap Store Field
+ */
+export const unmapStoreField = (
+  storeId: number,
+  mappingId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/stores/${storeId}/fields/${mappingId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getUnmapStoreFieldMutationKey = () => ["unmapStoreField"] as const;
+
+export const getUnmapStoreFieldMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unmapStoreField>>,
+    TError,
+    UnmapStoreFieldMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unmapStoreField>>,
+  TError,
+  UnmapStoreFieldMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUnmapStoreFieldMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unmapStoreField>>,
+    UnmapStoreFieldMutationVariables
+  > = (props) => {
+    const { storeId, mappingId } = props ?? {};
+
+    return unmapStoreField(storeId, mappingId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnmapStoreFieldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof unmapStoreField>>
+>;
+
+export type UnmapStoreFieldMutationError = ErrorType<void | HTTPValidationError>;
+export type UnmapStoreFieldMutationVariables = { storeId: number; mappingId: number };
+
+/**
+ * Leave one of the store's fields out: it is read and written no more.
+ * What it filled stays.
+ * @summary Unmap Store Field
+ */
+export const useUnmapStoreField = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unmapStoreField>>,
+      TError,
+      UnmapStoreFieldMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof unmapStoreField>>,
+  TError,
+  UnmapStoreFieldMutationVariables,
+  TContext
+> => {
+  return useMutation(getUnmapStoreFieldMutationOptions(options), queryClient);
+};
+/**
+ * The products whose allergens or ingredient list, as Hoard works them
+ * out, differ from what the store holds.
+ * @summary List Store Field Differences
+ */
+export const listStoreFieldDifferences = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreFieldDifferenceRead[]>(
+    { url: `/api/v1/stores/${storeId}/fields/differing`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListStoreFieldDifferencesQueryKey = (storeId: number) => {
+  return [`/api/v1/stores/${storeId}/fields/differing`] as const;
+};
+
+export const getListStoreFieldDifferencesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListStoreFieldDifferencesQueryKey(storeId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listStoreFieldDifferences>>> = ({
+    signal,
+  }) => listStoreFieldDifferences(storeId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: storeId !== null && storeId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListStoreFieldDifferencesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStoreFieldDifferences>>
+>;
+export type ListStoreFieldDifferencesQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The products whose allergens or ingredient list, as Hoard works them
+ * out, differ from what the store holds.
+ * @summary List Store Field Differences
+ */
+export function useListStoreFieldDifferences<
+  TData = Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreFieldDifferences>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The products whose allergens or ingredient list, as Hoard works them
+ * out, differ from what the store holds.
+ * @summary List Store Field Differences
+ */
+export function useListStoreFieldDifferences<
+  TData = Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreFieldDifferences>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The products whose allergens or ingredient list, as Hoard works them
+ * out, differ from what the store holds.
+ * @summary List Store Field Differences
+ */
+export function useListStoreFieldDifferences<
+  TData = Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The products whose allergens or ingredient list, as Hoard works them
+ * out, differ from what the store holds.
+ * @summary List Store Field Differences
+ */
+export function useListStoreFieldDifferences<
+  TData = Awaited<ReturnType<typeof listStoreFieldDifferences>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listStoreFieldDifferences>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListStoreFieldDifferencesQueryOptions(storeId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Send Hoard's allergens and ingredient lists to the store wherever they
+ * differ from the store's, as a job.
+ * @summary Send Store Fields
+ */
+export const sendStoreFields = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<JobRead>(
+    { url: `/api/v1/stores/${storeId}/fields/send`, method: "POST", signal },
+    options
+  );
+};
+
+export const getSendStoreFieldsMutationKey = () => ["sendStoreFields"] as const;
+
+export const getSendStoreFieldsMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof sendStoreFields>>,
+    TError,
+    SendStoreFieldsMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof sendStoreFields>>,
+  TError,
+  SendStoreFieldsMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSendStoreFieldsMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof sendStoreFields>>,
+    SendStoreFieldsMutationVariables
+  > = (props) => {
+    const { storeId } = props ?? {};
+
+    return sendStoreFields(storeId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SendStoreFieldsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof sendStoreFields>>
+>;
+
+export type SendStoreFieldsMutationError = ErrorType<void | HTTPValidationError>;
+export type SendStoreFieldsMutationVariables = { storeId: number };
+
+/**
+ * Send Hoard's allergens and ingredient lists to the store wherever they
+ * differ from the store's, as a job.
+ * @summary Send Store Fields
+ */
+export const useSendStoreFields = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof sendStoreFields>>,
+      TError,
+      SendStoreFieldsMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof sendStoreFields>>,
+  TError,
+  SendStoreFieldsMutationVariables,
+  TContext
+> => {
+  return useMutation(getSendStoreFieldsMutationOptions(options), queryClient);
 };
