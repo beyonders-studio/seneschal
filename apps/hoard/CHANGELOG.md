@@ -14,12 +14,15 @@ All notable changes to Hoard are recorded here. The format follows
 
 ### Changed
 
+- **A synced store's orders are managed in the store.** Hoard shows them as they stand, with **Open in Shopify** to change them there; you still record which lot each shipment draws and what comes back. Orders you make by hand, and a store's orders while it isn't synced, change in Hoard as before.
+- **Editing a store's product in Hoard writes to the store.** A new name, status, SKU or option on a product a synced store lists is saved to the store first, and archiving it archives it there. If the product changed in the store since you opened it, nothing is saved and Hoard shows the store's newer version. A product the store lists can't be deleted in Hoard: archive it, or delete it in the store first.
 - A store's locations start with no Hoard location: the sync, or an admin, chooses where each one's stock goes.
 - Exports run in the background: Hoard shows each one's progress, then offers its file to download once it's ready. Only the member who started an export can download it, for a week.
 - Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
 
 ### Fixed
 
+- Changing a product's auto-manufacture setting no longer clears its cure time and its traceability flags.
 - **Refunds and edits in your store reach Hoard.** A line refunded or removed before it ships stops holding stock, and the store is sent the new count; one refunded after it shipped stays shipped, and stock comes back when you record the return. An order's page shows what was ordered, what it sells now, and what was refunded.
 - **Changes to orders older than 60 days are kept.** Shopify stops answering for an order after 60 days, so Hoard now keeps the change its webhook describes.
 - **An older copy of an order never replaces a newer one,** when the store's webhooks arrive out of order.
