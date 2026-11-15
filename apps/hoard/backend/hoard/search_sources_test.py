@@ -212,7 +212,7 @@ async def test_lots_runs_and_holds_by_their_items_and_lots(
     assert (await _entry(db, "hold", held.id) or {})["archived"] is True
 
 
-async def test_purchases_orders_stocktakes_and_locations(
+async def test_purchases_orders_and_stocktakes(
     db: WriteSession, main: Location, material, buy, sell
 ):
     oolong = await material("Oolong")
@@ -253,7 +253,6 @@ async def test_purchases_orders_stocktakes_and_locations(
     entry = await _entry(db, "stocktake", stocktake.id)
     assert entry is not None
     assert (entry["title"], entry["body"]) == ("Back room 2026-11-10", "quarter end")
-    assert (await _entry(db, "location", main.id) or {})["path"] == "/settings"
 
     # No cost or price is ever held, nor a source reading one.
     held = await db.execute(text("SELECT title, subtitle, codes, body FROM search_entries"))
@@ -270,13 +269,6 @@ async def test_purchases_orders_stocktakes_and_locations(
     for source in SOURCES:
         rendered = "\n".join(search.render(source))
         assert not [column for column in money if f".{column}" in rendered], source.kind
-
-
-async def test_an_unnamed_main_location_is_not_found(db: WriteSession, main: Location):
-    assert await _entry(db, "location", main.id) is None
-    main.name = "Shop floor"
-    db.add(main)
-    assert (await _entry(db, "location", main.id) or {})["title"] == "Shop floor"
 
 
 async def test_the_routes_read_the_organizations_records(
@@ -328,5 +320,4 @@ def test_the_sources_are_applied_on_migrating(database: AppDatabase):
         "order",
         "stocktake",
         "hold",
-        "location",
     }

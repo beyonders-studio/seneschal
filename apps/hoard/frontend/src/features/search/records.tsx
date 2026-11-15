@@ -15,7 +15,6 @@ export const KINDS = [
   "order",
   "stocktake",
   "hold",
-  "location",
 ] as const;
 
 /** What a kind of record is called, one of them. */

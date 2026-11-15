@@ -392,7 +392,7 @@ class SearchEntry(OrganizationRow, table=True):
 def create_table() -> None:
     """Make the index and what it reads with: the ``unaccent`` and ``pg_trgm``
     extensions, the configuration words are read in, :func:`fold`'s function,
-    and ``search_entries``, an organization's table, with its indexes."""
+    and ``search_entries``, an organization's table."""
     op.execute("CREATE EXTENSION IF NOT EXISTS unaccent SCHEMA public")
     op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm SCHEMA public")
     op.execute(f"CREATE TEXT SEARCH CONFIGURATION {WORDS} (COPY = pg_catalog.simple)")
@@ -431,20 +431,10 @@ def create_table() -> None:
     op.create_primary_key(
         "pk_search_entries", "search_entries", ["organization_id", "kind", "record_id"]
     )
-    op.create_index("ix_search_entries_words", "search_entries", ["words"], postgresql_using="gin")
-    op.create_index(
-        "ix_search_entries_codes",
-        "search_entries",
-        [sa.text("array_to_tsvector(folded_codes)")],
-        postgresql_using="gin",
-    )
-    op.create_index(
-        "ix_search_entries_title",
-        "search_entries",
-        ["title"],
-        postgresql_using="gin",
-        postgresql_ops={"title": "gin_trgm_ops"},
-    )
+    # No index beyond the key: under forced row security PostgreSQL uses an
+    # index only for leakproof operators, which the text search, array and
+    # trigram operators are not, so each search reads the organization's
+    # entries by the key and filters them.
 
 
 def drop_table() -> None:

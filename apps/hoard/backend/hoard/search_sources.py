@@ -16,8 +16,6 @@ of record people look for, each with the page that opens it.
 * **Stocktakes**: their location and date; notes.
 * **Holds**: their lot's number, which is their code too; reason and notes.
   Ended holds are archived. A hold opens its lot.
-* **Locations**: name. The main location, until it is named, has none and is
-  not found. A location opens the settings that hold it.
 
 Costs and prices are never indexed. A change to anything a source reads, on
 its own table or another's, indexes the record again.
@@ -245,13 +243,6 @@ HOLDS = SearchSource(
     ),
 )
 
-LOCATIONS = SearchSource(
-    kind="location",
-    table="locations",
-    title="r.name",
-    path="'/settings'",
-    watch=("name",),
-)
 
 #: Every source.
 SOURCES = (
@@ -264,5 +255,4 @@ SOURCES = (
     ORDERS,
     STOCKTAKES,
     HOLDS,
-    LOCATIONS,
 )

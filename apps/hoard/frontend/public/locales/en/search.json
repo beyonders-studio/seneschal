@@ -15,8 +15,7 @@
     "purchase": "Purchase",
     "order": "Order",
     "stocktake": "Stocktake",
-    "hold": "Hold",
-    "location": "Location"
+    "hold": "Hold"
   },
   "tabs": {
     "material": "Materials",
@@ -27,8 +26,7 @@
     "purchase": "Purchases",
     "order": "Orders",
     "stocktake": "Stocktakes",
-    "hold": "Holds",
-    "location": "Locations"
+    "hold": "Holds"
   },
   "results": {
     "title": "Search",
