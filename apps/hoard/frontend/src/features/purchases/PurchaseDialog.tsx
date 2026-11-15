@@ -28,14 +28,16 @@ import {
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
+import { Textarea } from "@/ui/textarea";
 
 /** The money a purchase holds beside its lines. */
 const COSTS = ["discount", "shipping", "tax"] as const;
 
 /**
- * Adds a purchase, or changes `purchase`: its code, date, supplier, location,
- * whether it is paid, and, for a member who sees costs, its discount,
- * shipping and tax. Closing it drops what was typed. Answers the purchase saved.
+ * Adds a purchase, or changes `purchase`: its code, date, the day it is
+ * expected, supplier, location, notes, whether it is paid, and, for a member
+ * who sees costs, its discount, shipping and tax. Closing it drops what was
+ * typed. Answers the purchase saved.
  */
 export function PurchaseDialog({
   open,
@@ -79,6 +81,8 @@ function PurchaseForm({
   const queries = useQueryClient();
   const [code, setCode] = useState(purchase?.code ?? "");
   const [datedOn, setDatedOn] = useState(purchase?.dated_on ?? today());
+  const [expectedOn, setExpectedOn] = useState(purchase?.expected_on ?? "");
+  const [notes, setNotes] = useState(purchase?.notes ?? "");
   const [supplier, setSupplier] = useState(purchase?.supplier_contact_id ?? null);
   const [location, setLocation] = useState(purchase?.location_id ?? null);
   const [paid, setPaid] = useState(purchase?.paid ?? false);
@@ -94,6 +98,8 @@ function PurchaseForm({
     const fields = {
       ...(code.trim() ? { code: code.trim() } : {}),
       dated_on: datedOn,
+      expected_on: expectedOn || null,
+      notes: notes.trim() || null,
       supplier_contact_id: supplier,
       ...(location === null ? {} : { location_id: location }),
       paid,
@@ -126,6 +132,14 @@ function PurchaseForm({
               onChange={(event) => setDatedOn(event.target.value)}
             />
           </Field>
+          <Field label={t("purchases.expected")}>
+            <Input
+              type="date"
+              min={datedOn}
+              value={expectedOn}
+              onChange={(event) => setExpectedOn(event.target.value)}
+            />
+          </Field>
         </div>
         <SupplierPicker value={supplier} onChange={setSupplier} />
         <LocationField value={location} onChange={setLocation} />
@@ -150,6 +164,9 @@ function PurchaseForm({
           />
           <Label htmlFor="purchase-paid">{t("purchases.paid")}</Label>
         </div>
+        <Field label={t("hoard:common.notes")}>
+          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </Field>
       </DialogBody>
       <DialogFooter>
         <Button type="submit" disabled={saving}>
