@@ -5,41 +5,14 @@ from __future__ import annotations
 
 import csv
 import io
-from collections.abc import Awaitable, Callable
-
-import pytest
-from fastapi import FastAPI
-from httpx2 import AsyncClient, Response
 
 from hoard import plugin_manifest
 from hoard.api.export import KINDS, ExportKind
-from hoard.app import JOB_HANDLERS
-from seneschal_core import jobs
 from seneschal_core.db import WriteSession
 
 
 def _header(text: str) -> list[str]:
     return next(csv.reader(io.StringIO(text)))
-
-
-Export = Callable[..., Awaitable[Response]]
-
-
-@pytest.fixture
-def export(client: AsyncClient, app: FastAPI, organization_id: int) -> Export:
-    """Ask for an export of ``kind``, run the job it queued, and download its file."""
-
-    async def export(kind: str, **params: str) -> Response:
-        queued = await client.post(f"/api/v1/export/{kind}", params=params)
-        assert queued.status_code == 202, queued.text
-        job = queued.json()
-        assert (job["kind"], job["state"]) == ("export", "queued")
-        await jobs.work(app.state.plugin, organization_id, JOB_HANDLERS)
-        done = (await client.get(f"/api/v1/jobs/{job['id']}")).json()
-        assert done["state"] == "done", done
-        return await client.get(f"/api/v1/jobs/{job['id']}/result")
-
-    return export
 
 
 async def test_cost_columns_export_only_to_a_member_who_sees_costs(client, sign_in, export):

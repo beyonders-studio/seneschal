@@ -12,11 +12,11 @@ from typing import Any
 
 import pytest
 from fastapi import FastAPI
-from httpx2 import ASGITransport, AsyncClient
+from httpx2 import ASGITransport, AsyncClient, Response
 from sqlmodel import select
 
 from hoard import plugin_manifest
-from hoard.app import create_app
+from hoard.app import JOB_HANDLERS, create_app
 from hoard.core.config import Settings
 from hoard.db import upgrade
 from hoard.purchases import receive_line
@@ -38,7 +38,7 @@ from hoard.records import (
     Unit,
 )
 from hoard.stock import add_base, add_default_hold_reasons, add_material, adjust, main_location
-from seneschal_core import organizations
+from seneschal_core import jobs, organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
 from seneschal_core.sessions import Sessions
@@ -334,3 +334,23 @@ def sign_in(initiative_stand_in: InitiativeStandIn, community_ref: str) -> SignI
         return answer.json()
 
     return sign_in
+
+
+Export = Callable[..., Awaitable[Response]]
+
+
+@pytest.fixture
+def export(client: AsyncClient, app: FastAPI, organization_id: int) -> Export:
+    """Ask for an export of ``kind``, run the job it queued, and download its file."""
+
+    async def export(kind: str, **params: str) -> Response:
+        queued = await client.post(f"/api/v1/export/{kind}", params=params)
+        assert queued.status_code == 202, queued.text
+        job = queued.json()
+        assert (job["kind"], job["state"]) == ("export", "queued")
+        await jobs.work(app.state.plugin, organization_id, JOB_HANDLERS)
+        done = (await client.get(f"/api/v1/jobs/{job['id']}")).json()
+        assert done["state"] == "done", done
+        return await client.get(f"/api/v1/jobs/{job['id']}/result")
+
+    return export
