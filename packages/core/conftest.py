@@ -1,6 +1,7 @@
 """The core's tests run against a database holding the registry, the jobs
-table, and organization tables of their own, ``widgets`` and a ledger of their
-moves, made by the same helpers an app's migrations call."""
+table, the search index, and organization tables of their own: ``widgets`` and
+a ledger of their moves, and ``gadgets`` and their parts to search, made by the
+same helpers an app's migrations call."""
 
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from alembic.operations import Operations
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 
-from seneschal_core import jobs, ledger, migrations
+from seneschal_core import jobs, ledger, migrations, search
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
@@ -87,6 +88,27 @@ def _migrate(database: AppDatabase) -> None:
                 keys={"widget_id": "widget_id", "bin": "bin"},
                 create=True,
             )
+            search.create_table()
+            op.create_table(
+                "gadgets",
+                sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
+                sa.Column("name", sa.Text(), nullable=False),
+                sa.Column("code", sa.Text(), nullable=True),
+                sa.Column("maker", sa.Text(), nullable=True),
+                sa.Column("notes", sa.Text(), nullable=True),
+                sa.Column("retired", sa.Boolean(), nullable=False, server_default=sa.false()),
+            )
+            migrations.isolate("gadgets")
+            migrations.referable("gadgets")
+            op.create_table(
+                "gadget_parts",
+                sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
+                sa.Column("gadget_id", sa.BigInteger(), nullable=False),
+                sa.Column("name", sa.Text(), nullable=False),
+                sa.Column("sku", sa.Text(), nullable=True),
+            )
+            migrations.isolate("gadget_parts")
+            migrations.reference("gadget_parts", "gadget_id", "gadgets", ondelete="CASCADE")
     engine.dispose()
 
 
