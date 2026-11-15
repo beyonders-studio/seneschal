@@ -6,9 +6,19 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Customer numbers on store orders.** Each Shopify order keeps the store's number for its customer, and nothing else about them. An order's page lists the customer's other orders, and the orders list filters by customer number. Hoard now asks the store's app for the `read_customers` permission.
+
 ### Changed
 
 - Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
+
+### Fixed
+
+- **Refunds and edits in your store reach Hoard.** A line refunded or removed before it ships stops holding stock, and the store is sent the new count; one refunded after it shipped stays shipped, and stock comes back when you record the return. An order's page shows what was ordered, what it sells now, and what was refunded.
+- **Changes to orders older than 60 days are kept.** Shopify stops answering for an order after 60 days, so Hoard now keeps the change its webhook describes.
+- **An older copy of an order never replaces a newer one,** when the store's webhooks arrive out of order.
 
 ## [0.1.2] - 2026-11-14
 

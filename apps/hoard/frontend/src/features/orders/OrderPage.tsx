@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Ban, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -99,7 +99,7 @@ function Order({ order }: { order: OrderRead }) {
   const navigate = useNavigate();
   const { read_only } = useSession();
   const money = useMoney();
-  const { date, location, item, quantity } = useMovementLabels();
+  const { date, location, item } = useMovementLabels();
   const orderFor = useOrderFor();
   const memberName = useMemberNames([order.created_by]);
   const saved = useSaved();
@@ -137,6 +137,7 @@ function Order({ order }: { order: OrderRead }) {
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {order.store_customer !== null && <CustomerOrders order={order} />}
           {order.delivery_address && (
             <p className="text-sm whitespace-pre-line">{order.delivery_address}</p>
           )}
@@ -196,7 +197,9 @@ function Order({ order }: { order: OrderRead }) {
               <TableCell className={line.bundle_line_id ? "pl-8" : undefined}>
                 {line.bundle_line_id ? t("lines.part", { item: item(line.item) }) : item(line.item)}
               </TableCell>
-              <TableCell className="text-right">{quantity(line.quantity)}</TableCell>
+              <TableCell className="text-right">
+                <Sold line={line} />
+              </TableCell>
               <TableCell className="text-right">
                 {line.bundle_line_id ? "" : money(line.price, { exact: true })}
               </TableCell>
@@ -239,14 +242,16 @@ function Order({ order }: { order: OrderRead }) {
       )}
 
       <dl className="grid grid-cols-fill-40/4 gap-4 text-sm">
-        {(["discount", "shipping", "tax", "total"] as const).map((name) => (
-          <div key={name}>
-            <dt className="text-muted-foreground">
-              {name === "total" ? t("hoard:common.total") : t(`order.${name}`)}
-            </dt>
-            <dd className="font-medium">{money(order[name])}</dd>
-          </div>
-        ))}
+        {(["discount", "shipping", "tax", "total", "refunded"] as const)
+          .filter((name) => name !== "refunded" || Number(order.refunded) > 0)
+          .map((name) => (
+            <div key={name}>
+              <dt className="text-muted-foreground">
+                {name === "total" ? t("hoard:common.total") : t(`order.${name}`)}
+              </dt>
+              <dd className="font-medium">{money(order[name])}</dd>
+            </div>
+          ))}
       </dl>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -311,6 +316,56 @@ function Order({ order }: { order: OrderRead }) {
   );
 }
 
+/** The store's number for an order's customer, and their other orders. */
+function CustomerOrders({ order }: { order: OrderRead }) {
+  const { t } = useTranslation("orders");
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-sm">
+      <span>{t("order.storeCustomer", { number: order.store_customer })}</span>
+      {order.customer_orders.length > 0 ? (
+        <>
+          <span className="text-muted-foreground">{t("order.otherOrders")}</span>
+          {order.customer_orders.map((other) => (
+            <Link
+              key={other.id}
+              to="/orders/$orderId"
+              params={{ orderId: String(other.id) }}
+              className="underline-offset-4 hover:underline"
+            >
+              {other.code}
+            </Link>
+          ))}
+        </>
+      ) : (
+        <span className="text-muted-foreground">{t("order.noOtherOrders")}</span>
+      )}
+    </p>
+  );
+}
+
+/** How many a line sells now, and, where the store refunded or removed some,
+ *  how many were ordered and refunded. */
+function Sold({ line }: { line: OrderLineRead }) {
+  const { t } = useTranslation("orders");
+  const { quantity } = useMovementLabels();
+  const changed = Number(line.current_quantity) !== Number(line.quantity);
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
+      {Number(line.refunded_quantity) > 0 && (
+        <Badge variant="secondary">
+          {t("lines.refunded", { quantity: quantity(line.refunded_quantity) })}
+        </Badge>
+      )}
+      {changed
+        ? t("lines.ofOrdered", {
+            current: quantity(line.current_quantity),
+            quantity: quantity(line.quantity),
+          })
+        : quantity(line.current_quantity)}
+    </span>
+  );
+}
+
 /** How much of a line has shipped, and how short it is; nothing for a
  *  bundle, whose parts ship. */
 function Shipped({ line, bundle }: { line: OrderLineRead; bundle: boolean }) {
@@ -324,7 +379,10 @@ function Shipped({ line, bundle }: { line: OrderLineRead; bundle: boolean }) {
           {t("lines.short", { quantity: quantity(line.short) })}
         </Badge>
       )}
-      {t("lines.shippedOf", { shipped: quantity(line.shipped), quantity: quantity(line.quantity) })}
+      {t("lines.shippedOf", {
+        shipped: quantity(line.shipped),
+        quantity: quantity(line.current_quantity),
+      })}
     </span>
   );
 }

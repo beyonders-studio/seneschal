@@ -476,6 +476,14 @@ export interface ContactRead {
   is_organization: boolean;
 }
 
+/**
+ * Another order of the same store's customer.
+ */
+export interface CustomerOrder {
+  id: number;
+  code: string;
+}
+
 export type FragranceAllergen = (typeof FragranceAllergen)[keyof typeof FragranceAllergen];
 
 export const FragranceAllergen = {
@@ -1354,6 +1362,8 @@ export interface OrderLineRead {
   id: number;
   item: AdjustmentItem;
   quantity: string;
+  current_quantity: string;
+  refunded_quantity: string;
   price: string;
   bundle_line_id: number | null;
   held: string;
@@ -1444,6 +1454,7 @@ export interface OrderRead {
   code: string;
   store_id: number | null;
   external_number: string | null;
+  store_customer: string | null;
   customer_contact_id: number | null;
   location_id: number;
   ordered_on: string;
@@ -1456,6 +1467,8 @@ export interface OrderRead {
   shipping: string;
   tax: string;
   discount: string;
+  refunded: string;
+  customer_orders: CustomerOrder[];
   delivery_address: string | null;
   lines: OrderLineRead[];
   shipments: OrderShipmentRead[];
@@ -1470,6 +1483,7 @@ export interface OrderSummary {
   code: string;
   store_id: number | null;
   external_number: string | null;
+  store_customer: string | null;
   customer_contact_id: number | null;
   location_id: number;
   ordered_on: string;
@@ -2622,6 +2636,7 @@ export type ListRunsParams = {
 
 export type ListOrdersParams = {
   status?: OrderStatus | null;
+  store_customer?: string | null;
   /** @minimum 0 */
   offset?: number;
   /**

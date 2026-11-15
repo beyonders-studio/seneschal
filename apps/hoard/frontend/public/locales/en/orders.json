@@ -6,7 +6,8 @@
     "status": "Status",
     "filter": "Show orders",
     "all": "All orders",
-    "noneOfStatus": "No orders have this status."
+    "noneMatch": "No orders match.",
+    "customer": "Customer number"
   },
   "status": {
     "pending": "Unpaid",
@@ -50,6 +51,10 @@
     "tax": "Tax",
     "paid": "Paid",
     "storeNumber": "Store order {{number}}",
+    "storeCustomer": "Customer {{number}} in the store",
+    "otherOrders": "Their other orders:",
+    "noOtherOrders": "No other orders from them",
+    "refunded": "Refunded",
     "back": "Back to orders",
     "cancel": "Cancel order",
     "reopen": "Reopen",
@@ -66,6 +71,8 @@
     "priceHint": "Leave it empty for the item's own price.",
     "shipped": "Shipped",
     "shippedOf": "{{shipped}} of {{quantity}}",
+    "ofOrdered": "{{current}} of {{quantity}} ordered",
+    "refunded": "{{quantity}} refunded",
     "part": "In the bundle: {{item}}",
     "actions": "Line actions",
     "empty": "Nothing is on this order yet.",

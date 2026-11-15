@@ -160,7 +160,7 @@ describe("OrderPage", () => {
     });
   });
 
-  it("keeps a store's order's lines as the store has them", async () => {
+  it("keeps a store's order's lines as the store has them, with its customer's other orders", async () => {
     await openSignedIn("/orders/5", undefined, {
       ...ANSWERS,
       "GET /api/v1/orders/5": {
@@ -170,11 +170,21 @@ describe("OrderPage", () => {
           external_id: "gid://order/1",
           external_number: "#1001",
           customer_contact_id: null,
+          store_customer: "99",
+          customer_orders: [{ id: 8, code: "SH-1008" }],
+          refunded: "5.000000",
+          lines: [orderLine({ current_quantity: "3.000000", refunded_quantity: "1.000000" })],
         }),
       },
     });
 
     await screen.findByText(/Store order #1001/);
+    expect(screen.getByText("Customer 99 in the store")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SH-1008" }).getAttribute("href")).toBe("/orders/8");
+    expect(screen.getByText("3 of 4 ordered")).toBeTruthy();
+    expect(screen.getByText("1 refunded")).toBeTruthy();
+    expect(screen.getByText("0 of 3")).toBeTruthy();
+    expect(screen.getByText("Refunded")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add item" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
     expect(screen.getByRole("button", { name: "Cancel order" })).toBeTruthy();
