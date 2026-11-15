@@ -366,16 +366,16 @@ async def keep(
     mapping.name, mapping.type, mapping.target = store_field.name, store_field.type, choice.target
     mapping.property_id = None if definition is None else definition.id
     if choice.target is FieldTarget.ALLERGENS:
-        before = dict(mapping.pairs) if held and held.target is choice.target else {}
-        mapping.pairs = {
-            **before,
-            **{
-                value: allergen
-                for value, allergen in pair_allergens(store_field.choices).items()
-                if allergen is not None or value not in before
-            },
-            **choice.pairs,
-        }
+        # What was paired before, then by name, then by hand; a value left
+        # unpaired by hand keeps any pairing it has.
+        pairs = dict(mapping.pairs) if held and held.target is choice.target else {}
+        for paired in (pair_allergens(store_field.choices), choice.pairs):
+            pairs.update(
+                (value, allergen)
+                for value, allergen in paired.items()
+                if allergen is not None or pairs.get(value) is None
+            )
+        mapping.pairs = pairs
     elif definition is not None and definition.type in (
         PropertyType.SELECT,
         PropertyType.MULTI_SELECT,
