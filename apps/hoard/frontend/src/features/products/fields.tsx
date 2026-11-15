@@ -165,7 +165,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       "variations",
       "catalog:products.variations",
       (product) => product.id,
-      ({ item }) => <Variations productId={item.id} variations={item.variations} />
+      ({ item }) => <Variations product={item} />
     ),
     builtin("stock", "catalog:items.stock", (product) => product.id, Stock),
     builtin(
@@ -240,13 +240,8 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
 
 /** A product's variations, each with what is on hand and, for a member who
  *  sees costs, its price and average cost. */
-function Variations({
-  productId,
-  variations,
-}: {
-  productId: number;
-  variations: ProductVariationRead[];
-}) {
+function Variations({ product }: { product: ProductDetail }) {
+  const { id: productId, variations } = product;
   const { t } = useTranslation("catalog");
   const { read_only } = useSession();
   const queryClient = useQueryClient();
@@ -321,7 +316,7 @@ function Variations({
         </Button>
       )}
       <VariationDialog
-        productId={productId}
+        product={product}
         variation={editing === "new" || editing === null ? undefined : editing}
         open={editing !== null}
         onOpenChange={(open) => !open && setEditing(null)}

@@ -11,6 +11,7 @@ import {
   StoreState,
 } from "@/api/generated/hoard.schemas";
 import { getListListingsQueryKey, useListListings } from "@/api/generated/listings/listings";
+import { getReadProductQueryKey } from "@/api/generated/products/products";
 import {
   getListStoresQueryKey,
   getReadStoreProductQueryKey,
@@ -20,6 +21,7 @@ import {
   useSaveStoreProduct,
 } from "@/api/generated/stores/stores";
 import { toast } from "@/components/Toaster";
+import { changedInStore } from "@/features/products/storeVersions";
 import { useStoreName } from "@/features/stores/words";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
@@ -36,7 +38,8 @@ const LISTINGS = 200;
 
 /** A product in each connected store, on its page: its listings, and the
  *  store's own title, description, images and prices, from Hoard's copy,
- *  saved to the store. It is added only to a synced store. */
+ *  saved to the store while the store holds the version the copy showed.
+ *  It is added only to a synced store. */
 export function StoreSection({ product }: { product: ProductDetail }) {
   const { t } = useTranslation("stores");
   const stores = useListStores().data ?? [];
@@ -66,7 +69,12 @@ export function StoreSection({ product }: { product: ProductDetail }) {
         const store = stores.find((each) => each.id === storeId);
         return (
           store && (
-            <StoreProduct key={`${storeId}:${productId}`} store={store} productId={productId} />
+            <StoreProduct
+              key={`${storeId}:${productId}`}
+              store={store}
+              productId={productId}
+              hoardProductId={product.id}
+            />
           )
         );
       })}
@@ -109,10 +117,20 @@ function AddToStore({ store, productId }: { store: StoreRead; productId: number 
   );
 }
 
-function StoreProduct({ store, productId }: { store: StoreRead; productId: string }) {
+function StoreProduct({
+  store,
+  productId,
+  hoardProductId,
+}: {
+  store: StoreRead;
+  productId: string;
+  /** The Hoard product it lists. */
+  hoardProductId: number;
+}) {
   const { t } = useTranslation("stores");
   const name = useStoreName();
   const read = useReadStoreProduct(store.id, productId);
+  const [changed, setChanged] = useState(false);
   return (
     <section aria-label={name(store)} className="flex flex-col gap-3 rounded-md border p-4">
       <div>
@@ -125,7 +143,19 @@ function StoreProduct({ store, productId }: { store: StoreRead; productId: strin
           onRetry={() => void read.refetch()}
         />
       )}
-      {read.data && <StoreProductForm key={read.dataUpdatedAt} held={read.data} />}
+      {changed && (
+        <p role="alert" className="text-sm text-destructive">
+          {t("product.changed", { store: t(`channels.${store.channel}`) })}
+        </p>
+      )}
+      {read.data && (
+        <StoreProductForm
+          key={read.dataUpdatedAt}
+          held={read.data}
+          hoardProductId={hoardProductId}
+          onChanged={setChanged}
+        />
+      )}
     </section>
   );
 }
@@ -136,7 +166,16 @@ interface VariantDraft {
   price: string;
 }
 
-function StoreProductForm({ held }: { held: StoreProductRead }) {
+function StoreProductForm({
+  held,
+  hoardProductId,
+  onChanged,
+}: {
+  held: StoreProductRead;
+  hoardProductId: number;
+  /** Says whether the last save found the store's product changed since it was read. */
+  onChanged: (changed: boolean) => void;
+}) {
   const { t } = useTranslation("stores");
   const seesCosts = useSeesCosts();
   const { read_only } = useSession();
@@ -156,11 +195,23 @@ function StoreProductForm({ held }: { held: StoreProductRead }) {
   const save = useSaveStoreProduct({
     mutation: {
       onSuccess: (saved) => {
+        onChanged(false);
         queryClient.setQueryData(getReadStoreProductQueryKey(held.store_id, held.id), saved);
         void queryClient.invalidateQueries({ queryKey: getListListingsQueryKey() });
+        void queryClient.invalidateQueries({ queryKey: getReadProductQueryKey(hoardProductId) });
         toast.success(t("product.saved"));
       },
-      onError: (error) => toast.error(errorMessage(error, t, "product.saveFailed")),
+      onError: (error) => {
+        if (!changedInStore(error)) {
+          toast.error(errorMessage(error, t, "product.saveFailed"));
+          return;
+        }
+        onChanged(true);
+        void queryClient.invalidateQueries({
+          queryKey: getReadStoreProductQueryKey(held.store_id, held.id),
+        });
+        void queryClient.invalidateQueries({ queryKey: getReadProductQueryKey(hoardProductId) });
+      },
     },
   });
   const setVariant = (id: string, change: Partial<VariantDraft>) =>
@@ -174,6 +225,7 @@ function StoreProductForm({ held }: { held: StoreProductRead }) {
       storeId: held.store_id,
       productId: held.id,
       data: {
+        updated_at: held.updated_at,
         title: title.trim(),
         description: description || null,
         status: status.trim() || null,

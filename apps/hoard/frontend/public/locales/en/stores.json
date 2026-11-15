@@ -67,7 +67,8 @@
     "removeImage": "Remove image",
     "save": "Save to the store",
     "saved": "Saved to the store.",
-    "saveFailed": "The store didn't take the changes."
+    "saveFailed": "The store didn't take the changes.",
+    "changed": "This product changed in {{store}} since you opened it, so nothing was saved. Its newest version is shown now: save again to write over it."
   },
   "listings": {
     "emptyTitle": "No listings yet",
@@ -110,7 +111,8 @@
     "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection.",
     "STORE_SYNCED": "The store is synced already.",
     "STORE_NOT_SYNCED": "The store isn't synced yet.",
-    "STORE_SYNCING": "The store is syncing. Wait until it finishes."
+    "STORE_SYNCING": "The store is syncing. Wait until it finishes.",
+    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved."
   },
   "sync": {
     "open": "Sync with {{channel}}",
