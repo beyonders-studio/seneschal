@@ -23,10 +23,14 @@ from hoard.channels import (
     Connected,
     ConnectError,
     ConnectRefused,
+    FieldOwner,
+    FieldValue,
+    FieldValues,
     Nudge,
     NudgeTopic,
     PushResult,
     StockSet,
+    StoreField,
     StoreFulfillment,
     StoreOrder,
     StoreProduct,
@@ -68,6 +72,12 @@ class FakeConnector:
     fulfillments: list[tuple[str, StoreFulfillment]] = field(default_factory=list)
     #: The orders its order webhooks described, by delivery.
     delivered: list[StoreOrder] = field(default_factory=list)
+    #: The fields it defines for products and variants.
+    shop_fields: list[StoreField] = field(default_factory=list)
+    #: Each product's and variant's field values, by its id and ``namespace.key``.
+    field_store: dict[str, dict[str, str]] = field(default_factory=dict)
+    #: Each field value written to it.
+    field_writes: list[FieldValue] = field(default_factory=list)
 
     def _checked(self) -> None:
         if self.refuse is not None:
@@ -197,3 +207,40 @@ class FakeConnector:
         self._checked()
         for product in list(self.shop_products.values()):
             yield product
+
+    async def fields(self) -> list[StoreField]:
+        self._checked()
+        return list(self.shop_fields)
+
+    async def field_values(
+        self, handles: Mapping[FieldOwner, Sequence[str]], product_ids: Sequence[str] | None
+    ) -> FieldValues:
+        self._checked()
+        found: FieldValues = {}
+        for product_id in self.shop_products if product_ids is None else product_ids:
+            product = self.shop_products.get(product_id)
+            if product is None:
+                continue
+            owners = [(product_id, FieldOwner.PRODUCT)]
+            owners += [
+                (variant.id, FieldOwner.VARIANT)
+                for variant in product.variants
+                if variant.id is not None and handles.get(FieldOwner.VARIANT)
+            ]
+            for owner_id, owner in owners:
+                held = self.field_store.get(owner_id, {})
+                found[owner_id] = {
+                    handle: held[handle] for handle in handles.get(owner, ()) if handle in held
+                }
+        return found
+
+    async def set_field_values(self, values: Sequence[FieldValue]) -> list[FieldValue]:
+        self._checked()
+        for value in values:
+            self.field_writes.append(value)
+            held = self.field_store.setdefault(value.owner_id, {})
+            if value.value is None:
+                held.pop(value.handle, None)
+            else:
+                held[value.handle] = value.value
+        return list(values)

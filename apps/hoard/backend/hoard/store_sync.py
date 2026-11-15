@@ -8,7 +8,7 @@ connection. **Syncing**: its sync is a job (``seneschal_core.jobs``) of kind
 ``imported_at`` is set, and its webhooks, the reconcile and the pushes keep
 it and Hoard in step.
 
-The sync runs in five steps (:class:`SyncStep`). Each commits as it goes and
+The sync runs in six steps (:class:`SyncStep`). Each commits as it goes and
 records that it is done in the job's checkpoint, so a sync whose worker is
 lost resumes at the step it was on; each can run twice to the same result.
 
@@ -19,18 +19,23 @@ lost resumes at the step it was on; each can run twice to the same result.
    (``hoard.listings.adopt``): a matched product takes the store's name, its
    variations the store's SKUs and options, and an unmatched one is made.
    Each product's copy is kept.
-3. **Orders**: the orders of the window the store keeps are copied in
+3. **Fields**: the store's fields are mapped as asked
+   (:class:`hoard.store_fields.FieldChoice`), the new properties asked for
+   made, and every product's values of them read in bulk and kept
+   (``hoard.store_fields.take``): a property filled, and a field Hoard works
+   out recorded as what the store holds, not sent.
+4. **Orders**: the orders of the window the store keeps are copied in
    (``hoard.sync.import_history``). What the store already sent moves no
    stock.
-4. **Stock**: each linked item is set, at each Hoard location a store
+5. **Stock**: each linked item is set, at each Hoard location a store
    location is mapped into, so that what Hoard has available there is what
    the store has available: an item Hoard holds no stock of there starts with
    it at the store's cost, and any other gets a manual adjustment for the
    difference, for the "synced from store" reason.
-5. **Finish**: the pushes the earlier steps left are dropped, each listing
+6. **Finish**: the pushes the earlier steps left are dropped, each listing
    recorded as already pushed what is available (``hoard.push.baseline``),
    the store's webhooks subscribed to, and ``imported_at`` stamped with when
-   step 3 began.
+   step 4 began.
 
 Nothing is sent to the store but the webhook subscriptions: Hoard pushes only
 where what is available differs from what it last pushed, and step 5 records
@@ -39,6 +44,11 @@ the two as equal.
 **Removing the sync** (:func:`unsync`) unsubscribes from the store's webhooks,
 drops its waiting pushes and clears ``imported_at``; whatever the sync
 brought in stays.
+
+**A fields job** (:data:`hoard.store_fields.STORE_FIELDS_JOB`, run by
+:func:`run_fields`) reads in a field mapped after the sync, as the sync does,
+and sends what Hoard works out where it differs from the store
+(``hoard.store_fields.send``).
 """
 
 from __future__ import annotations
@@ -58,7 +68,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import channels, listings, orders, push, stock, sync
+from hoard import channels, listings, orders, push, stock, store_fields, sync
 from hoard.channels import Connector, ConnectRefused, StoreStock
 from hoard.push import PushError
 from hoard.records import (
@@ -92,6 +102,7 @@ class SyncStep(StrEnum):
 
     LOCATIONS = "store_locations"
     PRODUCTS = "store_products"
+    FIELDS = "store_fields"
     ORDERS = "store_orders"
     STOCK = "store_stock"
     FINISH = "store_finish"
@@ -116,12 +127,19 @@ class LocationChoice:
     new: bool = False
 
 
-def job_args(store: Store, address: str, choices: Sequence[LocationChoice]) -> dict[str, Any]:
+def job_args(
+    store: Store,
+    address: str,
+    choices: Sequence[LocationChoice],
+    fields: Sequence[store_fields.FieldChoice] = (),
+) -> dict[str, Any]:
     """A sync's arguments: the store, Initiative's webhook ``address`` for
-    Hoard, and where each store location's stock goes."""
+    Hoard, where each store location's stock goes, and what each of the
+    store's fields fills."""
     return {
         "store_id": store.id,
         "address": address,
+        "fields": [choice.args() for choice in fields],
         "locations": [
             {
                 "external_id": choice.external_id,
@@ -218,6 +236,29 @@ async def _products(run: _Sync) -> None:
         # The reconcile reads on from here.
         store.products_since = started
         await db.commit()
+
+
+async def _fields(run: _Sync) -> None:
+    await run.progress(SyncStep.FIELDS, None, None)
+    choices = [store_fields.FieldChoice.from_args(each) for each in run.job.args.get("fields", [])]
+    if not choices:
+        return
+    found = await run.connector.fields()
+    kept = []
+    async with run.session() as db:
+        store = await db.get_one(Store, run.store_id)
+        for choice in choices:
+            with suppress(store_fields.StoreFieldRefused):
+                # A field the store changed since it was chosen is left out.
+                mapping = await store_fields.keep(db, store, found, choice)
+                if mapping is not None:
+                    kept.append(mapping.id)
+        await db.commit()
+
+    async def progress(done: int, total: int) -> None:
+        await run.progress(SyncStep.FIELDS, done, total)
+
+    await store_fields.read_in(run.session, run.store_id, run.connector, kept, progress)
 
 
 async def _orders(run: _Sync) -> None:
@@ -355,13 +396,14 @@ async def _finish(run: _Sync) -> None:
 _STEPS: list[tuple[SyncStep, Callable[[_Sync], Awaitable[None]]]] = [
     (SyncStep.LOCATIONS, _locations),
     (SyncStep.PRODUCTS, _products),
+    (SyncStep.FIELDS, _fields),
     (SyncStep.ORDERS, _orders),
     (SyncStep.STOCK, _stock),
     (SyncStep.FINISH, _finish),
 ]
 
 
-async def _connector(job: JobContext, store: Store) -> Connector:
+async def _connector(job: JobContext, store: Store, *, synced: bool = False) -> Connector:
     async with job.plugin.database.session() as db:
         organization = await organizations.get(db, job.organization_id)
     if organization is None or organization.read_only:
@@ -374,6 +416,8 @@ async def _connector(job: JobContext, store: Store) -> Connector:
         raise JobError(PushError.INITIATIVE_UNAVAILABLE.value) from None
     if connector is None or not store.connected:
         raise JobError(SyncError.STORE_NOT_CONNECTED.value, retry=False)
+    if synced and store.imported_at is None:
+        raise JobError(store_fields.StoreFieldError.STORE_NOT_SYNCED.value, retry=False)
     return connector
 
 
@@ -395,6 +439,40 @@ async def run(job: JobContext) -> None:
             raise JobError(refused.code.value) from None
         state["next"] = index + 1
         await job.save_checkpoint(state)
+
+
+class FieldsStep(StrEnum):
+    """A fields job's steps: codes pages translate."""
+
+    READ = "store_fields_read"
+    SEND = "store_fields_send"
+
+
+async def run_fields(job: JobContext) -> None:
+    """Read in the fields a fields job names, then send what Hoard works out
+    where it differs from the store: every such value where the job asks,
+    else those Hoard's own changed."""
+    store_id = int(job.args["store_id"])
+    async with job.plugin.database.organization_session(job.organization_id) as db:
+        store = await db.get(Store, store_id)
+    if store is None:
+        raise JobError(SyncError.STORE_NOT_CONNECTED.value, retry=False)
+    connector = await _connector(job, store, synced=True)
+
+    def session() -> WriteSession:
+        return job.plugin.database.write_session(job.organization_id, actor=job.started_by)
+
+    async def progress(done: int, total: int) -> None:
+        await job.progress(FieldsStep.READ.value, done, total)
+
+    try:
+        if job.args.get("read") and not (job.checkpoint or {}).get("read"):
+            await store_fields.read_in(session, store_id, connector, job.args["read"], progress)
+            await job.save_checkpoint({"read": True})
+        await job.progress(FieldsStep.SEND.value)
+        await store_fields.send(session, store_id, connector, bool(job.args.get("send")))
+    except ConnectRefused as refused:
+        raise JobError(refused.code.value) from None
 
 
 async def unsync(db: WriteSession, store: Store, connector: Connector | None, address: str) -> None:

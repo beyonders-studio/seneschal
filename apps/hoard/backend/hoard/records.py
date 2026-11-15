@@ -26,8 +26,10 @@
   with lines that are received into lots.
 * **Stores**: a community's connected store on a sales channel, the store's
   locations mapped to Hoard's, its **listings** linked to items, Hoard's
-  **copy of each store product**, the **stock pushes** sent to it, and the
-  **nudges** its webhooks leave for Hoard to refetch a record.
+  **copy of each store product**, the **stock pushes** sent to it, the
+  **nudges** its webhooks leave for Hoard to refetch a record, and the
+  **store fields** mapped to what they fill in Hoard, with the last value the
+  store holds of each field Hoard works out.
 * **Orders**, by hand for a customer among the community's contacts or copied
   in from a store, with lines; **shipments** of their lines, which record the
   lots they draw; and **returns** of what was shipped.
@@ -272,6 +274,22 @@ class MatchedBy(StrEnum):
     TITLE = "title"
     EXTERNAL_ID = "external_id"
     HAND = "hand"
+
+
+class FieldOwner(StrEnum):
+    """What a store's field is kept on: its products, or their variants."""
+
+    PRODUCT = "product"
+    VARIANT = "variant"
+
+
+class FieldTarget(StrEnum):
+    """What a store's field fills in Hoard: the allergens or the ingredient
+    list Hoard works out from recipes, or a product property."""
+
+    ALLERGENS = "allergens"
+    INGREDIENTS = "ingredients"
+    PROPERTY = "property"
 
 
 class Allergen(StrEnum):
@@ -1410,6 +1428,65 @@ class StoreProductCopy(OrganizationRow, Stamped, table=True):
     )
     #: When the store last changed it, as the store said.
     store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class StoreFieldMapping(OrganizationRow, Stamped, table=True):
+    """One of a store's fields, by its ``namespace.key``, and what it fills in
+    Hoard (``hoard.store_fields``); a field filling nothing has no row.
+
+    ``pairs`` pairs each value the store keeps for it with Hoard's: for
+    allergens, an allergen's key, or None where none is paired yet; for a
+    select property, the option's value."""
+
+    __tablename__ = "store_fields"
+    __table_args__ = (
+        referable("store_fields"),
+        reference("store_fields", "store_id", "stores", ondelete="CASCADE"),
+        reference("store_fields", "property_id", "property_definitions", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "store_id", "owner", "handle", name="uq_store_fields_handle"
+        ),
+        CheckConstraint(
+            "(target = 'property') = (property_id IS NOT NULL)", name="ck_store_fields_property"
+        ),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    owner: FieldOwner = Field(sa_column=enum_column(FieldOwner, "field_owner"))
+    #: The store's ``namespace.key`` for it.
+    handle: str
+    #: The store's name for it, and its type's.
+    name: str
+    type: str
+    target: FieldTarget = Field(sa_column=enum_column(FieldTarget, "field_target"))
+    property_id: int | None = Field(default=None, sa_type=BigInteger)
+    pairs: dict[str, str | None] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
+
+
+class StoreFieldValue(OrganizationRow, table=True):
+    """A field Hoard works out, on one of the store's products or variants:
+    what the store holds of it, as Hoard last sent it or read it, and Hoard's
+    own value when it last compared them, each as the store keeps it. None
+    for no value, and for Hoard's, one it does not know."""
+
+    __tablename__ = "store_field_values"
+    __table_args__ = (
+        reference("store_field_values", "field_id", "store_fields", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "field_id", "owner_id", name="uq_store_field_values_owner"
+        ),
+    )
+
+    id: int = identity()
+    field_id: int = Field(sa_type=BigInteger)
+    #: The store's id for the product or variant.
+    owner_id: str
+    store_value: str | None = None
+    hoard_value: str | None = None
 
 
 class StockPush(OrganizationRow, table=True):

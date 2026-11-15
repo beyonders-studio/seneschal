@@ -13,10 +13,13 @@ from hoard.channels import (
     Connected,
     ConnectError,
     ConnectRefused,
+    FieldOwner,
+    FieldValue,
     Nudge,
     NudgeTopic,
     PushResult,
     StockSet,
+    StoreField,
     StoreFulfillment,
     StoreImage,
     StoreLine,
@@ -88,7 +91,8 @@ async def test_check_names_the_permissions_missing():
         await shop.connector().check()
     assert refused.value.code is ConnectError.STORE_SCOPES_MISSING
     assert refused.value.detail == (
-        "read_customers, read_orders, write_files, write_inventory, write_publications"
+        "read_customers, read_metaobjects, read_orders, write_files, write_inventory, "
+        "write_publications"
     )
     # Writing a resource covers reading it.
     shop.scopes = [scope.replace("read_", "write_") for scope in REQUIRED_SCOPES]
@@ -893,6 +897,214 @@ async def test_a_failed_bulk_query_is_a_refusal():
     with pytest.raises(ConnectRefused) as refused:
         [order async for order in shop.connector().import_history()]
     assert refused.value.detail == "bulk query failed: TIMEOUT"
+
+
+# Fields.
+
+
+async def test_fields_are_read_with_the_entries_they_pick_from():
+    shop = FakeShop()
+
+    def definitions(variables: dict[str, Any]) -> dict[str, Any]:
+        if variables["ownerType"] == "PRODUCTVARIANT":
+            return {"metafieldDefinitions": _page([])}
+        return {
+            "metafieldDefinitions": _page(
+                [
+                    {
+                        "name": "Allergen information",
+                        "namespace": "shopify",
+                        "key": "allergen-information",
+                        "type": {"name": "list.metaobject_reference"},
+                        "validations": [
+                            {"name": "metaobject_definition_id", "value": "gid://def/1"}
+                        ],
+                        "metafieldsCount": 12,
+                    },
+                    {
+                        "name": "Leaf",
+                        "namespace": "custom",
+                        "key": "leaf",
+                        "type": {"name": "single_line_text_field"},
+                        "validations": [{"name": "choices", "value": '["Loose", "Bagged"]'}],
+                        "metafieldsCount": 3,
+                    },
+                ]
+            )
+        }
+
+    shop.answer("HoardFieldDefinitions", definitions)
+    shop.answer(
+        "HoardFieldEntries",
+        {
+            "metaobjectDefinition": {
+                "metaobjects": _page(
+                    [{"id": "gid://m/1", "displayName": "Milk"}, {"id": "gid://m/2"}]
+                )
+            }
+        },
+    )
+
+    found = await shop.connector().fields()
+
+    assert found == [
+        StoreField(
+            FieldOwner.PRODUCT,
+            "shopify",
+            "allergen-information",
+            "Allergen information",
+            "list.metaobject_reference",
+            {"gid://m/1": "Milk", "gid://m/2": "gid://m/2"},
+            12,
+        ),
+        StoreField(
+            FieldOwner.PRODUCT,
+            "custom",
+            "leaf",
+            "Leaf",
+            "single_line_text_field",
+            {"Loose": "Loose", "Bagged": "Bagged"},
+            3,
+        ),
+    ]
+    assert shop.variables("HoardFieldEntries")[0]["id"] == "gid://def/1"
+
+
+async def test_every_products_field_values_are_read_in_one_bulk_query():
+    shop = FakeShop()
+    variant = "gid://shopify/ProductVariant/11"
+    _bulk(
+        shop,
+        [
+            {"id": PRODUCT},
+            {
+                "__parentId": PRODUCT,
+                "__typename": "Metafield",
+                "namespace": "custom",
+                "key": "origin",
+                "value": "Assam",
+            },
+            {
+                "__parentId": PRODUCT,
+                "__typename": "Metafield",
+                "namespace": "reviews",
+                "key": "rating",
+                "value": "4",
+            },
+            {"__parentId": PRODUCT, "__typename": "ProductVariant", "id": variant},
+            {
+                "__parentId": variant,
+                "__typename": "Metafield",
+                "namespace": "custom",
+                "key": "allergens",
+                "value": "Milk",
+            },
+            {"id": "gid://shopify/Product/2"},
+        ],
+    )
+
+    found = await shop.connector().field_values(
+        {FieldOwner.PRODUCT: ["custom.origin"], FieldOwner.VARIANT: ["custom.allergens"]}, None
+    )
+
+    assert found == {
+        PRODUCT: {"custom.origin": "Assam"},
+        variant: {"custom.allergens": "Milk"},
+        "gid://shopify/Product/2": {},
+    }
+    assert "variants" in shop.variables("HoardBulkRun")[0]["query"]
+
+
+async def test_a_products_field_values_are_read_by_key():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldValues",
+        {
+            "product": {
+                "id": PRODUCT,
+                "metafields": {
+                    "nodes": [{"namespace": "custom", "key": "origin", "value": "Assam"}]
+                },
+                "variants": {"nodes": [{"id": "v", "metafields": {"nodes": []}}]},
+            }
+        },
+    )
+
+    found = await shop.connector().field_values({FieldOwner.PRODUCT: ["custom.origin"]}, [PRODUCT])
+
+    assert found == {PRODUCT: {"custom.origin": "Assam"}}
+    assert shop.variables("HoardFieldValues") == [
+        {"id": PRODUCT, "keys": ["custom.origin"], "count": 1, "variants": 1}
+    ]
+
+
+async def test_field_values_are_written_and_taken_off():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldsSet",
+        {
+            "metafieldsSet": {
+                "metafields": [
+                    {
+                        "namespace": "custom",
+                        "key": "origin",
+                        "type": "single_line_text_field",
+                        "value": "Assam",
+                        "owner": {"id": PRODUCT},
+                    }
+                ],
+                "userErrors": [],
+            }
+        },
+    )
+    shop.answer(
+        "HoardFieldsDelete", {"metafieldsDelete": {"deletedMetafields": [], "userErrors": []}}
+    )
+
+    written = await shop.connector().set_field_values(
+        [
+            FieldValue(PRODUCT, "custom.origin", "single_line_text_field", " Assam"),
+            FieldValue(PRODUCT, "custom.grade", "single_line_text_field", None),
+        ]
+    )
+
+    assert written == [
+        FieldValue(PRODUCT, "custom.origin", "single_line_text_field", "Assam"),
+        FieldValue(PRODUCT, "custom.grade", "single_line_text_field", None),
+    ]
+    assert shop.variables("HoardFieldsSet") == [
+        {
+            "metafields": [
+                {
+                    "ownerId": PRODUCT,
+                    "namespace": "custom",
+                    "key": "origin",
+                    "type": "single_line_text_field",
+                    "value": " Assam",
+                }
+            ]
+        }
+    ]
+    assert shop.variables("HoardFieldsDelete") == [
+        {"metafields": [{"ownerId": PRODUCT, "namespace": "custom", "key": "grade"}]}
+    ]
+
+
+async def test_a_refused_field_write_is_a_refusal():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldsSet",
+        {
+            "metafieldsSet": {
+                "metafields": [],
+                "userErrors": [{"field": ["value"], "message": "bad"}],
+            }
+        },
+    )
+    with pytest.raises(ConnectRefused):
+        await shop.connector().set_field_values(
+            [FieldValue(PRODUCT, "custom.origin", "number_integer", "x")]
+        )
 
 
 # Webhooks.

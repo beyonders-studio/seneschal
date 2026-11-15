@@ -13,9 +13,16 @@ import pytest
 from sqlalchemy import update
 from sqlmodel import col, select
 
-from hoard import channels, push, store_sync
+from hoard import channels, push, store_fields, store_sync
 from hoard.app import JOB_HANDLERS
-from hoard.channels import ConnectError, StoreLine, StoreOrder, StoreProduct, StoreVariant
+from hoard.channels import (
+    ConnectError,
+    StoreField,
+    StoreLine,
+    StoreOrder,
+    StoreProduct,
+    StoreVariant,
+)
 from hoard.channels.fake import FakeConnector
 from hoard.channels.hooks import webhook_address
 from hoard.orders import available, committed
@@ -24,13 +31,17 @@ from hoard.records import (
     AdjustmentKind,
     AdjustmentReason,
     Channel,
+    FieldOwner,
+    FieldTarget,
     Listing,
     Location,
     Product,
     ProductStatus,
+    PropertyValue,
     PushStatus,
     StockPush,
     Store,
+    StoreFieldValue,
     StoreLocation,
     StoreProductCopy,
     Variation,
@@ -50,7 +61,8 @@ def shop(
     monkeypatch: pytest.MonkeyPatch, initiative_stand_in: InitiativeStandIn, community_ref: str
 ) -> FakeConnector:
     """A store with three locations, a product Hoard sells already, one it
-    does not, and an archived one; stock and costs; and an order still to send."""
+    does not, and an archived one; stock and costs; an order still to send;
+    and fields for the products' origin and their variants' allergens."""
     fake = FakeConnector()
     monkeypatch.setitem(channels.CONNECTORS, Channel.SHOPIFY, lambda values: fake)
     initiative_stand_in.connections[community_ref] = {"shopify": {"shop": fake.shop_domain}}
@@ -99,6 +111,14 @@ def shop(
         ("i-mug", "loc-3"): 40,
     }
     fake.unit_costs = {"i-mug": Decimal("2.5")}
+    fake.shop_fields = [
+        StoreField(FieldOwner.PRODUCT, "custom", "origin", "Origin", "single_line_text_field"),
+        StoreField(FieldOwner.VARIANT, "custom", "allergens", "Allergens", "multi_line_text_field"),
+    ]
+    fake.field_store = {
+        "p-chai": {"custom.origin": "Assam"},
+        "v-small": {"custom.allergens": "Milk, Peanuts"},
+    }
     fake.history = [
         StoreOrder(
             id="o-1",
@@ -155,7 +175,8 @@ Sync = Callable[..., Awaitable[Job]]
 @pytest.fixture
 def sync_store(db: WriteSession, store: Store, main: Location, plugin: Plugin) -> Sync:
     """Queue the store's sync, the shop going into the main location, the
-    warehouse into a new one and the pop-up nowhere, and work it until it is
+    warehouse into a new one and the pop-up nowhere, the origin into a new
+    property and the allergens compared, and work it until it is
     done or failed, each retry due at once, and, where its worker was
     ``lost``, its tries not counted."""
 
@@ -167,7 +188,19 @@ def sync_store(db: WriteSession, store: Store, main: Location, plugin: Plugin) -
         job = await jobs.enqueue(
             db,
             store_sync.STORE_SYNC_JOB,
-            store_sync.job_args(store, ADDRESS, choices),
+            store_sync.job_args(
+                store,
+                ADDRESS,
+                choices,
+                [
+                    store_fields.FieldChoice(
+                        FieldOwner.PRODUCT, "custom.origin", FieldTarget.PROPERTY
+                    ),
+                    store_fields.FieldChoice(
+                        FieldOwner.VARIANT, "custom.allergens", FieldTarget.ALLERGENS
+                    ),
+                ],
+            ),
             started_by="member-ref",
             unique_key=str(store.id),
         )
@@ -217,6 +250,12 @@ async def _outcome(db: WriteSession, store: Store, main: Location) -> dict[str, 
         .order_by(col(Adjustment.id))
     )
     pushes = await db.exec(select(StockPush.status, StockPush.quantity).order_by(col(StockPush.id)))
+    filled = await db.exec(select(PropertyValue.value))
+    compared = await db.exec(
+        select(StoreFieldValue.owner_id, StoreFieldValue.store_value).order_by(
+            col(StoreFieldValue.owner_id)
+        )
+    )
     kept = await db.get_one(Store, store.id, populate_existing=True)
     return {
         "locations": [
@@ -228,6 +267,7 @@ async def _outcome(db: WriteSession, store: Store, main: Location) -> dict[str, 
         "stock": stock,
         "adjustments": [tuple(row) for row in adjustments.all()],
         "pushes": [tuple(row) for row in pushes.all()],
+        "fields": (list(filled.all()), [tuple(row) for row in compared.all()]),
         "synced": kept.imported_at is not None,
     }
 
@@ -264,6 +304,17 @@ EXPECTED = {
         (AdjustmentKind.STARTING, 2, Decimal("2.5"), None),
     ],
     "pushes": [(PushStatus.PUSHED, quantity) for quantity in (5, 0, 3, 0, 7, 2, 0, 0)],
+    # The chai's origin fills a property; each variant's allergens are
+    # recorded as the store holds them.
+    "fields": (
+        ["Assam"],
+        [
+            ("v-large", None),
+            ("v-mug", None),
+            ("v-old", None),
+            ("v-small", "Milk, Peanuts"),
+        ],
+    ),
     "synced": True,
 }
 
@@ -284,7 +335,7 @@ async def test_a_sync_reads_the_store_into_hoard_and_sends_it_nothing(
     mug = (await db.exec(select(Listing.item_id).where(Listing.variant_id == "v-mug"))).one()
     assert mug is not None and await committed(db, mug, main.id) == 2
     # The webhook subscriptions are the one thing the store is told.
-    assert (shop.pushes, shop.subscriptions) == ([], {ADDRESS})
+    assert (shop.pushes, shop.field_writes, shop.subscriptions) == ([], [], {ADDRESS})
 
     await push.reconcile(plugin, db.organization_id, store, shop)
 
@@ -323,7 +374,7 @@ async def test_a_sync_whose_worker_is_lost_resumes_at_its_step(
     assert job.state is JobState.DONE
     assert ran == [step for step in store_sync.SyncStep for _ in range(2)]
     assert await _outcome(db, store, main) == EXPECTED
-    assert shop.pushes == []
+    assert (shop.pushes, shop.field_writes) == ([], [])
 
 
 async def test_a_failed_sync_leaves_the_store_pending_with_its_error(

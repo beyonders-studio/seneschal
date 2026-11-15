@@ -26,6 +26,13 @@
   refunds are read only where a line sells fewer than were ordered.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
+* **Fields** are the store's metafields. Their definitions are read for
+  products and variants, with how many hold a value, and the entries a field
+  picks from: a text field's choices, or the display names of the metaobject
+  entries a reference field points at, as category metafields do. Their
+  values are read for a few products at a time, by key, or for every product
+  through a bulk query, and written with ``metafieldsSet``, a value taken off
+  with ``metafieldsDelete``.
 * **Pushing a fulfillment** stays off (:data:`PUSH_FULFILLMENTS`) until the
   permission it needs can be held by a store's own app.
 """
@@ -47,10 +54,14 @@ from hoard.channels import (
     Connected,
     ConnectError,
     ConnectRefused,
+    FieldOwner,
+    FieldValue,
+    FieldValues,
     Nudge,
     NudgeTopic,
     PushResult,
     StockSet,
+    StoreField,
     StoreFulfillment,
     StoreImage,
     StoreLine,
@@ -69,6 +80,7 @@ logger = logging.getLogger(__name__)
 REQUIRED_SCOPES = (
     "read_customers",
     "read_locations",
+    "read_metaobjects",
     "read_orders",
     "write_files",
     "write_inventory",
@@ -122,6 +134,15 @@ CAPABILITIES = Capabilities(
 
 #: The most items one input list carries.
 INPUT_LIMIT = 250
+
+#: The most field values one write carries.
+FIELDS_AT_ONCE = 25
+
+#: How many of a product's variants a read of its fields' values takes.
+FIELD_VARIANTS = 100
+
+#: The store's name for each owner of a field.
+_FIELD_OWNERS = {FieldOwner.PRODUCT: "PRODUCT", FieldOwner.VARIANT: "PRODUCTVARIANT"}
 
 #: How long the history import waits between asking after its bulk query,
 #: doubling from the first to the most.
@@ -631,6 +652,152 @@ class ShopifyConnector:
                 variants,
             )
 
+    # Fields.
+
+    async def fields(self) -> list[StoreField]:
+        found: list[StoreField] = []
+        for owner, owner_type in _FIELD_OWNERS.items():
+            nodes = await self._pages(
+                queries.FIELD_DEFINITIONS, {"ownerType": owner_type}, ("metafieldDefinitions",)
+            )
+            for node in nodes:
+                validations = {
+                    str(validation.get("name")): validation.get("value")
+                    for validation in node.get("validations") or []
+                    if isinstance(validation, dict)
+                }
+                found.append(
+                    StoreField(
+                        owner=owner,
+                        namespace=str(node.get("namespace") or ""),
+                        key=str(node.get("key") or ""),
+                        name=str(node.get("name") or node.get("key") or ""),
+                        type=str((node.get("type") or {}).get("name") or ""),
+                        choices=await self._choices(validations),
+                        count=_count(node.get("metafieldsCount")),
+                    )
+                )
+        return found
+
+    async def _choices(self, validations: Mapping[str, Any]) -> dict[str, str]:
+        """The entries a field picks from, each one's name by the value the
+        store keeps for it; none for a field that picks from no list."""
+        listed = validations.get("choices")
+        if isinstance(listed, str):
+            try:
+                values = json.loads(listed)
+            except ValueError:
+                return {}
+            if not isinstance(values, list):
+                return {}
+            return {value: value for value in values if isinstance(value, str)}
+        definition = validations.get("metaobject_definition_id")
+        by_type = validations.get("metaobject_definition_type")
+        if isinstance(definition, str) and definition:
+            nodes = await self._pages(
+                queries.FIELD_ENTRIES, {"id": definition}, ("metaobjectDefinition", "metaobjects")
+            )
+        elif isinstance(by_type, str) and by_type:
+            nodes = await self._pages(
+                queries.FIELD_ENTRIES_BY_TYPE, {"type": by_type}, ("metaobjects",)
+            )
+        else:
+            return {}
+        return {
+            str(node["id"]): str(node.get("displayName") or node["id"])
+            for node in nodes
+            if node.get("id")
+        }
+
+    async def field_values(
+        self, handles: Mapping[FieldOwner, Sequence[str]], product_ids: Sequence[str] | None
+    ) -> FieldValues:
+        product_keys = set(handles.get(FieldOwner.PRODUCT, ()))
+        variant_keys = set(handles.get(FieldOwner.VARIANT, ()))
+        if product_ids is None:
+            return await self._bulk_field_values(product_keys, variant_keys)
+        keys = sorted(product_keys | variant_keys)
+        found: FieldValues = {}
+        for product_id in product_ids:
+            data = await self.client.query(
+                queries.FIELD_VALUES,
+                {
+                    "id": product_id,
+                    "keys": keys,
+                    "count": max(len(keys), 1),
+                    "variants": FIELD_VARIANTS if variant_keys else 1,
+                },
+            )
+            node = data.get("product")
+            if not isinstance(node, dict):
+                continue
+            found[str(node["id"])] = _field_values(
+                (node.get("metafields") or {}).get("nodes"), product_keys
+            )
+            if variant_keys:
+                for variant in (node.get("variants") or {}).get("nodes") or []:
+                    found[str(variant["id"])] = _field_values(
+                        (variant.get("metafields") or {}).get("nodes"), variant_keys
+                    )
+        return found
+
+    async def _bulk_field_values(
+        self, product_keys: set[str], variant_keys: set[str]
+    ) -> FieldValues:
+        """Every product's values, and its variants', of the fields named,
+        through one bulk query. A row comes after the row it is nested in."""
+        found: FieldValues = {}
+        kept: dict[str, set[str]] = {}
+        async for row in self._bulk(queries.bulk_field_values(bool(variant_keys))):
+            parent = row.pop("__parentId", None)
+            if parent is None:
+                found[str(row["id"])], kept[str(row["id"])] = {}, product_keys
+            elif row.get("__typename") == "ProductVariant":
+                found[str(row["id"])], kept[str(row["id"])] = {}, variant_keys
+            elif str(parent) in found:
+                found[str(parent)].update(_field_values([row], kept[str(parent)]))
+        return found
+
+    async def set_field_values(self, values: Sequence[FieldValue]) -> list[FieldValue]:
+        answered: dict[tuple[str, str], FieldValue] = {}
+        kept = [value for value in values if value.value is not None]
+        for chunk in _chunks(kept, FIELDS_AT_ONCE):
+            data = await self.client.query(
+                queries.FIELDS_SET,
+                {
+                    "metafields": [
+                        {
+                            "ownerId": value.owner_id,
+                            **_handle(value.handle),
+                            "type": value.type,
+                            "value": value.value,
+                        }
+                        for value in chunk
+                    ]
+                },
+            )
+            payload = data.get("metafieldsSet") or {}
+            user_errors(payload)
+            for node in payload.get("metafields") or []:
+                owner = _id(node.get("owner"))
+                handle = f"{node.get('namespace')}.{node.get('key')}"
+                if owner is not None and isinstance(node.get("value"), str):
+                    answered[(owner, handle)] = FieldValue(
+                        owner, handle, str(node.get("type") or ""), node["value"]
+                    )
+        gone = [value for value in values if value.value is None]
+        for chunk in _chunks(gone, FIELDS_AT_ONCE):
+            data = await self.client.query(
+                queries.FIELDS_DELETE,
+                {
+                    "metafields": [
+                        {"ownerId": value.owner_id, **_handle(value.handle)} for value in chunk
+                    ]
+                },
+            )
+            user_errors(data.get("metafieldsDelete"))
+        return [answered.get((value.owner_id, value.handle), value) for value in values]
+
     async def _bulk(self, query: str) -> AsyncIterator[dict[str, Any]]:
         """Each row a bulk query found."""
         data = await self.client.query(queries.BULK_RUN, {"query": query})
@@ -988,8 +1155,24 @@ def _quantities(items: Iterable[Mapping[str, Any]], field: str) -> dict[str, Dec
     return totals
 
 
-def _chunks(items: Sequence[Any]) -> list[Sequence[Any]]:
-    return [items[start : start + INPUT_LIMIT] for start in range(0, len(items), INPUT_LIMIT)]
+def _chunks(items: Sequence[Any], size: int = INPUT_LIMIT) -> list[Sequence[Any]]:
+    return [items[start : start + size] for start in range(0, len(items), size)]
+
+
+def _handle(handle: str) -> dict[str, str]:
+    """A field's ``namespace.key`` as the store's inputs take it."""
+    namespace, _, key = handle.rpartition(".")
+    return {"namespace": namespace, "key": key}
+
+
+def _field_values(nodes: object, keys: set[str]) -> dict[str, str]:
+    """The values among metafield ``nodes`` of the fields ``keys`` names."""
+    found: dict[str, str] = {}
+    for node in nodes if isinstance(nodes, list) else []:
+        handle = f"{node.get('namespace')}.{node.get('key')}"
+        if handle in keys and isinstance(node.get("value"), str):
+            found[handle] = node["value"]
+    return found
 
 
 def _dig(data: Mapping[str, Any], path: Sequence[str]) -> Mapping[str, Any]:

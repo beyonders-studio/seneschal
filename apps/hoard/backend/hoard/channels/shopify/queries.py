@@ -150,6 +150,64 @@ mutation HoardUnpublish($id: ID!, $input: [PublicationInput!]!) {
 }
 """
 
+# Fields: metafield definitions, the entries a field picks from, and values.
+
+FIELD_DEFINITIONS = f"""
+query HoardFieldDefinitions($ownerType: MetafieldOwnerType!, $after: String) {{
+  metafieldDefinitions(ownerType: $ownerType, first: 100, after: $after) {{
+    nodes {{ name namespace key type {{ name }} validations {{ name value }} metafieldsCount }}
+    {PAGE_INFO}
+  }}
+}}
+"""
+
+FIELD_ENTRIES = f"""
+query HoardFieldEntries($id: ID!, $after: String) {{
+  metaobjectDefinition(id: $id) {{
+    metaobjects(first: 250, after: $after) {{ nodes {{ id displayName }} {PAGE_INFO} }}
+  }}
+}}
+"""
+
+FIELD_ENTRIES_BY_TYPE = f"""
+query HoardFieldEntriesByType($type: String!, $after: String) {{
+  metaobjects(type: $type, first: 250, after: $after) {{ nodes {{ id displayName }} {PAGE_INFO} }}
+}}
+"""
+
+FIELD_VALUE_FIELDS = "namespace key value"
+
+#: One product's values of the fields named, with its first variants'.
+FIELD_VALUES = f"""
+query HoardFieldValues($id: ID!, $keys: [String!], $count: Int!, $variants: Int!) {{
+  product(id: $id) {{
+    id
+    metafields(first: $count, keys: $keys) {{ nodes {{ {FIELD_VALUE_FIELDS} }} }}
+    variants(first: $variants) {{
+      nodes {{ id metafields(first: $count, keys: $keys) {{ nodes {{ {FIELD_VALUE_FIELDS} }} }} }}
+    }}
+  }}
+}}
+"""
+
+FIELDS_SET = """
+mutation HoardFieldsSet($metafields: [MetafieldsSetInput!]!) {
+  metafieldsSet(metafields: $metafields) {
+    metafields { namespace key type value owner { ... on Product { id } ... on ProductVariant { id } } }
+    userErrors { field message code }
+  }
+}
+"""
+
+FIELDS_DELETE = """
+mutation HoardFieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+  metafieldsDelete(metafields: $metafields) {
+    deletedMetafields { ownerId namespace key }
+    userErrors { field message }
+  }
+}
+"""
+
 # Locations and stock.
 
 LOCATIONS = f"""
@@ -352,6 +410,28 @@ def bulk_products() -> str:
         resourcePublicationsV2(onlyPublished: true) {{
           edges {{ node {{ __typename publication {{ id }} }} }}
         }}
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def bulk_field_values(variants: bool) -> str:
+    """A bulk query for every product's fields' values, and, with
+    ``variants``, its variants'."""
+    metafields = f"metafields {{ edges {{ node {{ __typename {FIELD_VALUE_FIELDS} }} }} }}"
+    of_variants = (
+        f"variants {{ edges {{ node {{ __typename id {metafields} }} }} }}" if variants else ""
+    )
+    return f"""
+{{
+  products {{
+    edges {{
+      node {{
+        id
+        {metafields}
+        {of_variants}
       }}
     }}
   }}

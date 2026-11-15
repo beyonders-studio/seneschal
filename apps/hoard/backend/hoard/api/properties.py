@@ -3,8 +3,10 @@ values of them, in the shapes the UI kit draws.
 
 Every member reads a kind's properties. Only a community admin adds, changes
 or removes one, or adds an option to a select (:data:`~hoard.api.deps.AdminDep`).
-A member sets a record's values while Hoard may change. A record's values come
-back with the record itself (:func:`values_of`).
+A member sets a record's values while Hoard may change. A product's value of
+a property a synced store's field fills is written to the store first, and
+the store's answer kept (``hoard.store_fields``). A record's values come back
+with the record itself (:func:`values_of`).
 """
 
 from __future__ import annotations
@@ -20,8 +22,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard import store_fields
 from hoard.api.deps import AdminDep
 from hoard.api.settings import found, refused_as
+from hoard.channels import Connector, ConnectRefused
+from hoard.properties import add_option
 from hoard.records import (
     CURRENCY_CODES,
     Base,
@@ -32,8 +37,18 @@ from hoard.records import (
     PropertyType,
     PropertyValue,
     RecordKind,
+    Store,
 )
-from seneschal_core.api import OrganizationSessionDep, SessionDep, WriteSessionDep, refuse
+from hoard.store_fields import StoreFieldRefused
+from seneschal_core.api import (
+    OrganizationSessionDep,
+    Plugin,
+    PluginDep,
+    SessionDep,
+    WriteSessionDep,
+    refuse,
+)
+from seneschal_core.db import WriteSession
 
 router = APIRouter(prefix="/properties", tags=["properties"])
 
@@ -84,7 +99,10 @@ _SET: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
     404: {"description": "NOT_FOUND"},
-    422: {"description": "PROPERTY_UNKNOWN, VALUE_INVALID"},
+    409: {"description": "STORE_NOT_CONNECTED"},
+    422: {"description": "PROPERTY_UNKNOWN, VALUE_INVALID, STORE_FIELD_VALUE_INVALID"},
+    502: {"description": "STORE_UNREACHABLE and the store's other refusals"},
+    503: {"description": "INITIATIVE_UNAVAILABLE"},
 }
 
 Name = Annotated[str, Field(min_length=1, max_length=100)]
@@ -315,6 +333,26 @@ def _held(definition: PropertyDefinition, value: Any, signer: str) -> Any:
     return held
 
 
+async def _sent(
+    db: WriteSession, plugin: Plugin, community_ref: str, product_id: int, changes: dict[int, Any]
+) -> dict[int, Any]:
+    """``changes`` as the stores whose fields hold them answered them, once
+    written there."""
+
+    # The stores' routes read records' values through this module.
+    from hoard.api.stores import connector_of
+
+    async def connect(store: Store) -> Connector:
+        return await connector_of(plugin, community_ref, store)
+
+    try:
+        return await store_fields.send_properties(db, connect, product_id, changes)
+    except StoreFieldRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+    except ConnectRefused as refused:
+        raise refuse(status.HTTP_502_BAD_GATEWAY, refused.code) from None
+
+
 @router.get("", responses=_READ)
 async def list_properties(kind: RecordKind, db: OrganizationSessionDep) -> list[HoardPropertyRead]:
     """A kind's properties, in the order they were added."""
@@ -372,22 +410,10 @@ async def add_property_option(
     definition = await found(db, PropertyDefinition, property_id)
     if definition.type not in _SELECTS:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, PropertyError.PROPERTY_INVALID)
-    options = [HoardPropertyOption.model_validate(each) for each in definition.options or []]
-    label = body.label.strip()
-    for option in options:
-        if option.label.strip().lower() == label.lower():
-            return option
-    base = "".join(c if c.isascii() and (c.isalnum() or c in "_-") else "_" for c in label.lower())
-    base = base.strip("_")[:64] or "option"
-    taken = {option.value for option in options}
-    value = next(
-        slug for slug in (base, *(f"{base[:58]}-{n}" for n in range(2, 1000))) if slug not in taken
-    )
-    option = HoardPropertyOption(value=value, label=label)
-    definition.options = [*(each.model_dump() for each in options), option.model_dump()]
+    option = add_option(definition, body.label)
     db.add(definition)
     await db.commit()
-    return option
+    return HoardPropertyOption.model_validate(option)
 
 
 @router.put("/values/{kind}/{record_id}", responses=_SET)
@@ -397,9 +423,11 @@ async def set_property_values(
     body: HoardPropertyValuesSet,
     session: SessionDep,
     db: WriteSessionDep,
+    plugin: PluginDep,
 ) -> list[HoardPropertySummary]:
     """Set, take off and step a record's values, answering with every value
-    it then holds."""
+    it then holds. A product's value a store's field holds is written to the
+    store first, and kept as the store answers it."""
     model, column = RECORDS[kind]
     await found(db, model, record_id)
     named = {
@@ -438,6 +466,8 @@ async def set_property_values(
         changes[step.property_id] = _within(
             settings, count + (settings.step if step.up else -settings.step)
         )
+    if kind is RecordKind.PRODUCT and changes:
+        changes = await _sent(db, plugin, session.community_ref, record_id, changes)
     for property_id, value in changes.items():
         row = held.get(property_id)
         if value is None:
