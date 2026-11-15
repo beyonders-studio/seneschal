@@ -6,6 +6,10 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
+
 ## [0.1.2] - 2026-11-14
 
 ### Fixed
