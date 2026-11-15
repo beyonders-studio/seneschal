@@ -2,9 +2,12 @@
 copied in from a store, and shipped in one or more shipments
 (``hoard.shipments``).
 
-An open order **commits** what its lines have not yet shipped, at its
-location: a pending, shipped or cancelled one commits nothing, and a bundle's
-own line commits nothing, since its parts are lines of their own. What is
+An open order **commits** what its lines sell and have not yet shipped, at
+its location: a pending, shipped or cancelled one commits nothing, and a
+bundle's own line commits nothing, since its parts are lines of their own. A
+store's line sells what the store says it does now (``current_quantity``), so
+one refunded before it shipped commits nothing more; one refunded after it
+shipped stays shipped. What is
 **available** is what is on hand less what is committed and what is on hold
 (``hoard.holds``), which is what Hoard tells each store it may sell. Where
 less is available than nothing, the open orders are **short**: each of their
@@ -73,6 +76,15 @@ class OrderRefused(Exception):
         self.code = code
 
 
+#: How many a line sells now, in a query.
+SELLING = func.coalesce(OrderLine.current_quantity, OrderLine.quantity)
+
+
+def selling(line: OrderLine) -> Decimal:
+    """How many a line sells now: a store's after its edits and refunds."""
+    return line.quantity if line.current_quantity is None else line.current_quantity
+
+
 async def committed(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
     """What open orders hold of an item and have not shipped: at one location,
     or at all of them."""
@@ -88,7 +100,7 @@ async def committed(db: AsyncSession, item_id: int, location_id: int | None = No
     )
     part = aliased(OrderLine)
     query = (
-        select(func.coalesce(func.sum(func.greatest(OrderLine.quantity - shipped, 0)), 0))
+        select(func.coalesce(func.sum(func.greatest(SELLING - shipped, 0)), 0))
         .join(Order, col(Order.id) == OrderLine.order_id)
         .where(
             OrderLine.item_id == item_id,
@@ -122,7 +134,7 @@ async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
         return found
     shipped = await held(db, order.id, shipped_only=True)
     for line in shippable(await lines(db, order.id)):
-        left = line.quantity - shipped[line.id]
+        left = selling(line) - shipped[line.id]
         if left <= 0:
             continue
         if line.item_id not in lacking:
@@ -312,7 +324,7 @@ async def settle(db: WriteSession, order: Order) -> None:
         return
     shipped = await held(db, order.id, shipped_only=True)
     to_ship = shippable(await lines(db, order.id))
-    done = bool(to_ship) and all(shipped[line.id] >= line.quantity for line in to_ship)
+    done = bool(to_ship) and all(shipped[line.id] >= selling(line) for line in to_ship)
     order.status = OrderStatus.SHIPPED if done else OrderStatus.OPEN
     await db.flush()
 

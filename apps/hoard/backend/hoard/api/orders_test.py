@@ -1,6 +1,6 @@
 """Orders through the API: a hand order for a customer, its lines and what
 they commit, cancelling and reopening it, and a store's order kept as the
-store has it."""
+store has it, with its customer's other orders."""
 
 from __future__ import annotations
 
@@ -101,13 +101,23 @@ async def test_a_stores_order_changes_its_lines_only_in_the_store(
     store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
     db.add(store)
     await db.flush()
-    order = await sell(
-        (chai.id, "1", "4"),
-        store_id=store.id,
-        external_id="gid://order/1",
-        external_number="#1001",
-        customer_contact_id=None,
-    )
+
+    async def store_order(number: int, customer: str | None):
+        return await sell(
+            (chai.id, "1", "4"),
+            store_id=store.id,
+            external_id=f"gid://order/{number}",
+            external_number=f"#{number}",
+            store_customer=customer,
+            customer_contact_id=None,
+        )
+
+    order = await store_order(1001, "99")
+    again = await store_order(1002, "99")
+    await store_order(1003, "12")
+    alone = await store_order(1004, None)
+    [line] = await orders.lines(db, order.id)
+    line.current_quantity, line.refunded_quantity = Decimal(0), Decimal(1)
     await db.commit()
     await sign_in(client)
 
@@ -117,6 +127,20 @@ async def test_a_stores_order_changes_its_lines_only_in_the_store(
         "#1001",
         None,
     )
+    assert (read["store_customer"], read["customer_orders"]) == (
+        "99",
+        [{"id": again.id, "code": again.code}],
+    )
+    [sold] = read["lines"]
+    assert (sold["quantity"], sold["current_quantity"], sold["refunded_quantity"]) == (
+        "1.000000",
+        "0.000000",
+        "1.000000",
+    )
+    listed = (await client.get("/api/v1/orders", params={"store_customer": "99"})).json()
+    assert (listed["total"], [one["id"] for one in listed["items"]]) == (2, [again.id, order.id])
+    read = (await client.get(f"/api/v1/orders/{alone.id}")).json()
+    assert (read["store_customer"], read["customer_orders"]) == (None, [])
     for refused in (
         await client.post(
             f"/api/v1/orders/{order.id}/lines", json={"item_id": chai.id, "quantity": "1"}

@@ -18,8 +18,10 @@ A connector:
 * reads the store's orders, with their fulfillments, and pushes a shipment
   back as a fulfillment;
 * reads a webhook delivery Initiative checked and forwarded as a
-  :class:`Nudge`: which record changed, which Hoard refetches; it reads none
-  of the connection's values, so a connector built with none parses it;
+  :class:`Nudge`: which record changed, which Hoard refetches, with the body
+  of an order's delivery, and reads that body as the order it describes, for
+  an order the store no longer returns; it reads none of the connection's
+  values, so a connector built with none parses both;
 * imports the orders of the window the store keeps (``history_days``).
 
 A store refusing what Hoard asks raises :class:`ConnectRefused`, with a code
@@ -164,6 +166,7 @@ class StoreLine:
 
     id: str
     title: str
+    #: How many were ordered, with any since refunded or removed.
     quantity: Decimal
     #: What one sold for.
     price: Decimal
@@ -174,6 +177,11 @@ class StoreLine:
     bundle_id: str | None = None
     #: The selling plan of a subscription's line.
     selling_plan: str | None = None
+    #: How many it sells now, after the store's edits and refunds; None when
+    #: that is all of ``quantity``.
+    current_quantity: Decimal | None = None
+    #: How many the store refunded.
+    refunded_quantity: Decimal = Decimal(0)
 
 
 @dataclass(frozen=True)
@@ -197,7 +205,8 @@ class StoreFulfillment:
 
 @dataclass(frozen=True)
 class StoreOrder:
-    """A store's order. Its customer stays in the store: Hoard keeps its number."""
+    """A store's order. Its customer stays in the store: Hoard keeps the
+    store's number for them and nothing else."""
 
     id: str
     number: str
@@ -211,6 +220,10 @@ class StoreOrder:
     shipping: Decimal = Decimal(0)
     tax: Decimal = Decimal(0)
     discount: Decimal = Decimal(0)
+    #: What the store has refunded of it.
+    refunded: Decimal = Decimal(0)
+    #: The store's number for its customer; None for an order with none.
+    customer: str | None = None
     fulfillments: Sequence[StoreFulfillment] = ()
     updated_at: datetime | None = None
 
@@ -251,6 +264,9 @@ class Nudge:
     topic: NudgeTopic
     #: The store's id for the record.
     external_id: str
+    #: The delivery's body, kept for one that describes an order whole
+    #: (:meth:`Connector.webhook_order` reads it); None otherwise.
+    body: Mapping[str, Any] | None = None
 
 
 class Connector(Protocol):
@@ -313,6 +329,11 @@ class Connector(Protocol):
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:
         """What a delivery Initiative checked says changed, or None for one
         Hoard does not act on."""
+        ...
+
+    def webhook_order(self, body: Mapping[str, Any]) -> StoreOrder | None:
+        """The order a body kept on a :class:`Nudge` describes, or None for
+        one that describes none."""
         ...
 
     def import_history(self) -> AsyncIterator[StoreOrder]:

@@ -1398,7 +1398,9 @@ class StockPush(OrganizationRow, table=True):
 
 class StoreNudge(OrganizationRow, table=True):
     """A store's webhook saying one of its records changed: Hoard refetches the
-    record, then marks it done. One waits per record at a time."""
+    record, then marks it done. One waits per record at a time. An order's
+    keeps the webhook's own body, the newest delivered, which Hoard copies
+    when the store no longer returns the order."""
 
     __tablename__ = "store_nudges"
     __table_args__ = (
@@ -1432,6 +1434,8 @@ class StoreNudge(OrganizationRow, table=True):
         sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
     )
     done_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    #: The webhook's body, for an order: what the order was when it was sent.
+    body: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
 class Order(OrganizationRow, Stamped, table=True):
@@ -1448,11 +1452,15 @@ class Order(OrganizationRow, Stamped, table=True):
         UniqueConstraint("organization_id", "code", name="uq_orders_code"),
         UniqueConstraint("organization_id", "store_id", "external_id", name="uq_orders_external"),
         Index("ix_orders_status", "organization_id", "status"),
+        Index("ix_orders_store_customer", "organization_id", "store_id", "store_customer"),
         CheckConstraint("(store_id IS NULL) = (external_id IS NULL)", name="ck_orders_external"),
         CheckConstraint(
             "store_id IS NOT NULL OR customer_contact_id IS NOT NULL", name="ck_orders_customer"
         ),
-        CheckConstraint("shipping >= 0 AND tax >= 0 AND discount >= 0", name="ck_orders_amounts"),
+        CheckConstraint(
+            "shipping >= 0 AND tax >= 0 AND discount >= 0 AND refunded >= 0",
+            name="ck_orders_amounts",
+        ),
     )
 
     id: int = identity()
@@ -1476,13 +1484,22 @@ class Order(OrganizationRow, Stamped, table=True):
     shipping: Decimal = amount()
     tax: Decimal = amount()
     discount: Decimal = amount()
+    #: What the store has refunded of it.
+    refunded: Decimal = amount()
     delivery_address: str | None = None
+    #: The store's number for its customer, for a store's order; Hoard keeps
+    #: nothing else about them.
+    store_customer: str | None = None
+    #: When the store last changed it, as of the copy Hoard holds.
+    store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class OrderLine(OrganizationRow, Stamped, table=True):
     """A variation sold, so many at a price each. A bundle's parts are lines
     of their own, each naming the bundle's line (``bundle_line_id``), and the
-    bundle's own line commits nothing. A line may name the run that made it."""
+    bundle's own line commits nothing. A line may name the run that made it.
+    A store's line keeps how many it sells now, after the store's edits and
+    refunds, beside how many were ordered."""
 
     __tablename__ = "order_lines"
     __table_args__ = (
@@ -1493,13 +1510,22 @@ class OrderLine(OrganizationRow, Stamped, table=True):
         reference("order_lines", "production_run_id", "production_runs"),
         Index("ix_order_lines_order", "organization_id", "order_id"),
         Index("ix_order_lines_item", "organization_id", "item_id"),
-        CheckConstraint("quantity > 0 AND price >= 0", name="ck_order_lines_amounts"),
+        CheckConstraint(
+            "quantity > 0 AND price >= 0 AND current_quantity >= 0 AND refunded_quantity >= 0",
+            name="ck_order_lines_amounts",
+        ),
     )
 
     id: int = identity()
     order_id: int = Field(sa_type=BigInteger)
     item_id: int = Field(sa_type=BigInteger)
+    #: How many were ordered.
     quantity: Decimal = amount()
+    #: How many a store's line sells now, after edits and refunds; None for a
+    #: line that sells its whole quantity, as a hand order's does.
+    current_quantity: Decimal | None = amount(None)
+    #: How many the store refunded.
+    refunded_quantity: Decimal = amount()
     #: What one sold for.
     price: Decimal = amount()
     #: The store's id for the line.

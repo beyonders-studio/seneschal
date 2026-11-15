@@ -6,11 +6,18 @@ the import of the store's recent orders when it connects; and the
 reconcile on Initiative's schedule, for whatever a webhook missed.
 
 A store's order is copied in whole each time (:func:`copy_order`): its lines
-by the store's line ids, each sold item found through its listing, and its
-status from the store's: cancelled, shipped once the store fulfilled every
-line, pending until it is paid, and open, committing stock, once it is. An
-order that first claims its stock makes what it sells where auto-manufacture
-says so (``hoard.automanufacture``).
+by the store's line ids, each sold item found through its listing, with how
+many each sells now and how many were refunded; its refunded total and its
+customer's number; and its status from the store's: cancelled, shipped once
+the store fulfilled every line, pending until it is paid, and open,
+committing what its lines sell, once it is. A copy older than the one Hoard
+holds, by the store's ``updated_at``, is skipped. An order that first claims
+its stock makes what it sells where auto-manufacture says so
+(``hoard.automanufacture``).
+
+A nudge refetches its order from the store. An order the store no longer
+returns, one older than the window it keeps, is copied from the webhook's own
+body instead, kept on the nudge, when Hoard holds it.
 
 Each fulfillment the store has sent becomes a shipment from the location the
 store sent it from, shipped on its date, each line drawing on the lot Hoard
@@ -35,7 +42,7 @@ from sqlalchemy import event, func, update
 from sqlalchemy.orm import ORMExecuteState, Session
 from sqlmodel import col, select
 
-from hoard import automanufacture, channels, listings, recipes, shipments
+from hoard import automanufacture, channels, listings, orders, recipes, shipments
 from hoard.channels import Connector, NudgeTopic, StoreFulfillment, StoreLine, StoreOrder
 from hoard.records import (
     Adjustment,
@@ -171,6 +178,13 @@ async def _order_lines(db: WriteSession, order: Order) -> list[OrderLine]:
     return list(found.all())
 
 
+def _follow(part: OrderLine, line: OrderLine) -> None:
+    """Keep a part Hoard split from a bundle's line selling, and refunded, in
+    step with the line."""
+    part.current_quantity = recipes.scaled(part.quantity, orders.selling(line) / line.quantity)
+    part.refunded_quantity = recipes.scaled(part.quantity, line.refunded_quantity / line.quantity)
+
+
 async def _split(db: WriteSession, line: OrderLine) -> None:
     """Add the parts of ``line``, when it sells a bundle, as its recipe holds
     them, each a line at no price."""
@@ -183,36 +197,47 @@ async def _split(db: WriteSession, line: OrderLine) -> None:
     if recipe is None:
         return
     for part in (await recipes.lines_of(db, [recipe.id]))[recipe.id]:
-        db.add(
-            OrderLine(
-                organization_id=db.organization_id,
-                order_id=line.order_id,
-                item_id=part.item_id,
-                quantity=recipes.scaled(line.quantity, part.quantity / recipe.batch_quantity),
-                price=Decimal(0),
-                bundle_line_id=line.id,
-            )
+        made = OrderLine(
+            organization_id=db.organization_id,
+            order_id=line.order_id,
+            item_id=part.item_id,
+            quantity=recipes.scaled(line.quantity, part.quantity / recipe.batch_quantity),
+            price=Decimal(0),
+            bundle_line_id=line.id,
         )
+        _follow(made, line)
+        db.add(made)
     await db.flush()
 
 
-async def _copy_lines(db: WriteSession, items: _Items, order: Order, found: StoreOrder) -> None:
-    """Keep a line for each of the store's lines whose item is known. A bundle
-    whose parts the store sends has them as its parts; one whose parts it does
-    not send is split as its recipe holds them."""
+async def _copy_lines(db: WriteSession, items: _Items, order: Order, found: StoreOrder) -> bool:
+    """Keep a line for each of the store's lines whose item is known, selling
+    what the store says it sells now. A bundle whose parts the store sends has
+    them as its parts; one whose parts it does not send is split as its recipe
+    holds them. Answers whether what any line sells changed."""
     held = await _order_lines(db, order)
+    before = {line.id: orders.selling(line) for line in held}
     by_store = {line.external_line_id: line for line in held if line.external_line_id}
     bundles = {line.bundle_id for line in found.lines if line.bundle_id}
+    changed = False
     # A bundle's own line first, so that its parts can name it.
     for sold in sorted(found.lines, key=lambda sold: sold.id not in bundles):
+        current = sold.quantity if sold.current_quantity is None else sold.current_quantity
         line = by_store.get(sold.id)
         if line is not None:
             line.price, line.selling_plan = sold.price, sold.selling_plan
+            parts = [
+                part
+                for part in held
+                if part.bundle_line_id == line.id and part.external_line_id is None
+            ]
             if sold.quantity > 0 and sold.quantity != line.quantity:
-                for part in held:
-                    if part.bundle_line_id == line.id and part.external_line_id is None:
-                        part.quantity = recipes.scaled(part.quantity, sold.quantity / line.quantity)
+                for part in parts:
+                    part.quantity = recipes.scaled(part.quantity, sold.quantity / line.quantity)
                 line.quantity = sold.quantity
+            line.current_quantity, line.refunded_quantity = current, sold.refunded_quantity
+            for part in parts:
+                _follow(part, line)
             continue
         item_id = await items.item(sold)
         if item_id is None or sold.quantity <= 0:
@@ -223,6 +248,8 @@ async def _copy_lines(db: WriteSession, items: _Items, order: Order, found: Stor
             order_id=order.id,
             item_id=item_id,
             quantity=sold.quantity,
+            current_quantity=current,
+            refunded_quantity=sold.refunded_quantity,
             price=sold.price,
             external_line_id=sold.id,
             bundle_line_id=None if bundle is None else bundle.id,
@@ -231,9 +258,11 @@ async def _copy_lines(db: WriteSession, items: _Items, order: Order, found: Stor
         db.add(line)
         await db.flush()
         by_store[sold.id] = line
+        changed = True
         if sold.id not in bundles:
             await _split(db, line)
     await db.flush()
+    return changed or any(orders.selling(line) != before[line.id] for line in held)
 
 
 async def _ship(
@@ -350,6 +379,14 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
             .with_for_update()
         )
     ).first()
+    if (
+        order is not None
+        and order.store_updated_at is not None
+        and found.updated_at is not None
+        and found.updated_at < order.store_updated_at
+    ):
+        # An older copy than the one held: what it says has since changed.
+        return order
     mapped = await _mapped(db, store)
     before = None if order is None else order.status
     if order is None:
@@ -366,8 +403,10 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
     order.external_number = found.number
     order.paid = found.paid
     order.shipping, order.tax, order.discount = found.shipping, found.tax, found.discount
+    order.refunded, order.store_customer = found.refunded, found.customer
+    order.store_updated_at = found.updated_at or order.store_updated_at
     await db.flush()
-    await _copy_lines(db, items, order, found)
+    selling_changed = await _copy_lines(db, items, order, found)
 
     status = _status(found)
     live = any(_sent(sent) and not _history(store, sent) for sent in found.fulfillments)
@@ -391,7 +430,7 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
             .values(status=ShipmentStatus.CANCELLED)
         )
         await _take_back(db, order, (found.updated_at or _now()).date())
-    if status is not before:
+    if status is not before or selling_changed:
         # What the order commits changed, for its items' listings.
         for item_id in sorted({line.item_id for line in await _order_lines(db, order)}):
             await listings.note_changed(db, item_id)
@@ -399,11 +438,24 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
     return order
 
 
+async def _held(db: WriteSession, store: Store, external_id: str) -> bool:
+    found = await db.exec(
+        select(func.count())
+        .select_from(Order)
+        .where(Order.store_id == store.id, Order.external_id == external_id)
+    )
+    return bool(found.one())
+
+
 async def _refetch(db: WriteSession, store: Store, connector: Connector, nudge: StoreNudge) -> None:
-    """Read again from the store the record a nudge names, and keep what it says."""
+    """Read again from the store the record a nudge names, and keep what it
+    says. An order the store no longer returns is kept as the webhook's body
+    describes it, when Hoard holds it."""
     if nudge.topic == NudgeTopic.ORDER:
         found = await connector.order(nudge.external_id)
-        if found is not None:
+        if found is None and nudge.body is not None and await _held(db, store, nudge.external_id):
+            found = connector.webhook_order(nudge.body)
+        if found is not None and found.id == nudge.external_id:
             await copy_order(db, store, connector, found)
     elif nudge.topic == NudgeTopic.PRODUCT:
         product = await connector.product(nudge.external_id)

@@ -172,15 +172,18 @@ query HoardAvailable($item: ID!, $location: ID!) {
 
 # Orders.
 
+# Of the customer, only their id.
 ORDER_FIELDS = """
 id name processedAt updatedAt cancelledAt fullyPaid displayFulfillmentStatus currencyCode
 totalShippingPriceSet { shopMoney { amount } }
 totalTaxSet { shopMoney { amount } }
 totalDiscountsSet { shopMoney { amount } }
+totalRefundedSet { shopMoney { amount } }
+customer { id }
 """
 
 LINE_FIELDS = """
-id name sku currentQuantity
+id name sku quantity currentQuantity
 originalUnitPriceSet { shopMoney { amount } }
 product { id }
 variant { id }
@@ -210,6 +213,27 @@ LINES_PAGE = f"""
 query HoardLinesPage($id: ID!, $after: String) {{
   order(id: $id) {{
     lineItems(first: 100, after: $after) {{ nodes {{ {LINE_FIELDS} }} {PAGE_INFO} }}
+  }}
+}}
+"""
+
+REFUND_LINE_FIELDS = "quantity lineItem { id }"
+
+REFUNDS = f"""
+query HoardRefunds($id: ID!) {{
+  order(id: $id) {{
+    refunds(first: 50) {{
+      id
+      refundLineItems(first: 50) {{ nodes {{ {REFUND_LINE_FIELDS} }} {PAGE_INFO} }}
+    }}
+  }}
+}}
+"""
+
+REFUND_LINES_PAGE = f"""
+query HoardRefundLinesPage($id: ID!, $after: String) {{
+  refund(id: $id) {{
+    refundLineItems(first: 100, after: $after) {{ nodes {{ {REFUND_LINE_FIELDS} }} {PAGE_INFO} }}
   }}
 }}
 """
