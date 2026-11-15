@@ -21,8 +21,11 @@
   },
   "export": {
     "title": "Export",
-    "description": "Download every record of a kind: CSV for a spreadsheet, JSON for another program. Costs and prices are included only if you can see them.",
+    "description": "Export every record of a kind: CSV for a spreadsheet, JSON for another program. Hoard makes the file in the background, and you download it when it's ready. Costs and prices are included only if you can see them.",
+    "start": "Export {{kind}} as {{format}}",
     "download": "Download {{kind}} as {{format}}",
+    "downloadReady": "Download",
+    "startFailed": "Hoard couldn't start the export. Try again in a moment.",
     "kinds": {
       "materials": "Materials",
       "bases": "Bases",

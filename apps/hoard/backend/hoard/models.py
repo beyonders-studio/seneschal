@@ -4,8 +4,9 @@ from sqlmodel import SQLModel
 
 from hoard import records
 from seneschal_core.auth import HandoffRedemption
+from seneschal_core.jobs import Job
 from seneschal_core.organizations import Organization
 
 metadata = SQLModel.metadata
 
-__all__ = ["HandoffRedemption", "Organization", "metadata", "records"]
+__all__ = ["HandoffRedemption", "Job", "Organization", "metadata", "records"]

@@ -1,12 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ExportFormat, ExportKind } from "@/api/generated/hoard.schemas";
+import { useExportRecords } from "@/api/generated/export/export";
+import { ExportFormat, ExportKind, JobState } from "@/api/generated/hoard.schemas";
 import { useReadReorderReport, useReadValuationReport } from "@/api/generated/reports/reports";
+import { JobProgress } from "@/components/JobProgress";
+import { toast } from "@/components/Toaster";
 import { CostOfGoodsSection } from "@/features/reports/CostOfGoodsSection";
 import { errorMessage } from "@/lib/errors";
+import { jobFinished, jobResultUrl, useJob } from "@/lib/jobs";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
@@ -212,28 +216,66 @@ function ExportLinks() {
     <Section title={t("export.title")} description={t("export.description")}>
       <ul className="flex flex-col divide-y">
         {Object.values(ExportKind).map((kind) => (
-          <li key={kind} className="flex flex-wrap items-center justify-between gap-2 py-2">
-            <span>{t(`export.kinds.${kind}`)}</span>
-            <span className="flex gap-2">
-              {Object.values(ExportFormat).map((format) => (
-                <Button key={format} asChild variant="outline" size="sm">
-                  <a
-                    href={`/api/v1/export/${kind}?format=${format}`}
-                    download={`${kind}.${format}`}
-                    aria-label={t("export.download", {
-                      kind: t(`export.kinds.${kind}`),
-                      format: t(`export.formats.${format}`),
-                    })}
-                  >
-                    <Download aria-hidden />
-                    {t(`export.formats.${format}`)}
-                  </a>
-                </Button>
-              ))}
-            </span>
-          </li>
+          <ExportRow key={kind} kind={kind} />
         ))}
       </ul>
     </Section>
+  );
+}
+
+/** One kind's exports: a button per format starts one, which shows its
+ *  progress and then offers its file. */
+function ExportRow({ kind }: { kind: ExportKind }) {
+  const { t } = useTranslation("reports");
+  const [started, setStarted] = useState<{ id: number; format: ExportFormat } | null>(null);
+  const start = useExportRecords({
+    mutation: {
+      onSuccess: (job, { params }) =>
+        setStarted({ id: job.id, format: params?.format ?? ExportFormat.csv }),
+      onError: (error) => toast.error(errorMessage(error, t, "export.startFailed")),
+    },
+  });
+  const { data: job, error, isError } = useJob(started?.id ?? null);
+  const name = t(`export.kinds.${kind}`);
+  const working = start.isPending || (started !== null && !isError && !jobFinished(job));
+  return (
+    <li className="flex flex-wrap items-center justify-between gap-2 py-2">
+      <span>{name}</span>
+      <span className="flex flex-wrap items-center gap-2">
+        {isError && (
+          <p role="alert" className="text-sm text-destructive">
+            {errorMessage(error, t, "export.startFailed")}
+          </p>
+        )}
+        {job && job.state !== JobState.done && <JobProgress job={job} />}
+        {job?.state === JobState.done && started && (
+          <Button asChild size="sm">
+            <a
+              href={jobResultUrl(job.id)}
+              download={job.file_name ?? undefined}
+              aria-label={t("export.download", {
+                kind: name,
+                format: t(`export.formats.${started.format}`),
+              })}
+            >
+              <Download aria-hidden />
+              {t("export.downloadReady")}
+            </a>
+          </Button>
+        )}
+        {Object.values(ExportFormat).map((format) => (
+          <Button
+            key={format}
+            variant="outline"
+            size="sm"
+            disabled={working}
+            onClick={() => start.mutate({ kind, params: { format } })}
+            aria-label={t("export.start", { kind: name, format: t(`export.formats.${format}`) })}
+          >
+            {t(`export.formats.${format}`)}
+          </Button>
+        ))}
+      </span>
+    </li>
   );
 }

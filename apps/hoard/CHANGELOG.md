@@ -8,6 +8,7 @@ All notable changes to Hoard are recorded here. The format follows
 
 ### Changed
 
+- Exports run in the background: Hoard shows each one's progress, then offers its file to download once it's ready. Only the member who started an export can download it, for a week.
 - Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
 
 ## [0.1.2] - 2026-11-14

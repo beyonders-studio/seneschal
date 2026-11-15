@@ -3,7 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 
-import type { Me } from "@/api/generated/hoard.schemas";
+import type { JobRead, Me } from "@/api/generated/hoard.schemas";
 import { apiClient } from "@/api/mutator";
 import { createAppRouter } from "@/router";
 
@@ -19,6 +19,25 @@ export const signedIn = (overrides: Partial<Me> = {}): Me => ({
   locale: "en",
   read_only: false,
   plan: "standard",
+  ...overrides,
+});
+
+/** A job as `GET /jobs/{id}` reads it: an export, queued. */
+export const buildJob = (overrides: Partial<JobRead> = {}): JobRead => ({
+  id: 5,
+  kind: "export",
+  started_by: "member-ref",
+  args: {},
+  state: "queued",
+  step: null,
+  done: null,
+  total: null,
+  attempts: 0,
+  error: null,
+  result: null,
+  file_name: null,
+  created_at: "2026-11-15T09:00:00Z",
+  finished_at: null,
   ...overrides,
 });
 
