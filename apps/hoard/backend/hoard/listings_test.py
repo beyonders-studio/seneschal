@@ -197,17 +197,16 @@ async def test_a_change_is_noted_for_pushing(db: WriteSession, store: Store):
 async def test_the_stores_locations_are_kept(db: WriteSession, store: Store, main: Location):
     kept = await listings.keep_locations(db, store, {"l1": "Shop", "l2": "Warehouse"})
     assert [(found.external_id, found.name, found.location_id) for found in kept] == [
-        ("l1", "Shop", main.id),
-        ("l2", "Warehouse", main.id),
+        ("l1", "Shop", None),
+        ("l2", "Warehouse", None),
     ]
-    db.add(Location(organization_id=db.organization_id, name="Back room"))
-    kept[0].location_id = None
+    kept[0].location_id = main.id
     await db.flush()
 
     again = await listings.keep_locations(db, store, {"l1": "Front shop", "l3": "Pop-up"})
 
     assert [(found.external_id, found.name, found.location_id) for found in again] == [
-        ("l1", "Front shop", None),
+        ("l1", "Front shop", main.id),
         ("l3", "Pop-up", None),
     ]
     assert len((await db.exec(select(StoreLocation))).all()) == 2

@@ -161,16 +161,16 @@ async def test_an_admin_reads_the_store_again_and_maps_its_locations(
     await sign_in(client, admin=True)
     read = (await client.post(f"/api/v1/stores/{store.id}/refresh")).json()
 
-    assert (read["listings"], read["linked"]) == (2, 2)
+    assert (read["listings"], read["linked"], read["pushes_queued"]) == (2, 2, 0)
     assert [(found["external_id"], found["location_id"]) for found in read["locations"]] == [
-        ("loc-1", main.id),
-        ("loc-2", main.id),
+        ("loc-1", None),
+        ("loc-2", None),
     ]
     warehouse = read["locations"][1]
-    unmapped = await client.put(
-        f"/api/v1/stores/{store.id}/locations/{warehouse['id']}", json={"location_id": None}
+    mapped = await client.put(
+        f"/api/v1/stores/{store.id}/locations/{warehouse['id']}", json={"location_id": main.id}
     )
-    assert unmapped.json()["location_id"] is None
+    assert mapped.json()["location_id"] == main.id
     unknown = await client.put(
         f"/api/v1/stores/{store.id}/locations/{warehouse['id']}", json={"location_id": 999999}
     )

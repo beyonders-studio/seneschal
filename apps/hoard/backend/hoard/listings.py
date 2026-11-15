@@ -31,7 +31,6 @@ from hoard.records import (
     Item,
     ItemKind,
     Listing,
-    Location,
     MatchedBy,
     Product,
     ProductStatus,
@@ -205,18 +204,16 @@ async def keep_locations(
 ) -> list[StoreLocation]:
     """Keep the store's ``locations``, each one's name by the store's id: new
     ones are added, renamed ones renamed, and those the store no longer has
-    removed. While the organization has one location, a new store location
-    sells its stock. Answers the store's locations, by name."""
+    removed. A new store location sells nothing until an administrator maps
+    it, so nothing is pushed to the store before then. Answers the store's
+    locations, by name."""
     found = await db.exec(select(StoreLocation).where(StoreLocation.store_id == store.id))
     held = {location.external_id: location for location in found.all()}
-    ours = (await db.exec(select(Location.id).limit(2))).all()
-    only = ours[0] if len(ours) == 1 else None
     for external_id, name in locations.items():
         location = held.pop(external_id, None) or StoreLocation(
             organization_id=db.organization_id,
             store_id=store.id,
             external_id=external_id,
-            location_id=only,
         )
         location.name = name
         db.add(location)

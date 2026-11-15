@@ -6,6 +6,12 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-15
+
+### Changed
+
+- Connecting a store sends it nothing: each of its locations sells nothing until an admin maps it to one of yours under **Settings › Stores**, so Hoard only reads the store until then.
+
 ## [0.1.2] - 2026-11-14
 
 ### Fixed

@@ -1,7 +1,7 @@
 {
   "section": {
     "title": "Stores",
-    "description": "A store connects under Hoard's connections in Initiative. Hoard tells it what it may sell from the locations mapped here.",
+    "description": "A store connects under Hoard's connections in Initiative. Hoard tells it what it may sell from the locations mapped here, and sends it nothing until one is mapped.",
     "empty": "No store is connected yet.",
     "connected": "Connected",
     "notConnected": "Not connected",

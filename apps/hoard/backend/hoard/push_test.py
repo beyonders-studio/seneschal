@@ -441,11 +441,31 @@ async def test_a_rolled_back_change_is_not_pushed(db: WriteSession, chai, lot):
 
 
 async def test_reconcile_reads_the_locations_and_pushes_what_differs(
-    db: WriteSession, plugin, serving_database, shop: FakeConnector, listing, store, chai, lot
+    db: WriteSession,
+    plugin,
+    serving_database,
+    shop: FakeConnector,
+    listing,
+    store,
+    chai,
+    lot,
+    main: Location,
 ):
     await lot(chai.id, "L1", "3")
     await db.commit()
     shop.shop_locations = {"loc-1": "Shop"}
+
+    await push.reconcile(plugin, db.organization_id, store, shop)
+
+    # A location the store just showed sells nothing until it is mapped.
+    assert await _pushes(serving_database, db.organization_id) == []
+    assert shop.stock == {}
+    await db.execute(
+        update(StoreLocation)
+        .where(col(StoreLocation.external_id) == "loc-1")
+        .values(location_id=main.id)
+    )
+    await db.commit()
 
     await push.reconcile(plugin, db.organization_id, store, shop)
 
