@@ -1,9 +1,9 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { ReportReorderRow, ReportValuation } from "@/api/generated/hoard.schemas";
 import { SEE_COSTS } from "@/lib/permissions";
-import { openSignedIn, signedIn } from "@/testing";
+import { buildJob, openSignedIn, signedIn } from "@/testing";
 
 const reorder: ReportReorderRow[] = [
   {
@@ -36,11 +36,16 @@ const answers = {
   "GET /api/v1/settings": { status: 200, data: { currency: "EUR" } },
   "GET /api/v1/reports/reorder": { status: 200, data: reorder },
   "GET /api/v1/reports/valuation": { status: 200, data: valuation },
+  "POST /api/v1/export/purchase_lines": { status: 202, data: buildJob() },
+  "GET /api/v1/jobs/5": {
+    status: 200,
+    data: buildJob({ state: "done", file_name: "purchase_lines.json" }),
+  },
 };
 
 describe("ReportsPage", () => {
-  it("shows what to reorder, what stock is worth, and every kind to download", async () => {
-    await openSignedIn(
+  it("shows what to reorder, what stock is worth, and every kind to export", async () => {
+    const asked = await openSignedIn(
       "/reports",
       signedIn({ page: "reports", permissions: ["use", SEE_COSTS] }),
       answers
@@ -55,8 +60,12 @@ describe("ReportsPage", () => {
     expect(await screen.findAllByText("€10.00")).toHaveLength(2);
     expect(screen.getByText("€4.00")).toBeTruthy();
 
-    const download = screen.getByRole("link", { name: "Download Purchase lines as JSON" });
-    expect(download.getAttribute("href")).toBe("/api/v1/export/purchase_lines?format=json");
+    fireEvent.click(screen.getByRole("button", { name: "Export Purchase lines as JSON" }));
+    const download = await screen.findByRole("link", { name: "Download Purchase lines as JSON" });
+    expect(download.getAttribute("href")).toBe("/api/v1/jobs/5/result");
+    expect(download.getAttribute("download")).toBe("purchase_lines.json");
+    const exported = asked.find((request) => request.url === "/api/v1/export/purchase_lines");
+    expect(exported?.params).toEqual({ format: "json" });
   });
 
   it("shows no stock value to a member who doesn't see costs, and never asks for it", async () => {

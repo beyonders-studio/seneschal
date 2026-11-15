@@ -15,6 +15,7 @@ from hoard.channels import ConnectError
 from hoard.channels.fake import FakeConnector
 from hoard.channels.hooks import webhook_address
 from hoard.records import Channel, Store, StoreNudge
+from seneschal_core import jobs
 from seneschal_core.db import Database
 from seneschal_core.testing import InitiativeStandIn
 
@@ -167,13 +168,18 @@ async def test_the_schedules_reconcile_each_connected_store_and_keep_it_subscrib
     assert ran[1][2][0].isoformat() == since
 
     store.subscriptions.clear()
-    pruned: list[int | None] = []
+    pruned: list[tuple[str, int | None]] = []
 
-    async def prune(db) -> None:
-        pruned.append(db.organization_id)
+    def pruning(name: str):
+        async def prune(db) -> None:
+            pruned.append((name, db.organization_id))
 
-    monkeypatch.setattr(push, "prune", prune)
+        return prune
+
+    monkeypatch.setattr(push, "prune", pruning("push"))
+    monkeypatch.setattr(jobs, "prune", pruning("jobs"))
     assert (await call("schedule", {"schedule": "upkeep", "since": None})).status_code == 204
     assert store.subscriptions == {ADDRESS}
-    assert len(pruned) == 1 and pruned[0] is not None
+    assert [name for name, _ in pruned] == ["push", "jobs"]
+    assert all(organization_id is not None for _, organization_id in pruned)
     assert (await call("schedule", {"schedule": "nightly", "since": None})).status_code == 400

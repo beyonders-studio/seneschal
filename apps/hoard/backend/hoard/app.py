@@ -12,10 +12,12 @@ from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
 from hoard import plugin_manifest, push, sync, tracking
+from hoard.api import export
 from hoard.api import router as api_router
 from hoard.channels import hooks as store_hooks
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
 from hoard.endpoints import ENDPOINTS
+from seneschal_core import jobs
 from seneschal_core.api import Plugin, install
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
@@ -40,6 +42,10 @@ def frame_ancestors(parent: str | None) -> str | None:
     if parent is None:
         return None
     return "frame-ancestors " + " ".join(dict.fromkeys([parent.rstrip("/"), *_PHONE_APP_ORIGINS]))
+
+
+#: The handler of each kind of job Hoard runs, by kind.
+JOB_HANDLERS: dict[str, jobs.Handler] = {export.EXPORT_JOB: export.export}
 
 
 def plugin_for(settings: Settings) -> Plugin:
@@ -83,11 +89,13 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await plugin.start()
         # Until the app stops: the events the outbox holds are sent, stock
-        # is pushed to stores, and what stores' webhooks say is worked.
+        # is pushed to stores, what stores' webhooks say is worked, and
+        # queued jobs are run.
         workers = [
             asyncio.create_task(tracking.deliver_forever(plugin)),
             asyncio.create_task(push.push_forever(plugin)),
             asyncio.create_task(sync.work_forever(plugin)),
+            asyncio.create_task(jobs.work_forever(plugin, JOB_HANDLERS)),
         ]
         try:
             yield

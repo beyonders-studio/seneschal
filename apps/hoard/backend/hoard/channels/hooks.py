@@ -21,8 +21,9 @@ and the schedules, by ``body["schedule"]``:
   what changed since the last reconcile copied in (``hoard.sync``) and what
   is available pushed where the store holds something else (``hoard.push``);
 * ``upkeep``: each connected store's subscriptions finished, the push log
-  pruned (``hoard.push``), and the holds whose ready date has come noted
-  (``hoard.holds``).
+  pruned (``hoard.push``), the holds whose ready date has come noted
+  (``hoard.holds``), and the jobs finished a week ago pruned
+  (``seneschal_core.jobs``).
 """
 
 from __future__ import annotations
@@ -41,6 +42,7 @@ from sqlmodel import col, select
 from hoard import channels, holds, plugin_manifest, push, sync
 from hoard.channels import Connected, ConnectRefused
 from hoard.records import Channel, Store, StoreNudge
+from seneschal_core import jobs
 from seneschal_core.db import OrganizationSession, WriteSession
 from seneschal_core.platform import (
     HookBodyInvalid,
@@ -193,6 +195,7 @@ def hooks(address: str) -> dict[str, HookHandler]:
             async with write_session(call) as db:
                 await push.prune(db)
                 await holds.upkeep(db)
+                await jobs.prune(db)
                 await db.commit()
         for store in stores:
             connector = await channels.connect(

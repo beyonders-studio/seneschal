@@ -1163,6 +1163,38 @@ export interface HoldRelease {
   ended_on?: string | null;
 }
 
+export type JobReadArgs = { [key: string]: unknown };
+
+export type JobState = (typeof JobState)[keyof typeof JobState];
+
+export const JobState = {
+  queued: "queued",
+  running: "running",
+  done: "done",
+  failed: "failed",
+} as const;
+
+/**
+ * A job as pages read it: its progress, and what it answered. A job
+ * holding a file names it in ``file_name``.
+ */
+export interface JobRead {
+  id: number;
+  kind: string;
+  started_by: string | null;
+  args: JobReadArgs;
+  state: JobState;
+  step: string | null;
+  done: number | null;
+  total: number | null;
+  attempts: number;
+  error: string | null;
+  result: unknown;
+  file_name: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
 /**
  * The item a listing sells, or null to unlink it.
  */
@@ -2490,6 +2522,10 @@ export interface TrackingRead {
 export type Healthz200 = { [key: string]: string };
 
 export type Readyz200 = { [key: string]: string };
+
+export type ListJobsParams = {
+  kind?: string | null;
+};
 
 export type ListSettingsCategoriesParams = {
   kind?: CategoryKind | null;

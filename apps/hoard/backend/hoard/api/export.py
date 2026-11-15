@@ -1,7 +1,11 @@
 """Each kind of record, exported as CSV or JSON: every record of the kind in the
 organization, one row each, with every column but the organization's. Without
 the ``costs`` permission, no column of what something cost or sells for is
-sent."""
+sent.
+
+An export runs as a job (``seneschal_core.jobs``) of kind :data:`EXPORT_JOB`:
+asking for one queues it, with whether the member who asked sees costs, and
+its file is downloaded from the job once it is done."""
 
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ from decimal import Decimal
 from enum import Enum, StrEnum
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, Response
+from fastapi import APIRouter, Query, status
 from sqlalchemy import inspect
 from sqlmodel import SQLModel, select
 
@@ -32,7 +36,9 @@ from hoard.records import (
     StocktakeRow,
     Variation,
 )
-from seneschal_core.api import OrganizationSessionDep
+from seneschal_core import jobs
+from seneschal_core.api import OrganizationSessionDep, SessionDep
+from seneschal_core.jobs import JobContext, JobFile, JobRead, JobResult
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -75,6 +81,9 @@ KINDS: dict[ExportKind, tuple[type[SQLModel], frozenset[str]]] = {
     ExportKind.RECIPE_LINES: (RecipeLine, frozenset()),
 }
 
+#: The kind of job an export is.
+EXPORT_JOB = "export"
+
 #: The characters a spreadsheet reads a cell starting with as a formula.
 FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
 
@@ -114,29 +123,42 @@ def _csv(columns: list[str], records: list[Any]) -> str:
     return out.getvalue()
 
 
-@router.get(
+@router.post(
     "/{kind}",
-    response_class=Response,
-    responses={
-        200: {"content": {"text/csv": {}, "application/json": {}}},
-        401: {"description": "NOT_AUTHENTICATED"},
-    },
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={401: {"description": "NOT_AUTHENTICATED"}},
 )
 async def export_records(
     kind: ExportKind,
     db: OrganizationSessionDep,
+    session: SessionDep,
     sees_costs: SeesCostsDep,
     file_format: Annotated[ExportFormat, Query(alias="format")] = ExportFormat.CSV,
-) -> Response:
-    """Every record of ``kind``, oldest first, as a file to download."""
+) -> JobRead:
+    """Queue an export of every record of ``kind``; its job's file is the export."""
+    job = await jobs.enqueue(
+        db,
+        EXPORT_JOB,
+        {"kind": kind.value, "format": file_format.value, "sees_costs": sees_costs},
+        started_by=session.member_ref,
+    )
+    await db.commit()
+    return JobRead.model_validate(job, from_attributes=True)
+
+
+async def export(job: JobContext) -> JobResult:
+    """The export a job asks for: every record of its kind, oldest first, as a file."""
+    kind, file_format = ExportKind(job.args["kind"]), ExportFormat(job.args["format"])
     model, costs = KINDS[kind]
     mapper = inspect(model)
     columns = [
         column.key
         for column in mapper.columns
-        if column.key != "organization_id" and (sees_costs or column.key not in costs)
+        if column.key != "organization_id" and (job.args["sees_costs"] or column.key not in costs)
     ]
-    records = list(await db.exec(select(model).order_by(*mapper.primary_key)))
+    await job.progress("reading")
+    async with job.plugin.database.organization_session(job.organization_id) as db:
+        records = list(await db.exec(select(model).order_by(*mapper.primary_key)))
     if file_format is ExportFormat.CSV:
         content = _csv(columns, records)
         media_type = "text/csv; charset=utf-8"
@@ -149,8 +171,6 @@ async def export_records(
             ensure_ascii=False,
         )
         media_type = "application/json"
-    return Response(
-        content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{kind.value}.{file_format.value}"'},
+    return JobResult(
+        file=JobFile(content.encode(), media_type, f"{kind.value}.{file_format.value}")
     )

@@ -1,0 +1,13 @@
+{
+  "queued": "Waiting to start",
+  "running": "Working…",
+  "done": "Done",
+  "failed": "This didn't finish. Try again in a moment.",
+  "count": "{{step}}: {{done}} of {{total}}",
+  "steps": {
+    "reading": "Reading the records"
+  },
+  "errors": {
+    "JOB_FAILED": "Something went wrong, and Hoard stopped after trying again. Try again in a moment."
+  }
+}
