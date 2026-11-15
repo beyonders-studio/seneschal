@@ -241,14 +241,19 @@ async def test_mapping_a_location_queues_what_is_available_there(
     ] == 0
 
 
-async def test_a_pending_store_is_not_read_again(
-    client, sign_in, pending: Store, shop: FakeConnector
+async def test_a_pending_store_is_neither_read_again_nor_written_to(
+    client, sign_in, pending: Store, shop: FakeConnector, chai
 ):
+    product, _, _ = chai
     await sign_in(client, admin=True)
 
-    refused = await client.post(f"/api/v1/stores/{pending.id}/refresh")
-
-    assert (refused.status_code, refused.json()) == (409, {"detail": "STORE_NOT_SYNCED"})
+    for refused in (
+        await client.post(f"/api/v1/stores/{pending.id}/refresh"),
+        await client.put(f"/api/v1/stores/{pending.id}/products/p1", json={"title": "Chai"}),
+        await client.post(f"/api/v1/stores/{pending.id}/products", json={"product_id": product.id}),
+    ):
+        assert (refused.status_code, refused.json()) == (409, {"detail": "STORE_NOT_SYNCED"})
+    assert shop.shop_products["p1"].title == "Chai"
 
 
 async def test_a_store_product_is_read_from_its_copy_with_prices_only_for_costs(

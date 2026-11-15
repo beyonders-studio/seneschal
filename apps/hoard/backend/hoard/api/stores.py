@@ -72,7 +72,11 @@ _LIVE: dict[int | str, dict[str, Any]] = {
     502: {"description": "STORE_UNREACHABLE and the store's other refusals"},
     503: {"description": "INITIATIVE_UNAVAILABLE"},
 }
-_CHANGE_LIVE: dict[int | str, dict[str, Any]] = {**_LIVE, 403: {"description": "READ_ONLY"}}
+_CHANGE_LIVE: dict[int | str, dict[str, Any]] = {
+    **_LIVE,
+    403: {"description": "READ_ONLY"},
+    409: {"description": "STORE_NOT_CONNECTED, STORE_NOT_SYNCED"},
+}
 _ADMIN: dict[int | str, dict[str, Any]] = {
     **_CHANGE_LIVE,
     403: {"description": "ADMIN_ONLY, READ_ONLY"},
@@ -273,6 +277,12 @@ def _store_refused(refused: ConnectRefused) -> HTTPException:
     return refuse(status.HTTP_502_BAD_GATEWAY, refused.code)
 
 
+def _require_synced(store: Store) -> None:
+    """Refuse a write to a store that is not synced: Hoard writes nothing to it."""
+    if store.imported_at is None:
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_SYNCED)
+
+
 async def _connector(plugin: Plugin, community_ref: str, store: Store) -> Connector:
     """The store's connector, from the values its connection holds now."""
     if not store.connected:
@@ -362,8 +372,7 @@ async def refresh_store(
     product not yet listed into Hoard as its sync did, and push each listing
     what is available."""
     store = await found(db, Store, store_id)
-    if store.imported_at is None:
-        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_SYNCED)
+    _require_synced(store)
     connector = await _connector(plugin, session.community_ref, store)
     try:
         locations = await connector.locations()
@@ -645,6 +654,7 @@ async def save_store_product(
     it now, kept as Hoard's copy. Its listings are kept, and those not yet
     linked matched again."""
     store = await found(db, Store, store_id)
+    _require_synced(store)
     connector = await _connector(plugin, session.community_ref, store)
     try:
         product = await connector.product(product_id)
@@ -692,6 +702,7 @@ async def create_store_product(
     """Make a Hoard product in the store, as a draft with a variant for each of
     its variations, each listing linked to its variation at once."""
     store = await found(db, Store, store_id)
+    _require_synced(store)
     product = await found(db, Product, body.product_id)
     variations = list(
         (
