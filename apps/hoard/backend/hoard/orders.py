@@ -27,6 +27,7 @@ order commits notes it for the items' listings (``hoard.listings``).
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
@@ -35,9 +36,10 @@ from sqlalchemy.orm import aliased
 from sqlmodel import col, exists, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import holds, recipes
+from hoard import holds, recipes, units
 from hoard.records import (
     Hold,
+    Lot,
     Order,
     OrderLine,
     OrderStatus,
@@ -126,6 +128,18 @@ async def available(db: AsyncSession, item_id: int, location_id: int | None = No
         - await committed(db, item_id, location_id)
         - await holds.on_hold(db, item_id, location_id)
     )
+
+
+async def expired(db: AsyncSession, item_id: int, location_id: int, today: date) -> Decimal:
+    """What an item's lots past their expiry date hold at a location, but for
+    those on hold, which are not available anyway."""
+    query = select(func.coalesce(func.sum(func.greatest(Lot.balance, 0)), 0)).where(
+        Lot.item_id == item_id,
+        Lot.location_id == location_id,
+        col(Lot.expires_on) < today,
+        col(Lot.id).not_in(holds.held_lots()),
+    )
+    return Decimal((await db.exec(query)).one())
 
 
 async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
@@ -253,7 +267,7 @@ async def _split(db: WriteSession, line: OrderLine, product: Product) -> None:
                 organization_id=db.organization_id,
                 order_id=line.order_id,
                 item_id=recipe_line.item_id,
-                quantity=recipes.scaled(line.quantity, each),
+                quantity=units.scaled(line.quantity, each),
                 price=Decimal(0),
                 bundle_line_id=line.id,
             )

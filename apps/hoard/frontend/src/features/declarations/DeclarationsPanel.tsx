@@ -75,6 +75,12 @@ export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lo
               {list(declared.ingredients)}
             </p>
           )}
+          {declared.unweighed.length > 0 && (
+            <p className="flex items-start gap-2 text-muted-foreground">
+              <TriangleAlert aria-hidden className="size-4 shrink-0 text-warning" />
+              {t("panel.unweighed", { names: list(declared.unweighed) })}
+            </p>
+          )}
           {of === "lot" && declared.records_own && declared.recorded_allergens === null && (
             <p className="text-muted-foreground">{t("panel.fromMaterial")}</p>
           )}

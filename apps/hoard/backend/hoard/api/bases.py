@@ -3,7 +3,8 @@ stock per location.
 
 A base's average cost is sent only to a member who sees costs; none is taken,
 since the runs that make it set it (``hoard.costing``). Its recipe is kept
-under ``/recipes``.
+under ``/recipes``. Its tracking unit is fixed once anything records a number
+in it.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "IN_USE"},
+    409: {"description": "IN_USE, TRACKING_UNIT_IN_USE"},
     422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN"},
 }
 
@@ -104,6 +105,8 @@ async def _write(db: AsyncSession, base: Base, body: BaseWrite) -> None:
     await require_references(
         db, kind=CategoryKind.BASE, units=(body.tracking_unit_id,), category_id=body.category_id
     )
+    if base.id is not None:
+        await items.require_tracking_unit(db, base.id, base.tracking_unit_id, body.tracking_unit_id)
     base.sqlmodel_update(body.model_dump())
 
 

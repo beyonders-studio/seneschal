@@ -1,14 +1,6 @@
 {
   "base_word": "base",
   "units": [
-    "g",
-    "kg",
-    "oz",
-    "lb",
-    "ml",
-    "l",
-    "fl_oz",
-    "each",
     "bottle_50ml",
     "bottle_200ml",
     "bottle_375ml",

@@ -1,7 +1,10 @@
 """Production runs: making a variation or a base from its recipe, and completing it.
 
-Opening a run fills its lines from its item's recipe (``hoard.runs``); a line
-records the lot it consumes, or one is assumed when the run is completed.
+Opening a run fills its lines from its item's recipe (``hoard.runs``), over
+the batches planned or the batches that use an amount of one of its lines; a
+draft is planned the same way without saving it (``POST /runs/preview``),
+each line beside what is usable at the run's location. A line records the lot
+it consumes, or one is assumed when the run is completed.
 Completing a run moves stock and costs it; reopening takes that back. A run
 keeps the initiative it was opened from.
 
@@ -21,7 +24,7 @@ from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
 from sqlmodel import col, or_, select
 
-from hoard import runs
+from hoard import orders, runs, units
 from hoard.api.adjustments import (
     NOT_FOUND,
     AdjustmentItem,
@@ -38,13 +41,17 @@ from hoard.records import (
     PLACES,
     Adjustment,
     Item,
+    Location,
     Lot,
     ProductionRun,
     ProductionRunLine,
     Recipe,
+    RecipeLine,
     RunStatus,
 )
+from hoard.units import UnitRefused
 from seneschal_core.api import (
+    ErrorCode,
     OrganizationSessionDep,
     SessionDep,
     WriteSessionDep,
@@ -85,6 +92,9 @@ class RunLineRead(BaseModel):
     #: Until the run is completed, the lots of its item at the run's location
     #: that hold stock, the earliest expiry first.
     lots: list[RunLot]
+    #: Until the run is completed, how much more it takes than is usable at
+    #: the run's location (``hoard.runs.usable``); null when it is not short.
+    short: Decimal | None = None
     #: What one unit cost on the run's date, once it is completed; sent only to
     #: a member who sees costs, as is ``cost``.
     unit_cost: Decimal | None = None
@@ -118,6 +128,9 @@ class RunSummary(BaseModel):
 
 class RunRead(RunSummary):
     recipe_id: int | None
+    #: Whether its recipe changed since the run was opened: its lines stay as
+    #: they were filled.
+    recipe_changed: bool
     labour_minutes: int | None
     expires_on: date | None
     output_lot: RunLot | None
@@ -251,6 +264,13 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
         )
         for lot in available.all():
             choices.setdefault(lot.item_id, []).append(_lot(lot))
+    shortages: dict[int, dict[str, Decimal | None]] = {}
+    if run.status is not RunStatus.COMPLETED:
+        today = date.today()
+        for item_id in {line.item_id for line in lines}:
+            taken = sum((line.quantity for line in lines if line.item_id == item_id), Decimal(0))
+            can_use = await runs.usable(db, item_id, run.location_id, today)
+            shortages[item_id] = {"short": runs.short(taken, can_use)}
     consumed: dict[int, Decimal] = {}
     if sees_costs:
         found = await db.exec(
@@ -262,6 +282,7 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
     return RunRead(
         **summary,
         recipe_id=run.recipe_id,
+        recipe_changed=await _recipe_changed(db, run),
         labour_minutes=run.labour_minutes,
         expires_on=run.expires_on,
         output_lot=_lot(lots[run.output_lot_id]) if run.output_lot_id in lots else None,
@@ -273,6 +294,7 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
                 lot=_lot(lots[line.lot_id]) if line.lot_id in lots else None,
                 assumed=line.assumed,
                 lots=choices.get(line.item_id, []),
+                **shortages.get(line.item_id, {}),
                 **(
                     {
                         "unit_cost": consumed[line.id],
@@ -291,9 +313,27 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
     )
 
 
+async def _recipe_changed(db: OrganizationSession, run: ProductionRun) -> bool:
+    """Whether the recipe a run was filled from was saved since it was opened."""
+    if run.recipe_id is None:
+        return False
+    recipe = await db.get_one(Recipe, run.recipe_id)
+    lines = await db.exec(
+        select(func.max(RecipeLine.created_at)).where(RecipeLine.recipe_id == run.recipe_id)
+    )
+    return any(
+        saved is not None and saved > run.created_at for saved in (recipe.updated_at, lines.one())
+    )
+
+
 def _refused(refused: runs.RunRefused) -> Exception:
     """The answer to a change :mod:`hoard.runs` refused."""
-    codes = {runs.RunError.RUN_NO_RECIPE, runs.RunError.RUN_LOT_MISMATCH}
+    codes = {
+        runs.RunError.RUN_NO_RECIPE,
+        runs.RunError.RUN_LOT_MISMATCH,
+        runs.RunError.RUN_NOT_IN_RECIPE,
+        *units.UnitError,
+    }
     code = status.HTTP_422_UNPROCESSABLE_CONTENT if refused.code in codes else 409
     return refuse(code, refused.code)
 
@@ -345,14 +385,76 @@ async def read_run(db: OrganizationSessionDep, sees_costs: SeesCostsDep, run_id:
     return await _read(db, run_id, sees_costs)
 
 
-class RunCreate(BaseModel):
-    #: A variation or a base with a recipe.
+class RunUse(BaseModel):
+    """Making as much as an amount of one of the recipe's lines allows: the
+    run plans the batches that take exactly that amount of it."""
+
+    #: The item, one of the recipe's lines.
     item_id: int
+    #: How much of it to use. A preview takes what is usable of it at the
+    #: run's location when none is sent; opening a run needs one.
+    amount: Positive | None = None
+    #: The unit the amount is in: the item's tracking unit when not sent.
+    unit_id: int | None = None
+
+
+class RunPlan(BaseModel):
+    """What a run makes: a variation or a base with a recipe, at a location
+    (the main one when not given), over its planned batches or the batches
+    that ``use`` an amount of one line."""
+
+    item_id: int
+    planned_batches: Positive = Decimal(1)
+    location_id: int | None = None
+    use: RunUse | None = None
+
+
+class RunPreviewLine(BaseModel):
+    item: AdjustmentItem
+    #: The unit its quantity is in: its item's tracking unit.
+    unit_id: int | None
+    quantity: Decimal
+    #: What is usable of it at the run's location: available, less what its
+    #: expired lots hold.
+    usable: Decimal
+    #: How much more it takes than is usable; null when it is not short.
+    short: Decimal | None
+
+
+class RunUseRead(BaseModel):
+    """The line a run makes as much of as it allows."""
+
+    item_id: int
+    #: Its item's tracking unit, which the amounts are in.
+    unit_id: int | None
+    #: What the run uses of it.
+    amount: Decimal
+    #: What is usable of it at the run's location: the amount when none was sent.
+    usable: Decimal
+    #: What its lots past their expiry date hold there, which is not usable.
+    expired: Decimal
+    #: While another line is short, the most of it what is usable lets the run use.
+    most: Decimal | None
+
+
+class RunPreview(BaseModel):
+    """A run as it would be opened, saving nothing."""
+
+    batches: Decimal
+    #: What it makes, in its output's unit.
+    quantity: Decimal
+    #: The unit it makes: a base's; null for a variation.
+    unit_id: int | None
+    lines: list[RunPreviewLine]
+    #: The most batches what is usable at the location makes; null for a
+    #: recipe with no lines.
+    most_batches: Decimal | None
+    use: RunUseRead | None
+
+
+class RunCreate(RunPlan):
     #: The next free ``R-`` code when not given.
     code: Code | None = None
-    planned_batches: Positive = Decimal(1)
-    #: The main location when not given.
-    location_id: int | None = None
     #: Started today when true.
     start: bool = False
     deadline_on: date | None = None
@@ -368,14 +470,24 @@ class RunCreate(BaseModel):
     responses={
         **NOT_FOUND,
         409: {"description": "RUN_CODE_TAKEN"},
-        422: {"description": "RUN_NO_RECIPE"},
+        422: {
+            "description": "RUN_NO_RECIPE, RUN_NOT_IN_RECIPE, AMOUNT_TOO_SMALL, "
+            "UNIT_NOT_CONVERTIBLE, REQUEST_INVALID"
+        },
     },
 )
 async def create_run(
     db: WriteSessionDep, session: SessionDep, sees_costs: SeesCostsDep, body: RunCreate
 ) -> RunRead:
-    """Open a run in the page's initiative, its lines filled from its item's recipe."""
+    """Open a run in the page's initiative, its lines filled from its item's
+    recipe over its planned batches, or over the batches that ``use`` exactly
+    an amount of one line."""
     await known(db, Item, body.item_id)
+    use = None
+    if body.use is not None:
+        if body.use.amount is None:
+            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ErrorCode.REQUEST_INVALID)
+        use = (body.use.item_id, await _tracked(db, body.use, body.use.amount))
     run = ProductionRun(
         code=await _free_code(db, body.code) if body.code else await runs.next_code(db),
         item_id=body.item_id,
@@ -389,11 +501,94 @@ async def create_run(
         labour_minutes=body.labour_minutes,
     )
     try:
-        await runs.open_run(db, run)
+        await runs.open_run(db, run, use=use)
     except runs.RunRefused as refused:
         raise _refused(refused) from None
     await db.commit()
     return await _read(db, run.id, sees_costs)
+
+
+async def _tracked(db: OrganizationSession, use: RunUse, amount: Decimal) -> Decimal:
+    """``amount`` of the item ``use`` names, in its tracking unit."""
+    try:
+        return await units.in_tracking_unit(db, use.item_id, amount, use.unit_id)
+    except UnitRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+
+
+@router.post(
+    "/preview",
+    responses={
+        **NOT_FOUND,
+        422: {
+            "description": "RUN_NO_RECIPE, RUN_NOT_IN_RECIPE, AMOUNT_TOO_SMALL, "
+            "UNIT_NOT_CONVERTIBLE"
+        },
+    },
+)
+async def preview_run(db: OrganizationSessionDep, body: RunPlan) -> RunPreview:
+    """A run as it would be opened, each line beside what is usable at its
+    location, saving nothing. Making as much as one line allows, with no
+    amount sent, uses what is usable of it."""
+    await known(db, Item, body.item_id)
+    if body.location_id is not None:
+        location_id = (await known(db, Location, body.location_id)).id
+    else:
+        main = (await db.exec(select(Location.id).where(Location.main))).first()
+        if main is None:
+            raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+        location_id = main
+    today = date.today()
+    made_in = (await units.tracking_units(db, [body.item_id])).get(body.item_id)
+    use, using = None, None
+    if body.use is not None:
+        can_use = await runs.usable(db, body.use.item_id, location_id, today)
+        amount = (
+            await _tracked(db, body.use, body.use.amount)
+            if body.use.amount is not None
+            else max(can_use, Decimal(0))
+        )
+        using = RunUseRead(
+            item_id=body.use.item_id,
+            unit_id=(await units.tracking_units(db, [body.use.item_id])).get(body.use.item_id),
+            amount=amount,
+            usable=can_use,
+            expired=await orders.expired(db, body.use.item_id, location_id, today),
+            most=None,
+        )
+        if amount <= 0:
+            return RunPreview(
+                batches=Decimal(0),
+                quantity=Decimal(0),
+                unit_id=made_in,
+                lines=[],
+                most_batches=None,
+                use=using,
+            )
+        use = (body.use.item_id, amount)
+    try:
+        plan = await runs.plan(db, body.item_id, location_id, body.planned_batches, use, today)
+    except runs.RunRefused as refused:
+        raise _refused(refused) from None
+    counted = await units.tracking_units(db, [line.item_id for line in plan.lines])
+    described = await _describe(db, [line.item_id for line in plan.lines])
+    return RunPreview(
+        batches=plan.batches,
+        quantity=plan.makes,
+        unit_id=made_in,
+        lines=[
+            RunPreviewLine(
+                item=described[line.item_id],
+                unit_id=counted.get(line.item_id),
+                quantity=line.quantity,
+                usable=line.usable,
+                short=line.short,
+            )
+            for line in plan.lines
+        ],
+        most_batches=plan.most,
+        use=None if using is None else using.model_copy(update={"most": plan.most_use}),
+    )
 
 
 class RunUpdate(BaseModel):

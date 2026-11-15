@@ -25,6 +25,7 @@ from hoard.records import (
     Recipe,
     RecipeLine,
     RunStatus,
+    Unit,
     Variation,
 )
 from hoard.stock import add_product, add_variation
@@ -42,6 +43,7 @@ async def _recipe(db: WriteSession, lines: list[tuple[int, str]], batch: str = "
                 recipe_id=recipe.id,
                 item_id=item_id,
                 quantity=Decimal(quantity),
+                written=Decimal(quantity),
                 position=position,
             )
         )
@@ -211,3 +213,36 @@ async def test_a_lot_declares_its_own_fragrance_allergens_where_known(
     assert its_materials.fragrance_allergens == ["citronellol"]
     # A share that is not a number reads as not recorded.
     assert (await declarations.item(unknown.id)).fragrance_undeclared == ["Absolute"]
+
+
+async def test_ingredients_are_weighed_by_their_units_and_the_unweighable_are_named(
+    db: WriteSession, material, base
+):
+    kilograms = Unit(organization_id=db.organization_id, name="kg", standard="kilogram")
+    millilitres = Unit(organization_id=db.organization_id, name="mL", standard="millilitre")
+    db.add_all([kilograms, millilitres])
+    await db.flush()
+    salt = await material("Salt", allergens=[], fragrance_allergens={})
+    catnip = await material("Catnip", allergens=[], tracking_unit_id=kilograms.id)
+    lychee = await material(
+        "Lychee flavor",
+        allergens=[],
+        fragrance_allergens={"limonene": "10"},
+        tracking_unit_id=millilitres.id,
+    )
+    blend = await base("Blend")
+    # Half a kilogram of catnip outweighs two grams of salt.
+    await _recipe(db, [(salt.id, "2"), (catnip.id, "0.5"), (lychee.id, "10")], base_id=blend.id)
+
+    unweighed = await Declarations(db).item(blend.id)
+    lychee.unit_weight = Decimal("1.04")
+    weighed = await Declarations(db).item(blend.id)
+
+    assert (unweighed.ingredients, unweighed.unweighed) == (
+        ["Catnip", "Salt", "Lychee flavor"],
+        ["Lychee flavor"],
+    )
+    assert unweighed.fragrance_shares == {}
+    assert (weighed.ingredients, weighed.unweighed) == (["Catnip", "Lychee flavor", "Salt"], [])
+    # 10% of 10.4 g of lychee in 512.4 g.
+    assert weighed.fragrance_shares["limonene"].quantize(Decimal("0.0001")) == Decimal("0.2030")

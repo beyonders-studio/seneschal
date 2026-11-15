@@ -37,6 +37,7 @@ async def _made_from(db: WriteSession, variation: Variation, material, quantity:
             recipe_id=recipe.id,
             item_id=material.id,
             quantity=Decimal(quantity),
+            written=Decimal(quantity),
         )
     )
     await db.flush()

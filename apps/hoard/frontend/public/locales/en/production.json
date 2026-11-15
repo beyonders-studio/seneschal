@@ -56,9 +56,25 @@
       "assumeLot": "Assumed when completed",
       "lotOption": "{{number}} ({{balance}} left)",
       "lotExpires": "{{number}}, expires {{date}} ({{balance}} left)",
-      "empty": "This run consumes nothing."
+      "empty": "This run consumes nothing.",
+      "short": "{{quantity}} short"
     },
-    "statusLabel": "Status"
+    "statusLabel": "Status",
+    "recipeChangedTitle": "Its recipe has changed",
+    "recipeChangedBody": "The recipe was saved since this run was planned. The run keeps the lines it was planned with; change them here if they should follow.",
+    "plan": {
+      "asMuch": "Make as much as one ingredient allows",
+      "asMuchHint": "Use up an amount of one ingredient: every other line scales with it.",
+      "ingredient": "Ingredient",
+      "amount": "Amount to use",
+      "unit": "Unit",
+      "usable": "{{quantity}} of it is usable here.",
+      "nothing": "None of it is usable here, so there's nothing to plan.",
+      "expired": "{{quantity}} past its expiry date is left out.",
+      "makes": "Makes {{quantity}} ({{batches}} batches).",
+      "most": "Make the most there's enough for: {{quantity}}",
+      "failed": "Hoard couldn't plan this run yet."
+    }
   },
   "errors": {
     "RUN_NO_RECIPE": "That has no recipe to make it from. Add one first.",
@@ -67,6 +83,7 @@
     "RUN_STARTED": "The run has already started.",
     "RUN_CODE_TAKEN": "Another run has that code.",
     "RUN_LOT_MISMATCH": "That lot isn't one of this item at the run's location.",
-    "LOT_IN_USE": "Something else has drawn on the lot this run made, so it can't be reopened."
+    "LOT_IN_USE": "Something else has drawn on the lot this run made, so it can't be reopened.",
+    "RUN_NOT_IN_RECIPE": "That ingredient isn't in its recipe."
   }
 }

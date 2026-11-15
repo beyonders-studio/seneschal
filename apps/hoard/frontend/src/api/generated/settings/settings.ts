@@ -23,6 +23,7 @@ import type {
 import type {
   HTTPValidationError,
   ListSettingsCategoriesParams,
+  ReadUnitConversionParams,
   SettingsCategoryCreate,
   SettingsCategoryRead,
   SettingsCategoryUpdate,
@@ -35,6 +36,7 @@ import type {
   SettingsUnitRead,
   SettingsUnitWrite,
   SettingsUpdate,
+  UnitConversion,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -265,7 +267,8 @@ export const useUpdateSettings = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getUpdateSettingsMutationOptions(options), queryClient);
 };
 /**
- * The units stock is counted and bought in, by name.
+ * The units stock is counted and bought in: Hoard's standard units, which
+ * an organization that lacks any of them is given, then its own by name.
  * @summary List Settings Units
  */
 export const listSettingsUnits = (
@@ -309,7 +312,8 @@ export type ListSettingsUnitsQueryResult = NonNullable<
 export type ListSettingsUnitsQueryError = ErrorType<void>;
 
 /**
- * The units stock is counted and bought in, by name.
+ * The units stock is counted and bought in: Hoard's standard units, which
+ * an organization that lacks any of them is given, then its own by name.
  * @summary List Settings Units
  */
 export function useListSettingsUnits<
@@ -331,7 +335,8 @@ export function useListSettingsUnits<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The units stock is counted and bought in, by name.
+ * The units stock is counted and bought in: Hoard's standard units, which
+ * an organization that lacks any of them is given, then its own by name.
  * @summary List Settings Units
  */
 export function useListSettingsUnits<
@@ -353,7 +358,8 @@ export function useListSettingsUnits<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The units stock is counted and bought in, by name.
+ * The units stock is counted and bought in: Hoard's standard units, which
+ * an organization that lacks any of them is given, then its own by name.
  * @summary List Settings Units
  */
 export function useListSettingsUnits<
@@ -367,7 +373,8 @@ export function useListSettingsUnits<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The units stock is counted and bought in, by name.
+ * The units stock is counted and bought in: Hoard's standard units, which
+ * an organization that lacks any of them is given, then its own by name.
  * @summary List Settings Units
  */
 export function useListSettingsUnits<
@@ -474,6 +481,146 @@ export const useCreateSettingsUnit = <TError = ErrorType<void>, TContext = unkno
 > => {
   return useMutation(getCreateSettingsUnitMutationOptions(options), queryClient);
 };
+/**
+ * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+ * are standard units of one measure: as a purchase converts.
+ * @summary Read Unit Conversion
+ */
+export const readUnitConversion = (
+  params: ReadUnitConversionParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<UnitConversion>(
+    { url: `/api/v1/settings/units/conversion`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getReadUnitConversionQueryKey = (params?: ReadUnitConversionParams) => {
+  return [`/api/v1/settings/units/conversion`, ...(params ? [params] : [])] as const;
+};
+
+export const getReadUnitConversionQueryOptions = <
+  TData = Awaited<ReturnType<typeof readUnitConversion>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: ReadUnitConversionParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readUnitConversion>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadUnitConversionQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readUnitConversion>>> = ({ signal }) =>
+    readUnitConversion(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof readUnitConversion>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ReadUnitConversionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readUnitConversion>>
+>;
+export type ReadUnitConversionQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+ * are standard units of one measure: as a purchase converts.
+ * @summary Read Unit Conversion
+ */
+export function useReadUnitConversion<
+  TData = Awaited<ReturnType<typeof readUnitConversion>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: ReadUnitConversionParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof readUnitConversion>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readUnitConversion>>,
+          TError,
+          Awaited<ReturnType<typeof readUnitConversion>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+ * are standard units of one measure: as a purchase converts.
+ * @summary Read Unit Conversion
+ */
+export function useReadUnitConversion<
+  TData = Awaited<ReturnType<typeof readUnitConversion>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: ReadUnitConversionParams,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readUnitConversion>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readUnitConversion>>,
+          TError,
+          Awaited<ReturnType<typeof readUnitConversion>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+ * are standard units of one measure: as a purchase converts.
+ * @summary Read Unit Conversion
+ */
+export function useReadUnitConversion<
+  TData = Awaited<ReturnType<typeof readUnitConversion>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: ReadUnitConversionParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readUnitConversion>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
+ * are standard units of one measure: as a purchase converts.
+ * @summary Read Unit Conversion
+ */
+export function useReadUnitConversion<
+  TData = Awaited<ReturnType<typeof readUnitConversion>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: ReadUnitConversionParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readUnitConversion>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadUnitConversionQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
 /**
  * @summary Update Settings Unit
  */

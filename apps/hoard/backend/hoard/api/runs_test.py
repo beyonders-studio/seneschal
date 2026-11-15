@@ -1,11 +1,13 @@
 """Production runs through the API: opening, recording lots, completing and
-reopening, costs only for who sees them, and nothing while Hoard is read-only."""
+reopening, costs only for who sees them, nothing while Hoard is read-only, and
+making as much as one ingredient allows."""
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
-from hoard import plugin_manifest
+from hoard import plugin_manifest, recipes
 from hoard.records import Base, Material, Recipe, RecipeLine
 from hoard.stock import on_hand
 from seneschal_core.db import WriteSession
@@ -27,6 +29,7 @@ async def _dough(db: WriteSession, base, material, buy) -> tuple[Material, Base]
             recipe_id=recipe.id,
             item_id=flour.id,
             quantity=Decimal(2),
+            written=Decimal(2),
         )
     )
     await db.commit()
@@ -153,3 +156,92 @@ async def test_runs_are_refused_while_hoard_is_read_only(
     ):
         assert (refused.status_code, refused.json()) == (403, {"detail": "READ_ONLY"})
     assert (await client.get(f"{RUNS}/{run['id']}")).status_code == 200
+
+
+async def test_a_run_makes_as_much_as_one_ingredient_allows(
+    client, sign_in, db: WriteSession, unit, base, material, lot
+):
+    catnip, chamomile, rose_hip, lychee = [
+        await material(name) for name in ("Catnip", "Chamomile", "Rose hip", "Lychee")
+    ]
+    alyx = await base("Alyx batch")
+    await recipes.save(
+        db,
+        Recipe(
+            base_id=alyx.id,
+            by_ratio=True,
+            total=Decimal(931),
+            total_unit_id=unit.id,
+            batch_quantity=Decimal(931),
+        ),
+        [
+            recipes.Line(catnip.id, Decimal(2)),
+            recipes.Line(chamomile.id, Decimal(1)),
+            recipes.Line(rose_hip.id, Decimal(1)),
+            recipes.Line(lychee.id, Decimal("0.1")),
+        ],
+    )
+    for item, quantity in ((catnip, "500"), (chamomile, "1000"), (rose_hip, "300"), (lychee, "50")):
+        await lot(item.id, f"L-{item.id}", quantity)
+    await lot(rose_hip.id, "OLD", "100", expires_on=date(2020, 1, 1))
+    await db.commit()
+    await sign_in(client)
+
+    preview = (
+        await client.post(
+            RUNS + "/preview", json={"item_id": alyx.id, "use": {"item_id": rose_hip.id}}
+        )
+    ).json()
+
+    assert (preview["use"]["amount"], preview["use"]["usable"], preview["use"]["expired"]) == (
+        "300.000000",
+        "300.000000",
+        "100.000000",
+    )
+    assert [(line["quantity"], line["short"]) for line in preview["lines"]] == [
+        ("600.000000", "100.000000"),
+        ("300.000000", None),
+        ("300.000000", None),
+        ("30.000000", None),
+    ]
+    assert (preview["quantity"], preview["use"]["most"]) == ("1230.000000", "250.000000")
+    nothing = (
+        await client.post(
+            RUNS + "/preview",
+            json={"item_id": alyx.id, "use": {"item_id": rose_hip.id, "amount": "0.1"}},
+        )
+    ).json()
+    assert nothing["lines"][0]["short"] is None
+
+    opened = await client.post(
+        RUNS, json={"item_id": alyx.id, "use": {"item_id": rose_hip.id, "amount": "300"}}
+    )
+    assert [line["quantity"] for line in opened.json()["lines"]] == [
+        "600.000000",
+        "300.000000",
+        "300.000000",
+        "30.000000",
+    ]
+    assert opened.json()["lines"][0]["short"] == "100.000000"
+    assert opened.json()["recipe_changed"] is False
+    recipe_id = opened.json()["recipe_id"]
+    written = {
+        "batch_quantity": "931",
+        "by_ratio": True,
+        "total": "931",
+        "total_unit_id": unit.id,
+        "lines": [
+            {"item_id": item.id, "written": parts}
+            for item, parts in ((catnip, "2"), (chamomile, "1"), (rose_hip, "1"), (lychee, "0.1"))
+        ],
+    }
+    run_url = f"{RUNS}/{opened.json()['id']}"
+    assert (await client.put(f"/api/v1/recipes/{recipe_id}", json=written)).status_code == 200
+    assert (await client.get(run_url)).json()["recipe_changed"] is False
+    written["lines"][3]["written"] = "0.2"
+    assert (await client.put(f"/api/v1/recipes/{recipe_id}", json=written)).status_code == 200
+    assert (await client.get(run_url)).json()["recipe_changed"] is True
+    missing = await client.post(
+        RUNS, json={"item_id": alyx.id, "use": {"item_id": alyx.id, "amount": "1"}}
+    )
+    assert (missing.status_code, missing.json()) == (422, {"detail": "RUN_NOT_IN_RECIPE"})

@@ -9,12 +9,25 @@ All notable changes to Hoard are recorded here. The format follows
 ### Added
 
 - **Search all of Hoard from the top of every page,** or press Ctrl K (⌘ K on a Mac). Find materials, bases, products, lots, production runs, purchases, orders, stocktakes and holds by name, notes and text properties, or by any code on them: SKUs, supplier codes, lot numbers, run, purchase and order codes, and a store's order and customer numbers. Codes match however they're written (`LOT/24/07` finds `lot 2407`), and accents don't matter. Suggestions show as you type; scan a label and press Enter to go straight to its record. The results page has a tab for each kind of record, can include archived ones, and offers close matches when nothing matches. Costs and prices are never searched.
+- **Units that convert.** Hoard knows the standard units of weight, volume (US), length and count, from milligrams to gallons, and converts between those that measure the same thing. Every unit field is a search: type "g", "grams" or "kilo" to find it, and an admin can add a unit of your own, such as a jar or a bag, right there. Standard units can't be renamed or removed; Settings › Units lists them beside your own.
+- **Purchase conversions fill themselves in.** A material bought in kilograms and tracked in grams converts at 1000 without anyone typing it. A unit of your own still takes the number you type.
+- **Recipes by ratio.** Write a recipe by amount, as before, or by ratio: each ingredient's parts and the batch's ingredients total, with what the batch makes kept separately for loss. A line can be written in any unit that converts to its ingredient's, such as 0.5 kg of something tracked in grams. Lines measured differently from the total, such as a flavoring in mL, scale along with the rest. The recipe shows each line's ratio and amount side by side, switches between the two ways of writing it, and **Scale to** can now scale to an amount of one ingredient.
+- **Make as much as one ingredient allows.** A new run can use up an amount of one ingredient, by default all that's available at the run's location, leaving out expired lots. It says which other ingredients are short and the most you can make with what's there. A run's page shows short lines until it's completed, and says when its recipe has changed since it was planned.
+- **What one unit weighs,** recorded on a material not tracked by weight, so declarations can weigh it.
 
 ### Changed
+
+- **Your units become Hoard's standard units.** A unit named like a standard one ("g", "grams", "Kg") becomes that unit, and two of yours that are the same unit become one. A material bought and tracked in standard units, such as kilograms and grams, takes their real conversion in place of the number typed in; purchases already received keep what they recorded.
+- **A tracking unit can't change once something is counted in it:** stock movements, purchases, stocktakes, recipes or runs. Before then it changes freely.
+- Starting setups no longer bring the standard units, which every community has.
 
 - **Hoard is in beta.** On a deployment that supports it, the platform owner picks the communities that may install Hoard.
 
 - **Hoard follows its own state in your community.** When Initiative sets Hoard read-only, on hold or deleted in a community, Hoard stops its own work there (pushing stock to stores, updating linked tasks and running background jobs) and changes nothing, while everything it holds is kept and stays readable. It picks up where it left off once Hoard is active again. Hoard deletes nothing in any state.
+
+### Fixed
+
+- **Ingredient lists and fragrance allergens weigh what they list.** A material tracked in kilograms now outweighs one tracked in grams as it should, and one tracked by volume or by count is no longer counted as that many grams: it's listed as unweighed, at the end, and its fragrance shares are marked incomplete, until you record what one of its units weighs.
 
 ## [0.2.0] - 2026-11-15
 

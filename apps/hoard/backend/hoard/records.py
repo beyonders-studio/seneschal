@@ -374,16 +374,27 @@ class LayoutView(StrEnum):
 
 
 class Unit(OrganizationRow, Stamped, table=True):
-    """A measurement unit."""
+    """A measurement unit: one of Hoard's standard units (``hoard.units``),
+    which keeps its standard name and is never renamed or removed, or a unit
+    of the community's own."""
 
     __tablename__ = "units"
     __table_args__ = (
         referable("units"),
         UniqueConstraint("organization_id", "name", name="uq_units_name"),
+        Index(
+            "uq_units_standard",
+            "organization_id",
+            "standard",
+            unique=True,
+            postgresql_where=text("standard IS NOT NULL"),
+        ),
     )
 
     id: int = identity()
     name: str
+    #: Which standard unit it is, by key; None for a unit of the community's own.
+    standard: str | None = None
 
 
 class Category(OrganizationRow, Stamped, table=True):
@@ -458,6 +469,7 @@ class Material(OrganizationRow, Stamped, table=True):
         reference("materials", "purchase_unit_id", "units"),
         reference("materials", "category_id", "categories"),
         CheckConstraint("purchase_conversion > 0", name="ck_materials_purchase_conversion"),
+        CheckConstraint("unit_weight > 0", name="ck_materials_unit_weight"),
         CheckConstraint(ALLERGENS_CHECK, name="ck_materials_allergens"),
         CheckConstraint(FRAGRANCE_ALLERGENS_CHECK, name="ck_materials_fragrance_allergens"),
     )
@@ -473,6 +485,9 @@ class Material(OrganizationRow, Stamped, table=True):
     purchase_unit_id: int | None = Field(default=None, sa_type=BigInteger)
     #: Tracking units in one purchase unit.
     purchase_conversion: Decimal = amount(Decimal(1))
+    #: What one tracking unit weighs, in grams, for a material not tracked by
+    #: weight; only declarations read it.
+    unit_weight: Decimal | None = amount(None)
     low_stock_limit: Decimal | None = amount(None)
     category_id: int | None = Field(default=None, sa_type=BigInteger)
     #: The preferred supplier: an Initiative contact's id.
@@ -1012,7 +1027,13 @@ class Layout(OrganizationRow, Stamped, table=True):
 
 class Recipe(OrganizationRow, Stamped, table=True):
     """What one batch of a variation or a base is made from, and how much of
-    it a batch makes; or what a bundle product holds. Each has at most one."""
+    it a batch makes; or what a bundle product holds. Each has at most one.
+
+    A recipe is written by amount, each line's amount per batch, or by ratio,
+    each line's parts, which its ingredients total splits among the lines
+    measured like the total (``hoard.units.recipe``). Either way each line
+    keeps its quantity in its item's tracking unit, derived from what was
+    written."""
 
     __tablename__ = "recipes"
     __table_args__ = (
@@ -1020,6 +1041,7 @@ class Recipe(OrganizationRow, Stamped, table=True):
         reference("recipes", "variation_id", "variations", ondelete="CASCADE"),
         reference("recipes", "base_id", "bases", ondelete="CASCADE"),
         reference("recipes", "product_id", "products", ondelete="CASCADE"),
+        reference("recipes", "total_unit_id", "units"),
         UniqueConstraint("organization_id", "variation_id", name="uq_recipes_variation"),
         UniqueConstraint("organization_id", "base_id", name="uq_recipes_base"),
         UniqueConstraint("organization_id", "product_id", name="uq_recipes_product"),
@@ -1028,6 +1050,11 @@ class Recipe(OrganizationRow, Stamped, table=True):
         ),
         CheckConstraint(
             "batch_quantity > 0 AND (minutes IS NULL OR minutes >= 0)", name="ck_recipes_batch"
+        ),
+        CheckConstraint(
+            "by_ratio = (total IS NOT NULL) AND by_ratio = (total_unit_id IS NOT NULL) "
+            "AND total > 0",
+            name="ck_recipes_ratio",
         ),
     )
 
@@ -1040,24 +1067,38 @@ class Recipe(OrganizationRow, Stamped, table=True):
     batch_quantity: Decimal = amount(Decimal(1))
     #: How long one batch takes.
     minutes: int | None = None
+    #: Whether its lines are written as parts of a ratio.
+    by_ratio: bool = False
+    #: A ratio's ingredients total, which its parts split, and its unit.
+    total: Decimal | None = amount(None)
+    total_unit_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class RecipeLine(OrganizationRow, Stamped, table=True):
     """One item a batch takes, and how much of it, in its tracking unit: a
-    material or a base, or, in a bundle's recipe, a variation."""
+    material or a base, or, in a bundle's recipe, a variation. Its quantity is
+    derived from what was written: an amount, or parts of a ratio, in a unit
+    that converts to the tracking unit."""
 
     __tablename__ = "recipe_lines"
     __table_args__ = (
         reference("recipe_lines", "recipe_id", "recipes", ondelete="CASCADE"),
         reference("recipe_lines", "item_id", "items"),
+        reference("recipe_lines", "unit_id", "units"),
         UniqueConstraint("organization_id", "recipe_id", "item_id", name="uq_recipe_lines_item"),
-        CheckConstraint("quantity > 0", name="ck_recipe_lines_quantity"),
+        CheckConstraint("quantity > 0 AND written > 0", name="ck_recipe_lines_quantity"),
     )
 
     id: int = identity()
     recipe_id: int = Field(sa_type=BigInteger)
     item_id: int = Field(sa_type=BigInteger)
+    #: In the item's tracking unit, for one batch.
     quantity: Decimal = amount()
+    #: The number as typed: the amount, or the parts of a ratio.
+    written: Decimal = amount()
+    #: The unit it was written in; None for a variation, which counts in units
+    #: of itself.
+    unit_id: int | None = Field(default=None, sa_type=BigInteger)
     #: Its place among the recipe's lines.
     position: int = 0
 

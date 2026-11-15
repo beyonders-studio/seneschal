@@ -44,7 +44,8 @@ class SetupRead(BaseModel):
 class SetupsRead(BaseModel):
     setups: list[SetupRead]
     #: Whether the organization has begun on its own (an admin chose to start
-    #: blank, or it has a unit), so it is no longer asked for a setup.
+    #: blank, or it has a category, an item or a unit of its own), so it is
+    #: no longer asked for a setup.
     started: bool
 
 

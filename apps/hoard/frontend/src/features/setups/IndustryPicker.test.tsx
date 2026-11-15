@@ -7,9 +7,9 @@ import { openSignedIn, signedIn } from "@/testing";
 
 const offered = (added: boolean, started = false): SetupsRead => ({
   setups: [
-    { key: "bakery_food", added: false, words: ["units.dozen"] },
+    { key: "bakery_food", added: false, words: ["units.case"] },
     { key: "cosmetics_soap", added: false, words: ["hold_reasons.curing"] },
-    { key: "drinks", added, words: ["units.fl_oz", "reasons.spill"] },
+    { key: "drinks", added, words: ["units.bottle_750ml", "reasons.spill"] },
     { key: "restaurant_bar", added: false, words: ["reasons.sent_back"] },
   ],
   started,
@@ -67,7 +67,11 @@ describe("IndustryPicker", () => {
     await waitFor(() =>
       expect(
         asked.find((request) => request.method === "post" && request.url?.includes("setups"))?.data
-      ).toBe(JSON.stringify({ words: { "units.fl_oz": "fl oz", "reasons.spill": "Spill" } }))
+      ).toBe(
+        JSON.stringify({
+          words: { "units.bottle_750ml": "Bottle, 750 mL", "reasons.spill": "Spill" },
+        })
+      )
     );
   });
 

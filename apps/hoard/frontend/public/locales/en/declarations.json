@@ -6,6 +6,7 @@
     "noAllergens": "No allergens declared",
     "undeclared": "Allergens aren't recorded for {{names}}.",
     "ingredients": "Ingredients, heaviest first:",
+    "unweighed": "Hoard can't weigh {{names}}, so their place in the ingredient list isn't known and the fragrance shares are incomplete. Record what one of their units weighs on each material.",
     "fromMaterial": "This lot declares what its material does.",
     "edit": "Edit allergens",
     "saved": "Allergens saved",

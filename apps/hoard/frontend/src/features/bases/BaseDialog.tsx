@@ -12,6 +12,7 @@ import type { BaseDetail, BaseWrite } from "@/api/generated/hoard.schemas";
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -60,7 +61,7 @@ export function BaseDialog({
 function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDetail) => void }) {
   const { t } = useTranslation("catalog");
   const queryClient = useQueryClient();
-  const { units, categoriesOf } = useSettingsNames();
+  const { categoriesOf } = useSettingsNames();
   const [name, setName] = useState(base?.name ?? "");
   const [sku, setSku] = useState(base?.sku ?? "");
   const [categoryId, setCategoryId] = useState(base?.category_id ?? null);
@@ -110,11 +111,8 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
               none={t("hoard:common.none")}
             />
           </Field>
-          <Field
-            label={t("materials.trackingUnit")}
-            hint={units.length === 0 ? t("materials.noUnits") : undefined}
-          >
-            <IdSelect value={trackingUnitId} options={units} onChange={setTrackingUnitId} />
+          <Field label={t("materials.trackingUnit")}>
+            <UnitPicker value={trackingUnitId} onChange={setTrackingUnitId} />
           </Field>
           <Field label={t("hoard:common.lowStockLimit")}>
             <Input

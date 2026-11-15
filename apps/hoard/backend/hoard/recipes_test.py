@@ -1,5 +1,6 @@
 """Recipes hold materials and bases, a bundle's hold variations, nothing is
-made from itself, and a recipe scales and shows its shares by weight."""
+made from itself, and each line keeps what was written, by amount or by ratio,
+beside its quantity in its item's tracking unit."""
 
 from __future__ import annotations
 
@@ -10,8 +11,9 @@ from sqlmodel import select
 
 from hoard import recipes
 from hoard.recipes import Line, RecipeError, RecipeRefused
-from hoard.records import Product, Recipe, RecipeLine, Variation
+from hoard.records import Product, Recipe, RecipeLine, Unit, Variation
 from hoard.stock import add_product, add_variation
+from hoard.units import UnitError
 from seneschal_core.db import WriteSession
 
 
@@ -19,7 +21,7 @@ async def _product(db: WriteSession, name: str) -> tuple[Product, Variation]:
     return await add_product(db, Product(name=name))
 
 
-async def _refused(db: WriteSession, recipe: Recipe, *lines: Line) -> RecipeError:
+async def _refused(db: WriteSession, recipe: Recipe, *lines: Line) -> RecipeError | UnitError:
     with pytest.raises(RecipeRefused) as refused:
         await recipes.save(db, recipe, lines)
     return refused.value.code
@@ -101,27 +103,69 @@ async def test_nothing_is_made_from_itself_at_any_depth(db: WriteSession, materi
     )
 
 
-def test_a_recipe_scales_to_a_quantity():
-    batches = recipes.scale(Decimal(4), Decimal(10))
+async def _unit(db: WriteSession, name: str, standard: str | None = None) -> Unit:
+    unit = Unit(organization_id=db.organization_id, name=name, standard=standard)
+    db.add(unit)
+    await db.flush()
+    return unit
 
-    assert batches == Decimal("2.5")
-    assert recipes.scaled(Decimal("1.5"), batches) == Decimal("3.750000")
-    assert recipes.scale(Decimal(4), None) == 1
+
+async def test_a_line_keeps_what_was_written_and_its_quantity_in_the_tracking_unit(
+    db: WriteSession, material, base
+):
+    catnip = await material("Catnip")
+    blend = await base("Alyx batch")
+    kilograms = await _unit(db, "kg", "kilogram")
+    millilitres = await _unit(db, "mL", "millilitre")
+    recipe = Recipe(base_id=blend.id)
+
+    await recipes.save(db, recipe, [Line(catnip.id, Decimal("0.5"), kilograms.id)])
+
+    [line] = (await recipes.lines_of(db, [recipe.id]))[recipe.id]
+    assert (line.written, line.unit_id, line.quantity) == (
+        Decimal("0.5"),
+        kilograms.id,
+        Decimal("500.000000"),
+    )
+    refused = await _refused(db, recipe, Line(catnip.id, Decimal(1), millilitres.id))
+    assert refused is UnitError.UNIT_NOT_CONVERTIBLE
 
 
-def test_shares_are_by_weight_among_the_lines_in_the_unit_most_share():
-    grams, each = 1, 2
-
-    shares = recipes.percents(
-        [
-            (grams, Decimal(30)),
-            (each, Decimal(1)),
-            (grams, Decimal(60)),
-            (grams, Decimal(10)),
-            (None, Decimal(1)),
-        ]
+async def test_a_ratio_splits_its_total_and_rescales_with_it(db: WriteSession, material, base):
+    catnip, chamomile, rose_hip = [
+        await material(name) for name in ("Catnip", "Chamomile", "Rose hip")
+    ]
+    lychee = await material(
+        "Lychee flavor", tracking_unit_id=(await _unit(db, "mL", "millilitre")).id
+    )
+    blend = await base("Alyx batch")
+    alyx = [
+        Line(catnip.id, Decimal(2)),
+        Line(chamomile.id, Decimal(1)),
+        Line(rose_hip.id, Decimal(1)),
+        Line(lychee.id, Decimal("0.1")),
+    ]
+    recipe = Recipe(
+        base_id=blend.id,
+        by_ratio=True,
+        total=Decimal(931),
+        total_unit_id=catnip.tracking_unit_id,
+        batch_quantity=Decimal(908),
     )
 
-    assert shares == [Decimal("30.00"), None, Decimal("60.00"), Decimal("10.00"), None]
-    assert recipes.percents([(each, Decimal(1)), (grams, Decimal(3))]) == [Decimal("100.00"), None]
-    assert recipes.percents([(None, Decimal(1))]) == [None]
+    await recipes.save(db, recipe, alyx)
+    quantities = [line.quantity for line in (await recipes.lines_of(db, [recipe.id]))[recipe.id]]
+    recipe.total = Decimal(1862)
+    await recipes.save(db, recipe, alyx)
+    doubled = [line.quantity for line in (await recipes.lines_of(db, [recipe.id]))[recipe.id]]
+
+    assert quantities == [
+        Decimal("465.500000"),
+        Decimal("232.750000"),
+        Decimal("232.750000"),
+        Decimal("23.275000"),
+    ]
+    assert doubled == [quantity * 2 for quantity in quantities]
+    assert (await recipes.lines_of(db, [recipe.id]))[recipe.id][3].written == Decimal("0.1")
+    no_total = await _refused(db, recipe, Line(lychee.id, Decimal(1)))
+    assert no_total is UnitError.RECIPE_RATIO_TOTAL

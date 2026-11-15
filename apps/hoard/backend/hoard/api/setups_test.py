@@ -3,9 +3,12 @@ start blank instead, once."""
 
 from __future__ import annotations
 
+from hoard.units import STANDARD_UNITS
+
 
 async def test_an_admin_adds_a_setup_in_their_own_words(client, sign_in):
     await sign_in(client, admin=True)
+    await client.get("/api/v1/settings/units")
     offered = (await client.get("/api/v1/setups")).json()
     [drinks] = [setup for setup in offered["setups"] if setup["key"] == "drinks"]
     words = {word: word.rsplit(".", 1)[-1] for word in drinks["words"]}
@@ -21,9 +24,10 @@ async def test_an_admin_adds_a_setup_in_their_own_words(client, sign_in):
     assert unknown.status_code == 404
     # A setup is chosen once, never added later.
     assert (again.status_code, again.json()) == (409, {"detail": "SETUP_STARTED"})
-    assert (await client.get("/api/v1/setups")).json()["started"] is True
+    # Reading the units gives the standard ones, which don't count as a start.
     units = (await client.get("/api/v1/settings/units")).json()
-    assert {"g", "fl_oz", "bottle_750ml"} <= {unit["name"] for unit in units}
+    assert {"g", "fl oz", "bottle_750ml"} <= {unit["name"] for unit in units}
+    assert (await client.get("/api/v1/setups")).json()["started"] is True
 
 
 async def test_a_member_neither_adds_a_setup_nor_starts_blank(client, sign_in):
@@ -45,4 +49,5 @@ async def test_an_admin_starts_blank(client, sign_in):
     assert (blank.status_code, blank.json()["started"]) == (200, True)
     assert (await client.get("/api/v1/setups")).json()["started"] is True
     assert (later.status_code, later.json()) == (409, {"detail": "SETUP_STARTED"})
-    assert (await client.get("/api/v1/settings/units")).json() == []
+    units = (await client.get("/api/v1/settings/units")).json()
+    assert {unit["standard"] for unit in units} == {unit.key for unit in STANDARD_UNITS}

@@ -95,7 +95,8 @@ async def main(db: WriteSession) -> Location:
 
 @pytest.fixture
 async def unit(db: WriteSession) -> Unit:
-    unit = Unit(organization_id=db.organization_id, name="g")
+    """The standard gram."""
+    unit = Unit(organization_id=db.organization_id, name="g", standard="gram")
     db.add(unit)
     await db.flush()
     return unit
@@ -103,20 +104,20 @@ async def unit(db: WriteSession) -> Unit:
 
 @pytest.fixture
 def material(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Material]]:
-    """Add a material counted in ``unit``."""
+    """Add a material counted in ``unit``, unless it names another."""
 
     async def material(name: str, **fields: Any) -> Material:
-        return await add_material(db, Material(name=name, tracking_unit_id=unit.id, **fields))
+        return await add_material(db, Material(name=name, **{"tracking_unit_id": unit.id} | fields))
 
     return material
 
 
 @pytest.fixture
 def base(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Base]]:
-    """Add a base counted in ``unit``."""
+    """Add a base counted in ``unit``, unless it names another."""
 
     async def base(name: str, **fields: Any) -> Base:
-        return await add_base(db, Base(name=name, tracking_unit_id=unit.id, **fields))
+        return await add_base(db, Base(name=name, **{"tracking_unit_id": unit.id} | fields))
 
     return base
 

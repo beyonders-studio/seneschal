@@ -6,7 +6,15 @@ from datetime import date
 from decimal import Decimal
 
 from hoard import plugin_manifest
-from hoard.records import Adjustment, AdjustmentKind, Category, CategoryKind, Location, Unit
+from hoard.records import (
+    Adjustment,
+    AdjustmentKind,
+    Category,
+    CategoryKind,
+    Location,
+    Material,
+    Unit,
+)
 from hoard.stock import adjust
 from seneschal_core.db import WriteSession
 
@@ -103,3 +111,49 @@ async def test_a_material_is_added_edited_and_removed_with_the_organization_s_se
     assert (await client.get(f"/api/v1/materials/{oolong['id']}")).status_code == 404
     kept = await client.delete(f"/api/v1/materials/{bought.id}")
     assert (kept.status_code, kept.json()) == (409, {"detail": "IN_USE"})
+
+
+async def test_standard_units_fill_in_the_conversion_and_a_tracking_unit_with_history_stays(
+    client, sign_in, db: WriteSession, unit: Unit, buy
+):
+    jar = Unit(organization_id=db.organization_id, name="Jar")
+    db.add(jar)
+    await db.commit()
+    await sign_in(client)
+    listed = (await client.get("/api/v1/settings/units")).json()
+    kilograms, millilitres = (
+        next(each["id"] for each in listed if each["standard"] == key)
+        for key in ("kilogram", "millilitre")
+    )
+
+    def body(**fields):
+        return {"name": "Catnip", "tracking_unit_id": unit.id, **fields}
+
+    bought = await client.post(
+        "/api/v1/materials",
+        json=body(purchase_unit_id=kilograms, purchase_conversion="999", unit_weight="3"),
+    )
+    by_jar = await client.post(
+        "/api/v1/materials",
+        json=body(name="Honey", purchase_unit_id=jar.id, purchase_conversion="250"),
+    )
+    flavor = await client.post(
+        "/api/v1/materials",
+        json=body(name="Lychee", tracking_unit_id=millilitres, unit_weight="1.04"),
+    )
+
+    assert (bought.json()["purchase_conversion"], bought.json()["unit_weight"]) == (
+        "1000.000000",
+        None,
+    )
+    assert by_jar.json()["purchase_conversion"] == "250.000000"
+    assert flavor.json()["unit_weight"] == "1.040000"
+    catnip = bought.json()["id"]
+    assert (
+        await client.put(f"/api/v1/materials/{catnip}", json=body(tracking_unit_id=kilograms))
+    ).status_code == 200
+    material = await db.get_one(Material, catnip)
+    await buy((material, "1", "4"))
+    await db.commit()
+    held = await client.put(f"/api/v1/materials/{catnip}", json=body())
+    assert (held.status_code, held.json()) == (409, {"detail": "TRACKING_UNIT_IN_USE"})

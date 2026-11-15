@@ -22,7 +22,10 @@ export const SETTINGS: Record<string, Answer> = {
     status: 200,
     data: { currency: "USD", auto_manufacture: "off", regimes: [] },
   },
-  "GET /api/v1/settings/units": { status: 200, data: [{ id: 1, name: "g" }] },
+  "GET /api/v1/settings/units": {
+    status: 200,
+    data: [{ id: 1, name: "g", standard: "gram", measure: "mass", aliases: ["g", "grams"] }],
+  },
   "GET /api/v1/settings/categories": {
     status: 200,
     data: [
@@ -55,6 +58,7 @@ export const material = (fields: Partial<MaterialRead> = {}): MaterialRead => ({
   tracking_unit_id: 1,
   purchase_unit_id: null,
   purchase_conversion: "1.000000",
+  unit_weight: null,
   low_stock_limit: null,
   category_id: 2,
   supplier_contact_id: null,

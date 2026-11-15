@@ -47,7 +47,16 @@ from sqlalchemy import event, func, update
 from sqlalchemy.orm import ORMExecuteState, Session
 from sqlmodel import col, select
 
-from hoard import automanufacture, channels, listings, orders, recipes, shipments, store_fields
+from hoard import (
+    automanufacture,
+    channels,
+    listings,
+    orders,
+    recipes,
+    shipments,
+    store_fields,
+    units,
+)
 from hoard.channels import (
     Connector,
     NudgeTopic,
@@ -198,8 +207,8 @@ async def _order_lines(db: WriteSession, order: Order) -> list[OrderLine]:
 def _follow(part: OrderLine, line: OrderLine) -> None:
     """Keep a part Hoard split from a bundle's line selling, and refunded, in
     step with the line."""
-    part.current_quantity = recipes.scaled(part.quantity, orders.selling(line) / line.quantity)
-    part.refunded_quantity = recipes.scaled(part.quantity, line.refunded_quantity / line.quantity)
+    part.current_quantity = units.scaled(part.quantity, orders.selling(line) / line.quantity)
+    part.refunded_quantity = units.scaled(part.quantity, line.refunded_quantity / line.quantity)
 
 
 async def _split(db: WriteSession, line: OrderLine) -> None:
@@ -218,7 +227,7 @@ async def _split(db: WriteSession, line: OrderLine) -> None:
             organization_id=db.organization_id,
             order_id=line.order_id,
             item_id=part.item_id,
-            quantity=recipes.scaled(line.quantity, part.quantity / recipe.batch_quantity),
+            quantity=units.scaled(line.quantity, part.quantity / recipe.batch_quantity),
             price=Decimal(0),
             bundle_line_id=line.id,
         )
@@ -250,7 +259,7 @@ async def _copy_lines(db: WriteSession, items: _Items, order: Order, found: Stor
             ]
             if sold.quantity > 0 and sold.quantity != line.quantity:
                 for part in parts:
-                    part.quantity = recipes.scaled(part.quantity, sold.quantity / line.quantity)
+                    part.quantity = units.scaled(part.quantity, sold.quantity / line.quantity)
                 line.quantity = sold.quantity
             line.current_quantity, line.refunded_quantity = current, sold.refunded_quantity
             for part in parts:
@@ -329,7 +338,7 @@ async def _ship(
         if line is None or quantity <= 0:
             continue
         parts = [part for part in held if part.bundle_line_id == line.id]
-        each = [(part, recipes.scaled(part.quantity, quantity / line.quantity)) for part in parts]
+        each = [(part, units.scaled(part.quantity, quantity / line.quantity)) for part in parts]
         for sold, how_many in each or [(line, quantity)]:
             sent.append(
                 ShipmentLine(

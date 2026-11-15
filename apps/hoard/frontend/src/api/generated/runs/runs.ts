@@ -27,6 +27,8 @@ import type {
   RunComplete,
   RunCreate,
   RunLineUpdate,
+  RunPlan,
+  RunPreview,
   RunRead,
   RunStart,
   RunUpdate,
@@ -184,7 +186,9 @@ export function useListRuns<
 }
 
 /**
- * Open a run in the page's initiative, its lines filled from its item's recipe.
+ * Open a run in the page's initiative, its lines filled from its item's
+ * recipe over its planned batches, or over the batches that ``use`` exactly
+ * an amount of one line.
  * @summary Create Run
  */
 export const createRun = (
@@ -248,7 +252,9 @@ export type CreateRunMutationError = ErrorType<void>;
 export type CreateRunMutationVariables = { data: BodyType<RunCreate> };
 
 /**
- * Open a run in the page's initiative, its lines filled from its item's recipe.
+ * Open a run in the page's initiative, its lines filled from its item's
+ * recipe over its planned batches, or over the batches that ``use`` exactly
+ * an amount of one line.
  * @summary Create Run
  */
 export const useCreateRun = <TError = ErrorType<void>, TContext = unknown>(
@@ -571,6 +577,97 @@ export const useDeleteProductionRun = <
   TContext
 > => {
   return useMutation(getDeleteProductionRunMutationOptions(options), queryClient);
+};
+/**
+ * A run as it would be opened, each line beside what is usable at its
+ * location, saving nothing. Making as much as one line allows, with no
+ * amount sent, uses what is usable of it.
+ * @summary Preview Run
+ */
+export const previewRun = (
+  runPlan: BodyType<RunPlan>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<RunPreview>(
+    {
+      url: `/api/v1/runs/preview`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: runPlan,
+      signal,
+    },
+    options
+  );
+};
+
+export const getPreviewRunMutationKey = () => ["previewRun"] as const;
+
+export const getPreviewRunMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof previewRun>>,
+    TError,
+    PreviewRunMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof previewRun>>,
+  TError,
+  PreviewRunMutationVariables,
+  TContext
+> => {
+  const mutationKey = getPreviewRunMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof previewRun>>,
+    PreviewRunMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return previewRun(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PreviewRunMutationResult = NonNullable<Awaited<ReturnType<typeof previewRun>>>;
+export type PreviewRunMutationBody = BodyType<RunPlan>;
+export type PreviewRunMutationError = ErrorType<void>;
+export type PreviewRunMutationVariables = { data: BodyType<RunPlan> };
+
+/**
+ * A run as it would be opened, each line beside what is usable at its
+ * location, saving nothing. Making as much as one line allows, with no
+ * amount sent, uses what is usable of it.
+ * @summary Preview Run
+ */
+export const usePreviewRun = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof previewRun>>,
+      TError,
+      PreviewRunMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof previewRun>>,
+  TError,
+  PreviewRunMutationVariables,
+  TContext
+> => {
+  return useMutation(getPreviewRunMutationOptions(options), queryClient);
 };
 /**
  * Start a run that has not started.

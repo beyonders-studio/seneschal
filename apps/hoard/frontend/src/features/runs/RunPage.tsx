@@ -162,6 +162,14 @@ function Run({ run }: { run: RunRead }) {
         </div>
       </div>
 
+      {run.recipe_changed && !completed && (
+        <Alert>
+          <TriangleAlert aria-hidden />
+          <AlertTitle>{t("runs.recipeChangedTitle")}</AlertTitle>
+          <AlertDescription>{t("runs.recipeChangedBody")}</AlertDescription>
+        </Alert>
+      )}
+
       {run.uncosted && (
         <Alert>
           <TriangleAlert aria-hidden />
@@ -205,7 +213,16 @@ function Run({ run }: { run: RunRead }) {
           {run.lines.map((line) => (
             <TableRow key={line.id}>
               <TableCell>{item(line.item)}</TableCell>
-              <TableCell className="text-right">{quantity(line.quantity)}</TableCell>
+              <TableCell className="text-right">
+                <span className="inline-flex items-center gap-2 tabular-nums">
+                  {line.short && (
+                    <Badge variant="warning">
+                      {t("runs.lines.short", { quantity: quantity(line.short) })}
+                    </Badge>
+                  )}
+                  {quantity(line.quantity)}
+                </span>
+              </TableCell>
               <TableCell>
                 {completed || read_only ? (
                   <LotShown line={line} name={lotName} />

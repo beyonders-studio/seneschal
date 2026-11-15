@@ -1,9 +1,24 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { material, SETTINGS } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
+
+// The list scrolls the option it marks into view, which jsdom can't.
+Element.prototype.scrollIntoView ??= () => {};
+
+/** The standard gram and kilogram, and a jar of the community's own. */
+const UNITS = {
+  "GET /api/v1/settings/units": {
+    status: 200,
+    data: [
+      { id: 1, name: "g", standard: "gram", measure: "mass", aliases: ["g", "grams", "gramme"] },
+      { id: 2, name: "kg", standard: "kilogram", measure: "mass", aliases: ["kg", "kilo"] },
+      { id: 3, name: "Jar", standard: null, measure: null, aliases: [] },
+    ],
+  },
+};
 
 const list = (...items: ReturnType<typeof material>[]) => ({
   "GET /api/v1/materials": { status: 200, data: { items, total: items.length } },
@@ -53,5 +68,58 @@ describe("MaterialsPage", () => {
 
     await screen.findByText("No materials yet");
     screen.getByRole("button", { name: "Add material" });
+  });
+
+  it("finds a unit by its aliases, and offers only an admin a new one", async () => {
+    await openSignedIn("/stock/materials", signedIn(), { ...SETTINGS, ...UNITS, ...list() });
+    fireEvent.click(await screen.findByRole("button", { name: "Add material" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add material" });
+
+    fireEvent.click(await within(dialog).findByRole("combobox", { name: "Counted in" }));
+    fireEvent.change(await screen.findByPlaceholderText("Search units"), {
+      target: { value: "gramme" },
+    });
+
+    await screen.findByRole("option", { name: /gram/ });
+    expect(screen.queryByRole("option", { name: /kilogram/ })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search units"), { target: { value: "bag" } });
+    await screen.findByText("No unit matches.");
+    expect(screen.queryByRole("option", { name: /as a new unit/ })).toBeNull();
+  });
+
+  it("lets an admin add a unit there, and fills in a standard conversion", async () => {
+    const asked = await openSignedIn("/stock/materials", signedIn({ admin: true }), {
+      ...SETTINGS,
+      ...UNITS,
+      ...list(),
+      "POST /api/v1/settings/units": {
+        status: 201,
+        data: { id: 4, name: "Bag", standard: null, measure: null, aliases: [] },
+      },
+      "GET /api/v1/settings/units/conversion": { status: 200, data: { factor: "1000.000000" } },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add material" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add material" });
+
+    fireEvent.click(await within(dialog).findByRole("combobox", { name: "Counted in" }));
+    fireEvent.change(await screen.findByPlaceholderText("Search units"), {
+      target: { value: "kilo" },
+    });
+    expect(screen.queryByRole("option", { name: /as a new unit/ })).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search units"), { target: { value: "Bag" } });
+    fireEvent.click(await screen.findByRole("option", { name: "Use “Bag” as a new unit" }));
+    await waitFor(() =>
+      expect(
+        asked.find(
+          (request) => request.url === "/api/v1/settings/units" && request.method === "post"
+        )?.data
+      ).toBe(JSON.stringify({ name: "Bag" }))
+    );
+
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Bought in" }));
+    fireEvent.click(await screen.findByRole("option", { name: /kilogram/ }));
+    const conversion = await within(dialog).findByDisplayValue("1000.000000");
+    expect(conversion).toHaveProperty("disabled", true);
+    within(dialog).getByText("Set by the two units.");
   });
 });

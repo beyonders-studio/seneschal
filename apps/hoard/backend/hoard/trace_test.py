@@ -51,6 +51,7 @@ async def _recipe(
                 recipe_id=recipe.id,
                 item_id=line_item,
                 quantity=Decimal(quantity),
+                written=Decimal(quantity),
                 position=position,
             )
         )

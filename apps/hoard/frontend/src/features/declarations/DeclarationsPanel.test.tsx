@@ -10,6 +10,7 @@ const declared = (overrides: Partial<DeclarationRead> = {}): DeclarationRead => 
   recorded_allergens: null,
   ingredient_name: null,
   ingredients: ["Oolong"],
+  unweighed: [],
   allergens: [],
   undeclared: ["Oolong"],
   recorded_fragrance: null,

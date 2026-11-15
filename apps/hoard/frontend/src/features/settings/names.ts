@@ -4,6 +4,7 @@ import type {
   CategoryKind,
   SettingsLocationRead,
   SettingsReasonRead,
+  SettingsUnitRead,
 } from "@/api/generated/hoard.schemas";
 import {
   useListSettingsCategories,
@@ -26,12 +27,23 @@ export function useReasonName(): (reason: SettingsReasonRead) => string {
     reason.name ?? (reason.key ? t(`settings.reasons.defaults.${reason.key}`) : "");
 }
 
+/** A unit's name where a quantity shows it: a standard unit's is the words
+ *  for its key, such as "g"; a unit of the community's own, its name. */
+export function useUnitName(): (unit: SettingsUnitRead) => string {
+  const { t } = useTranslation();
+  return (unit) => (unit.standard ? t(`units.short.${unit.standard}`) : unit.name);
+}
+
 /**
  * The organization's units, categories and locations, and each one's name by
- * its id: blank until they load.
+ * its id: blank until they load. A standard unit is named in the reader's words.
  */
 export function useSettingsNames() {
-  const units = useListSettingsUnits().data ?? [];
+  const unitName = useUnitName();
+  const units = (useListSettingsUnits().data ?? []).map((unit) => ({
+    ...unit,
+    name: unitName(unit),
+  }));
   const categories = useListSettingsCategories().data ?? [];
   const locationName = useLocationName();
   const locations = (useListSettingsLocations().data ?? []).map((location) => ({
