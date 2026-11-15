@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
-from hoard import plugin_manifest, push, store_sync, sync, tracking
+from hoard import plugin_manifest, push, store_fields, store_sync, sync, tracking
 from hoard.api import export
 from hoard.api import router as api_router
 from hoard.channels import hooks as store_hooks
@@ -48,6 +48,7 @@ def frame_ancestors(parent: str | None) -> str | None:
 JOB_HANDLERS: dict[str, jobs.Handler] = {
     export.EXPORT_JOB: export.export,
     store_sync.STORE_SYNC_JOB: store_sync.run,
+    store_fields.STORE_FIELDS_JOB: store_sync.run_fields,
 }
 
 

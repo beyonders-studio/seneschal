@@ -47,8 +47,15 @@ from sqlalchemy import event, func, update
 from sqlalchemy.orm import ORMExecuteState, Session
 from sqlmodel import col, select
 
-from hoard import automanufacture, channels, listings, orders, recipes, shipments
-from hoard.channels import Connector, NudgeTopic, StoreFulfillment, StoreLine, StoreOrder
+from hoard import automanufacture, channels, listings, orders, recipes, shipments, store_fields
+from hoard.channels import (
+    Connector,
+    NudgeTopic,
+    StoreFulfillment,
+    StoreLine,
+    StoreOrder,
+    StoreProduct,
+)
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
@@ -473,6 +480,7 @@ async def _refetch(db: WriteSession, store: Store, connector: Connector, nudge: 
             await listings.forget(db, store, nudge.external_id)
         else:
             await listings.adopt(db, store, [product])
+            await store_fields.refresh(db, store, connector, [nudge.external_id])
     elif nudge.topic == NudgeTopic.INVENTORY:
         # The store changed its own count: each listing is pushed Hoard's again.
         linked = await db.exec(
@@ -671,6 +679,16 @@ async def _copy_all(
     return items.store, copied
 
 
+async def _adopt(
+    db: WriteSession, store: Store, connector: Connector, products: list[StoreProduct]
+) -> None:
+    """Take the store's changed ``products`` in, with their mapped fields."""
+    await listings.adopt(db, store, products)
+    await store_fields.refresh(
+        db, store, connector, [product.id for product in products if product.id is not None]
+    )
+
+
 async def reconcile(
     plugin: Plugin,
     organization_id: int,
@@ -688,11 +706,11 @@ async def reconcile(
         async for product in connector.products(products_since):
             batch.append(product)
             if len(batch) >= PRODUCTS_AT_ONCE:
-                await listings.adopt(db, kept, batch)
+                await _adopt(db, kept, connector, batch)
                 await db.commit()
                 batch = []
         if batch:
-            await listings.adopt(db, kept, batch)
+            await _adopt(db, kept, connector, batch)
         kept.products_since = started
         await db.commit()
         changed = [order async for order in connector.orders(orders_since)]

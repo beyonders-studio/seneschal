@@ -22,6 +22,7 @@ from sqlalchemy import delete, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard import store_fields
 from hoard.records import (
     PLACES,
     Base,
@@ -164,7 +165,9 @@ async def _check_new(db: AsyncSession, recipe: Recipe) -> None:
 
 async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recipe:
     """Save ``recipe`` holding ``lines``, in their order, in place of any it
-    held. A bundle's recipe marks its product as a bundle."""
+    held. A bundle's recipe marks its product as a bundle. What Hoard works
+    out of a product, such as its allergens, is sent to each store mapping it
+    (``hoard.store_fields``)."""
     if len({line.item_id for line in lines}) != len(lines):
         raise RecipeRefused(RecipeError.RECIPE_LINE_REPEATED)
     await _check_new(db, recipe)
@@ -190,6 +193,7 @@ async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recip
         product.bundle = True
         db.add(product)
     await db.flush()
+    await store_fields.queue_changed(db)
     return recipe
 
 
@@ -201,6 +205,7 @@ async def remove(db: WriteSession, recipe: Recipe) -> None:
         db.add(product)
     await db.delete(recipe)
     await db.flush()
+    await store_fields.queue_changed(db)
 
 
 async def lines_of(db: AsyncSession, recipe_ids: Iterable[int]) -> dict[int, list[RecipeLine]]:

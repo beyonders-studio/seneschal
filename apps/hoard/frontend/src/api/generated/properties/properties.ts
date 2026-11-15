@@ -532,7 +532,8 @@ export const useAddPropertyOption = <TError = ErrorType<void>, TContext = unknow
 };
 /**
  * Set, take off and step a record's values, answering with every value
- * it then holds.
+ * it then holds. A product's value a store's field holds is written to the
+ * store first, and kept as the store answers it.
  * @summary Set Property Values
  */
 export const setPropertyValues = (
@@ -605,7 +606,8 @@ export type SetPropertyValuesMutationVariables = {
 
 /**
  * Set, take off and step a record's values, answering with every value
- * it then holds.
+ * it then holds. A product's value a store's field holds is written to the
+ * store first, and kept as the store answers it.
  * @summary Set Property Values
  */
 export const useSetPropertyValues = <TError = ErrorType<void>, TContext = unknown>(

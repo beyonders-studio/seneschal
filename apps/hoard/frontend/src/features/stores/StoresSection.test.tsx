@@ -1,7 +1,11 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { StoreRead } from "@/api/generated/hoard.schemas";
+import type {
+  StoreFieldDifferenceRead,
+  StoreFieldRead,
+  StoreRead,
+} from "@/api/generated/hoard.schemas";
 import { type Answer, buildJob, openSignedIn, signedIn } from "@/testing";
 
 // jsdom does not scroll; the kit's select scrolls its chosen option into view.
@@ -32,6 +36,65 @@ const PENDING: StoreRead = {
   sync_job_id: null,
   locations: [],
 };
+
+const FIELD: StoreFieldRead = {
+  owner: "product",
+  handle: "custom.origin",
+  name: "Origin",
+  type: "single_line_text_field",
+  count: 12,
+  entries: [],
+  property_type: "text",
+  allergens: true,
+  ingredients: true,
+  suggested: { target: "property", property_id: null, pairs: {} },
+  mapping_id: null,
+  mapped: null,
+};
+
+const FIELDS: StoreFieldRead[] = [
+  FIELD,
+  {
+    ...FIELD,
+    handle: "shopify.allergen-information",
+    name: "Allergen information",
+    type: "list.metaobject_reference",
+    count: 4,
+    entries: [
+      { value: "gid://m/1", name: "Milk" },
+      { value: "gid://m/2", name: "Seeds" },
+    ],
+    property_type: "multi_select",
+    ingredients: false,
+    suggested: {
+      target: "allergens",
+      property_id: null,
+      pairs: { "gid://m/1": "milk", "gid://m/2": null },
+    },
+  },
+  {
+    ...FIELD,
+    handle: "custom.weight",
+    name: "Weight",
+    type: "weight",
+    property_type: null,
+    allergens: false,
+    ingredients: false,
+    suggested: null,
+  },
+];
+
+const PROPERTIES = [
+  {
+    id: 7,
+    kind: "product",
+    name: "Region",
+    type: "text",
+    options: null,
+    currency: null,
+    counter: null,
+  },
+];
 
 const answers = (store: StoreRead, more: Record<string, Answer> = {}) => ({
   "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
@@ -106,6 +169,8 @@ describe("StoresSection", () => {
             { external_id: "loc-3", name: "Pop-up" },
           ],
         },
+        "GET /api/v1/stores/3/fields": { status: 200, data: FIELDS },
+        "GET /api/v1/properties": { status: 200, data: PROPERTIES },
         "POST /api/v1/stores/3/sync": {
           status: 202,
           data: buildJob({ id: 9, kind: "store_sync" }),
@@ -136,6 +201,25 @@ describe("StoresSection", () => {
     await choose("Pop-up", "Nothing");
     fireEvent.click(within(wizard).getByRole("button", { name: "Next" }));
 
+    within(wizard).getByText("What each of the store's fields fills in Hoard");
+    await within(wizard).findByText(
+      "custom.origin · Product · single_line_text_field · 12 have a value"
+    );
+    await waitFor(() =>
+      expect(within(wizard).getByRole("combobox", { name: "Origin" }).textContent).toBe(
+        "A new property: Origin (Text)"
+      )
+    );
+    expect(within(wizard).getByRole("combobox", { name: "Allergen information" }).textContent).toBe(
+      "Allergens, from recipes"
+    );
+    expect(within(wizard).getByRole("combobox", { name: "Weight" }).textContent).toBe(
+      "Leave it out"
+    );
+    await choose("Origin", "Property: Region");
+    await choose("Allergen for Seeds", "Sesame");
+    fireEvent.click(within(wizard).getByRole("button", { name: "Next" }));
+
     within(wizard).getByText("After the sync");
     within(wizard).getByText(/come back here and choose Remove sync/);
     fireEvent.click(within(wizard).getByRole("button", { name: "Sync now" }));
@@ -147,9 +231,121 @@ describe("StoresSection", () => {
           { external_id: "loc-1", location_id: 4 },
           { external_id: "loc-2", new: true },
         ],
+        fields: [
+          {
+            owner: "product",
+            handle: "custom.origin",
+            target: "property",
+            property_id: 7,
+            pairs: {},
+          },
+          {
+            owner: "product",
+            handle: "shopify.allergen-information",
+            target: "allergens",
+            property_id: null,
+            pairs: { "gid://m/1": "milk", "gid://m/2": "sesame" },
+          },
+        ],
       });
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("lists differing values and sends Hoard's only when asked", async () => {
+    const differing: StoreFieldDifferenceRead[] = [
+      {
+        mapping_id: 2,
+        field: "Allergens",
+        target: "allergens",
+        owner_id: "p-chai",
+        product_id: 4,
+        product_name: "Chai",
+        hoard: ["Tree nuts"],
+        store: ["Milk"],
+      },
+    ];
+    const asked = await openSignedIn(
+      "/settings",
+      admin,
+      answers(
+        { ...SYNCED, last_check_error: null },
+        {
+          "GET /api/v1/stores/3/fields/differing": { status: 200, data: differing },
+          "POST /api/v1/stores/3/fields/send": {
+            status: 202,
+            data: buildJob({ id: 11, kind: "store_fields" }),
+          },
+          "GET /api/v1/jobs/11": {
+            status: 200,
+            data: buildJob({
+              id: 11,
+              kind: "store_fields",
+              state: "running",
+              step: "store_fields_send",
+            }),
+          },
+        }
+      )
+    );
+
+    const listed = await screen.findByRole("region", { name: "Differing values" });
+    const row = within(listed).getByText("Chai").closest("tr") as HTMLElement;
+    expect(row.textContent).toBe("ChaiAllergensTree nutsMilk");
+    expect(asked.some((request) => request.url?.endsWith("/fields/send"))).toBe(false);
+    fireEvent.click(within(listed).getByRole("button", { name: "Send Hoard's values to Shopify" }));
+
+    await within(listed).findByText("Sending Hoard's values");
+    expect(asked.filter((request) => request.url?.endsWith("/fields/send"))).toHaveLength(1);
+  });
+
+  it("lets an admin change a synced store's fields", async () => {
+    const mapped: StoreFieldRead = {
+      ...FIELD,
+      mapping_id: 5,
+      mapped: { target: "property", property_id: 7, pairs: {} },
+    };
+    const asked = await openSignedIn(
+      "/settings",
+      admin,
+      answers(
+        { ...SYNCED, last_check_error: null },
+        {
+          "GET /api/v1/stores/3/fields": { status: 200, data: [mapped, FIELDS[1]] },
+          "GET /api/v1/properties": { status: 200, data: PROPERTIES },
+          "PUT /api/v1/stores/3/fields": {
+            status: 200,
+            data: buildJob({ id: 12, kind: "store_fields" }),
+          },
+          "DELETE /api/v1/stores/3/fields/5": { status: 204 },
+        }
+      )
+    );
+
+    const store = await screen.findByRole("article", { name: "Tea House" });
+    fireEvent.click(within(store).getByRole("button", { name: "Show the fields" }));
+    await waitFor(() =>
+      expect(within(store).getByRole("combobox", { name: "Origin" }).textContent).toBe(
+        "Property: Region"
+      )
+    );
+    expect(within(store).getByRole("combobox", { name: "Allergen information" }).textContent).toBe(
+      "Leave it out"
+    );
+
+    await choose("Allergen information", "Allergens, from recipes");
+    await waitFor(() => {
+      const sent = asked.find((request) => request.method === "put");
+      expect(JSON.parse(String(sent?.data))).toEqual({
+        owner: "product",
+        handle: "shopify.allergen-information",
+        target: "allergens",
+        property_id: null,
+        pairs: { "gid://m/1": "milk", "gid://m/2": null },
+      });
+    });
+    await choose("Origin", "Leave it out");
+    await waitFor(() => expect(asked.some((request) => request.method === "delete")).toBe(true));
   });
 
   it("shows a running sync's progress", async () => {

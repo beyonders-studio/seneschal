@@ -672,6 +672,28 @@ export const ExportKind = {
 } as const;
 
 /**
+ * What a store's field is kept on: its products, or their variants.
+ */
+export type FieldOwner = (typeof FieldOwner)[keyof typeof FieldOwner];
+
+export const FieldOwner = {
+  product: "product",
+  variant: "variant",
+} as const;
+
+/**
+ * What a store's field fills in Hoard: the allergens or the ingredient
+ * list Hoard works out from recipes, or a product property.
+ */
+export type FieldTarget = (typeof FieldTarget)[keyof typeof FieldTarget];
+
+export const FieldTarget = {
+  allergens: "allergens",
+  ingredients: "ingredients",
+  property: "property",
+} as const;
+
+/**
  * Where the member's consent stands: ``pending`` until they answer in
  * Initiative, then ``granted`` or ``denied``.
  */
@@ -2375,6 +2397,77 @@ export interface StocktakeRowConfirm {
   counted: number | string;
 }
 
+export type StoreFieldChoiceWritePairs = { [key: string]: Allergen | null };
+
+/**
+ * What one of the store's fields fills: Hoard's allergens or ingredient
+ * list, or a product property, by its id, or, with none, a new one named
+ * as the store names the field. ``pairs`` pairs an allergens field's values
+ * with Hoard's allergens by hand, null for none.
+ */
+export interface StoreFieldChoiceWrite {
+  owner: FieldOwner;
+  /**
+   * @minLength 3
+   * @maxLength 300
+   */
+  handle: string;
+  target: FieldTarget;
+  property_id?: number | null;
+  pairs?: StoreFieldChoiceWritePairs;
+}
+
+/**
+ * A product whose value of a field Hoard works out differs from the store's.
+ */
+export interface StoreFieldDifferenceRead {
+  mapping_id: number;
+  field: string;
+  target: FieldTarget;
+  owner_id: string;
+  product_id: number | null;
+  product_name: string | null;
+  hoard: string[];
+  store: string[];
+}
+
+/**
+ * An entry a field picks from: the value the store keeps, and its name.
+ */
+export interface StoreFieldEntry {
+  value: string;
+  name: string;
+}
+
+export type StoreFieldTargetReadPairs = { [key: string]: Allergen | null };
+
+/**
+ * What a field fills, or Hoard suggests it fill.
+ */
+export interface StoreFieldTargetRead {
+  target: FieldTarget;
+  property_id: number | null;
+  pairs: StoreFieldTargetReadPairs;
+}
+
+/**
+ * One of the fields the store defines, as it has them now.
+ */
+export interface StoreFieldRead {
+  owner: FieldOwner;
+  handle: string;
+  name: string;
+  type: string;
+  count: number;
+  entries: StoreFieldEntry[];
+  property_type: PropertyType | null;
+  allergens: boolean;
+  ingredients: boolean;
+  suggested: StoreFieldTargetRead | null;
+  mapping_id: number | null;
+  mapped: StoreFieldTargetRead | null;
+}
+
 export interface StoreImageRead {
   id: string | null;
   url: string;
@@ -2529,11 +2622,13 @@ export interface StoreRead {
 }
 
 /**
- * Where each of the store's locations takes its stock from; one not
- * named takes none.
+ * Where each of the store's locations takes its stock from, one not
+ * named taking none; and what each of its fields fills, one not named
+ * being left out.
  */
 export interface StoreSyncWrite {
   locations?: StoreLocationChoice[];
+  fields?: StoreFieldChoiceWrite[];
 }
 
 /**

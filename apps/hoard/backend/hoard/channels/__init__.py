@@ -26,7 +26,11 @@ A connector:
   of an order's delivery, and reads that body as the order it describes, for
   an order the store no longer returns; it reads none of the connection's
   values, so a connector built with none parses both;
-* imports the orders of the window the store keeps (``history_days``).
+* imports the orders of the window the store keeps (``history_days``);
+* lists the fields the store defines for its products and variants
+  (:meth:`Connector.fields`), with the entries a field picks from, reads
+  their values (:meth:`Connector.field_values`), in bulk for every product,
+  and writes them (:meth:`Connector.set_field_values`).
 
 A store refusing what Hoard asks raises :class:`ConnectRefused`, with a code
 pages translate.
@@ -41,7 +45,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Protocol
 
-from hoard.records import Channel
+from hoard.records import Channel, FieldOwner
 from seneschal_core.api import Plugin
 
 
@@ -247,6 +251,50 @@ class StoreOrder:
 
 
 @dataclass(frozen=True)
+class StoreField:
+    """A field a store defines for its products or its variants."""
+
+    owner: FieldOwner
+    namespace: str
+    key: str
+    #: What the store calls it.
+    name: str
+    #: The store's name for its type, such as ``single_line_text_field`` or
+    #: ``list.metaobject_reference``.
+    type: str
+    #: For a field that picks from a fixed list: each entry's name, by the
+    #: value the store keeps for it.
+    choices: Mapping[str, str] = field(default_factory=dict)
+    #: How many products or variants hold a value of it.
+    count: int = 0
+
+    @property
+    def handle(self) -> str:
+        """``namespace.key``, as the store names it."""
+        return f"{self.namespace}.{self.key}"
+
+
+@dataclass(frozen=True)
+class FieldValue:
+    """A field's value on a store's product or variant, as the store keeps it:
+    text, a list as JSON. None for no value."""
+
+    #: The store's id for the product or variant.
+    owner_id: str
+    #: The field's ``namespace.key``.
+    handle: str
+    #: The field's type, as :attr:`StoreField.type`.
+    type: str
+    value: str | None
+
+
+#: Fields' values on what was read: each product's and variant's, by the
+#: store's id, each field's value by its ``namespace.key``. One read and
+#: holding none of the fields asked for maps to an empty dict.
+FieldValues = dict[str, dict[str, str]]
+
+
+@dataclass(frozen=True)
 class StockSet:
     """Setting what is available of a listing at one of the store's locations."""
 
@@ -365,6 +413,23 @@ class Connector(Protocol):
 
     def import_products(self) -> AsyncIterator[StoreProduct]:
         """Every product, read in bulk."""
+        ...
+
+    async def fields(self) -> list[StoreField]:
+        """The fields the store defines for its products and its variants."""
+        ...
+
+    async def field_values(
+        self, handles: Mapping[FieldOwner, Sequence[str]], product_ids: Sequence[str] | None
+    ) -> FieldValues:
+        """The values of the fields ``handles`` names, on the products of
+        ``product_ids`` and their variants, or, for None, on every product,
+        read in bulk."""
+        ...
+
+    async def set_field_values(self, values: Sequence[FieldValue]) -> list[FieldValue]:
+        """Write each of ``values``, a None one taking the value off, and
+        answer them as the store keeps them now."""
         ...
 
 

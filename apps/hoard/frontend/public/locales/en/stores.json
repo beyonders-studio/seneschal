@@ -27,7 +27,9 @@
     "mapped": "Location saved.",
     "mapFailed": "The location couldn't be saved.",
     "showLog": "Show the push log",
-    "hideLog": "Hide the push log"
+    "hideLog": "Hide the push log",
+    "showFields": "Show the fields",
+    "hideFields": "Hide the fields"
   },
   "channels": {
     "shopify": "Shopify",
@@ -112,7 +114,10 @@
     "STORE_SYNCED": "The store is synced already.",
     "STORE_NOT_SYNCED": "The store isn't synced yet.",
     "STORE_SYNCING": "The store is syncing. Wait until it finishes.",
-    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved."
+    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved.",
+    "STORE_FIELD_UNKNOWN": "The store no longer has that field.",
+    "STORE_FIELD_TARGET_INVALID": "That field can't fill that in Hoard.",
+    "STORE_FIELD_VALUE_INVALID": "The store's field can't hold that value."
   },
   "sync": {
     "open": "Sync with {{channel}}",
@@ -143,6 +148,56 @@
     "removeTitle": "Remove the sync with {{store}}?",
     "removeBody": "Hoard stops hearing from the store and stops sending it stock counts. Everything the sync brought into Hoard stays: products, locations, stock, orders and listings. Syncing again later replaces what conflicts, as the first sync did.",
     "removed": "The sync was removed.",
-    "removeFailed": "The sync couldn't be removed."
+    "removeFailed": "The sync couldn't be removed.",
+    "fields": {
+      "description": "What each of the store's fields fills in Hoard"
+    }
+  },
+  "fields": {
+    "explain": "The store keeps extra data about its products in fields of its own. Pick what each one fills in Hoard. A property is kept in step with the store both ways. Allergens and ingredient lists are worked out from Hoard's recipes: the sync only compares them, and nothing is sent to the store.",
+    "none": "The store defines no fields for its products.",
+    "loadFailed": "The store's fields couldn't be read.",
+    "storeField": "Store field",
+    "fills": "Fills in Hoard",
+    "owners": {
+      "product": "Product",
+      "variant": "Variant"
+    },
+    "count_one": "{{count}} has a value",
+    "count_other": "{{count}} have a value",
+    "allergens": "Allergens, from recipes",
+    "ingredients": "Ingredient list, from recipes",
+    "property": "Property: {{name}}",
+    "newProperty": "A new property: {{name}} ({{type}})",
+    "out": "Leave it out",
+    "pairHint": "These values match none of Hoard's allergens. Pick the one each means.",
+    "pair": "Allergen for {{value}}",
+    "notAllergen": "Not an allergen",
+    "types": {
+      "text": "Text",
+      "number": "Number",
+      "checkbox": "Checkbox",
+      "date": "Date",
+      "datetime": "Date and time",
+      "url": "Link",
+      "select": "Select",
+      "multi_select": "Multi-select",
+      "user_reference": "Person",
+      "currency": "Money",
+      "scale": "Scale",
+      "counter": "Counter",
+      "file": "File",
+      "signature": "Signature"
+    },
+    "saved": "Field saved.",
+    "saveFailed": "The field couldn't be saved.",
+    "differing": "Differing values",
+    "differingHint": "Hoard works these out from recipes, and they differ from what {{channel}} shows. Nothing is sent until you send it.",
+    "product": "Product",
+    "inHoard": "In Hoard",
+    "inStore": "In {{channel}}",
+    "nothing": "Nothing",
+    "send": "Send Hoard's values to {{channel}}",
+    "sendFailed": "Hoard's values couldn't be sent."
   }
 }

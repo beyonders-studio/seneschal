@@ -5,6 +5,11 @@ A store is pending, syncing or synced (``hoard.store_sync``). Syncing it, and
 removing its sync, is an administrator's, as are reading the store again and
 mapping its locations.
 
+A store's fields are mapped to what they fill in Hoard (``hoard.store_fields``):
+in the sync's request, and, once it is synced, one at a time, each new one
+read in as a job. The products whose allergens or ingredient list differ
+from the store's are listed, and Hoard's values sent only when asked.
+
 A store's products are shown from Hoard's copy of them (``hoard.listings``),
 which the store's webhooks and the reconcile keep up to date, and written
 back to the store as they are edited; the store's answer is kept as the copy.
@@ -30,26 +35,41 @@ from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import channels, listings, push, store_sync
+from hoard import channels, listings, push, store_fields, store_sync
 from hoard.api import items
 from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.api.listings import ListingRead, reads
 from hoard.api.settings import found
 from hoard.api.shapes import Page, PageDep
-from hoard.channels import Connector, ConnectRefused, StoreImage, StoreProduct, StoreVariant
+from hoard.channels import (
+    Connector,
+    ConnectRefused,
+    StoreField,
+    StoreImage,
+    StoreProduct,
+    StoreVariant,
+)
 from hoard.records import (
+    Allergen,
     Channel,
+    FieldOwner,
+    FieldTarget,
     Listing,
     Location,
     MatchedBy,
     Product,
+    PropertyDefinition,
+    PropertyType,
     PushStatus,
+    RecordKind,
     StockPush,
     Store,
+    StoreFieldMapping,
     StoreLocation,
     StoreProductCopy,
     Variation,
 )
+from hoard.store_fields import FieldChoice, StoreFieldRefused
 from seneschal_core import jobs
 from seneschal_core.api import (
     OrganizationSessionDep,
@@ -198,11 +218,96 @@ class StoreLocationChoice(BaseModel):
     new: bool = False
 
 
+class StoreFieldChoiceWrite(BaseModel):
+    """What one of the store's fields fills: Hoard's allergens or ingredient
+    list, or a product property, by its id, or, with none, a new one named
+    as the store names the field. ``pairs`` pairs an allergens field's values
+    with Hoard's allergens by hand, null for none."""
+
+    owner: FieldOwner
+    handle: str = Field(min_length=3, max_length=300)
+    target: FieldTarget
+    property_id: int | None = None
+    pairs: dict[str, Allergen | None] = {}
+
+    def choice(self) -> FieldChoice:
+        return FieldChoice(
+            self.owner,
+            self.handle,
+            self.target,
+            self.property_id,
+            {
+                value: None if allergen is None else allergen.value
+                for value, allergen in self.pairs.items()
+            },
+        )
+
+
 class StoreSyncWrite(BaseModel):
-    """Where each of the store's locations takes its stock from; one not
-    named takes none."""
+    """Where each of the store's locations takes its stock from, one not
+    named taking none; and what each of its fields fills, one not named
+    being left out."""
 
     locations: list[StoreLocationChoice] = []
+    fields: list[StoreFieldChoiceWrite] = []
+
+
+class StoreFieldEntry(BaseModel):
+    """An entry a field picks from: the value the store keeps, and its name."""
+
+    value: str
+    name: str
+
+
+class StoreFieldTargetRead(BaseModel):
+    """What a field fills, or Hoard suggests it fill."""
+
+    target: FieldTarget
+    #: The property, for a property; null for a new one.
+    property_id: int | None
+    #: Each of an allergens field's values, paired with an allergen or not yet.
+    pairs: dict[str, Allergen | None]
+
+
+class StoreFieldRead(BaseModel):
+    """One of the fields the store defines, as it has them now."""
+
+    owner: FieldOwner
+    handle: str
+    name: str
+    #: The store's name for its type.
+    type: str
+    #: How many products or variants hold a value of it.
+    count: int
+    #: What it picks from, where it picks from a fixed list.
+    entries: list[StoreFieldEntry]
+    #: The type of a property holding its values; null where none can.
+    property_type: PropertyType | None
+    #: Whether it can hold Hoard's allergens, and its ingredient list.
+    allergens: bool
+    ingredients: bool
+    #: What Hoard suggests it fill; null to leave it out.
+    suggested: StoreFieldTargetRead | None
+    #: What it fills now, once mapped.
+    mapping_id: int | None
+    mapped: StoreFieldTargetRead | None
+
+
+class StoreFieldDifferenceRead(BaseModel):
+    """A product whose value of a field Hoard works out differs from the store's."""
+
+    mapping_id: int
+    #: The store's name for the field.
+    field: str
+    target: FieldTarget
+    #: The store's id for the product or variant.
+    owner_id: str
+    #: The Hoard product, where it is linked.
+    product_id: int | None
+    product_name: str | None
+    #: Each value, as a list of its entries.
+    hoard: list[str]
+    store: list[str]
 
 
 class StoreImageRead(BaseModel):
@@ -279,6 +384,10 @@ class StoreProductCreate(BaseModel):
     """The Hoard product to make in the store, with a variant per variation."""
 
     product_id: int
+
+
+def _field_refused(refused: StoreFieldRefused) -> HTTPException:
+    return refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code)
 
 
 def store_refused(refused: ConnectRefused) -> HTTPException:
@@ -420,7 +529,7 @@ async def read_store_locations(
         **_READ,
         403: {"description": "ADMIN_ONLY, READ_ONLY"},
         409: {"description": "STORE_NOT_CONNECTED, STORE_SYNCED"},
-        422: {"description": "LOCATION_UNKNOWN"},
+        422: {"description": "LOCATION_UNKNOWN, STORE_FIELD_TARGET_INVALID"},
     },
 )
 async def sync_store(
@@ -448,10 +557,19 @@ async def sync_store(
         store_sync.LocationChoice(choice.external_id, choice.location_id, choice.new)
         for choice in body.locations
     ]
+    fields = [choice.choice() for choice in body.fields]
+    for choice in fields:
+        if choice.target is FieldTarget.PROPERTY and choice.property_id is not None:
+            definition = await db.get(PropertyDefinition, choice.property_id)
+            if definition is None or definition.kind is not RecordKind.PRODUCT:
+                raise refuse(
+                    status.HTTP_422_UNPROCESSABLE_CONTENT,
+                    store_fields.StoreFieldError.STORE_FIELD_TARGET_INVALID,
+                )
     job = await jobs.enqueue(
         db,
         store_sync.STORE_SYNC_JOB,
-        store_sync.job_args(store, address, choices),
+        store_sync.job_args(store, address, choices, fields),
         started_by=session.member_ref,
         unique_key=str(store.id),
     )
@@ -759,3 +877,148 @@ async def create_store_product(
     await db.commit()
     assert made.id is not None
     return await _product_read(db, store, await _copy(db, store, made.id), sees_costs)
+
+
+# Fields.
+
+
+def _target(target: FieldTarget, property_id: int | None, pairs: dict) -> StoreFieldTargetRead:
+    return StoreFieldTargetRead(target=target, property_id=property_id, pairs=pairs)
+
+
+async def _found_fields(connector: Connector) -> list[StoreField]:
+    try:
+        return await connector.fields()
+    except ConnectRefused as refused:
+        raise store_refused(refused) from None
+
+
+@router.get("/{store_id}/fields", responses={**_LIVE, 403: {"description": "ADMIN_ONLY"}})
+async def list_store_fields(
+    store_id: int, db: OrganizationSessionDep, plugin: PluginDep, session: AdminDep
+) -> list[StoreFieldRead]:
+    """The fields the store defines for its products and variants, read from
+    the store now, each with what Hoard suggests it fill and what it fills."""
+    store = await found(db, Store, store_id)
+    found_fields = await _found_fields(await store_connector(plugin, session.community_ref, store))
+    properties = list(
+        (
+            await db.exec(
+                select(PropertyDefinition)
+                .where(PropertyDefinition.kind == RecordKind.PRODUCT)
+                .order_by(col(PropertyDefinition.id))
+            )
+        ).all()
+    )
+    mapped = {
+        (mapping.owner, mapping.handle): mapping
+        for mapping in await store_fields.mappings(db, store)
+    }
+    read = []
+    for each in found_fields:
+        suggested = store_fields.suggest(each, properties)
+        mapping = mapped.get((each.owner, each.handle))
+        read.append(
+            StoreFieldRead(
+                owner=each.owner,
+                handle=each.handle,
+                name=each.name,
+                type=each.type,
+                count=each.count,
+                entries=[
+                    StoreFieldEntry(value=value, name=name) for value, name in each.choices.items()
+                ],
+                property_type=store_fields.property_type(each),
+                allergens=store_fields.allows(each, FieldTarget.ALLERGENS),
+                ingredients=store_fields.allows(each, FieldTarget.INGREDIENTS),
+                suggested=None
+                if suggested is None
+                else _target(suggested.target, suggested.property_id, dict(suggested.pairs)),
+                mapping_id=None if mapping is None else mapping.id,
+                mapped=None
+                if mapping is None
+                else _target(mapping.target, mapping.property_id, dict(mapping.pairs)),
+            )
+        )
+    return read
+
+
+@router.put("/{store_id}/fields", responses={**_ADMIN, 422: {"description": "STORE_FIELD_*"}})
+async def map_store_field(
+    store_id: int,
+    body: StoreFieldChoiceWrite,
+    db: WriteSessionDep,
+    plugin: PluginDep,
+    session: AdminDep,
+) -> JobRead:
+    """Map one of a synced store's fields to what it fills, making the new
+    property it asks for, and read its values in, as the sync does, as a job."""
+    store = await found(db, Store, store_id)
+    _require_synced(store)
+    found_fields = await _found_fields(await store_connector(plugin, session.community_ref, store))
+    try:
+        mapping = await store_fields.keep(db, store, found_fields, body.choice())
+    except StoreFieldRefused as refused:
+        raise _field_refused(refused) from None
+    assert mapping is not None
+    job = await store_fields.queue_read(db, store, mapping, session.member_ref)
+    await db.commit()
+    return JobRead.model_validate(job, from_attributes=True)
+
+
+@router.delete(
+    "/{store_id}/fields/{mapping_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={**_READ, 403: {"description": "ADMIN_ONLY, READ_ONLY"}},
+)
+async def unmap_store_field(
+    store_id: int, mapping_id: int, db: WriteSessionDep, _admin: AdminDep
+) -> None:
+    """Leave one of the store's fields out: it is read and written no more.
+    What it filled stays."""
+    mapping = await found(db, StoreFieldMapping, mapping_id)
+    if mapping.store_id != store_id:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    await db.delete(mapping)
+    await db.commit()
+
+
+@router.get("/{store_id}/fields/differing", responses=_READ)
+async def list_store_field_differences(
+    store_id: int, db: OrganizationSessionDep
+) -> list[StoreFieldDifferenceRead]:
+    """The products whose allergens or ingredient list, as Hoard works them
+    out, differ from what the store holds."""
+    store = await found(db, Store, store_id)
+    return [
+        StoreFieldDifferenceRead(
+            mapping_id=difference.mapping.id,
+            field=difference.mapping.name,
+            target=difference.mapping.target,
+            owner_id=difference.owner_id,
+            product_id=None if difference.product is None else difference.product.id,
+            product_name=None if difference.product is None else difference.product.name,
+            hoard=difference.hoard,
+            store=difference.store,
+        )
+        for difference in await store_fields.differing(db, store)
+    ]
+
+
+@router.post(
+    "/{store_id}/fields/send",
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        **_READ,
+        403: {"description": "ADMIN_ONLY, READ_ONLY"},
+        409: {"description": "STORE_NOT_SYNCED"},
+    },
+)
+async def send_store_fields(store_id: int, db: WriteSessionDep, session: AdminDep) -> JobRead:
+    """Send Hoard's allergens and ingredient lists to the store wherever they
+    differ from the store's, as a job."""
+    store = await found(db, Store, store_id)
+    _require_synced(store)
+    job = await store_fields.queue_send(db, store, session.member_ref)
+    await db.commit()
+    return JobRead.model_validate(job, from_attributes=True)

@@ -14,6 +14,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
+from hoard import store_fields
 from hoard.api.settings import found
 from hoard.declarations import (
     FRAGRANCE_ALLERGENS,
@@ -186,6 +187,7 @@ async def update_material_declaration(
     material.allergens = _keys(body.allergens)
     material.fragrance_allergens = _shares(body.fragrance_allergens)
     db.add(material)
+    await store_fields.queue_changed(db)
     await db.commit()
     return await read_declaration("material", material_id, db)
 
