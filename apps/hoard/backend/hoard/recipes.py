@@ -176,13 +176,31 @@ class Worked:
     percents: list[Decimal | None]
 
 
-async def work_out(db: AsyncSession, recipe: Recipe, lines: Sequence[Line]) -> Worked:
+@dataclass(frozen=True)
+class Known:
+    """The organization's units by id, and the unit each item is tracked in:
+    read once for every recipe a page shows."""
+
+    units: dict[int, Unit]
+    tracked: dict[int, int]
+
+
+async def know(db: AsyncSession, item_ids: Iterable[int]) -> Known:
+    """The units, and the tracking units of ``item_ids``."""
+    return Known(await units.load(db), await units.tracking_units(db, item_ids))
+
+
+async def work_out(
+    db: AsyncSession, recipe: Recipe, lines: Sequence[Line], known_units: Known | None = None
+) -> Worked:
     """``lines`` of ``recipe`` worked out for one batch, by amount or by ratio
-    as the recipe is written. Refused for a line in a unit that doesn't
-    convert to its item's tracking unit, a ratio with no line measured like
-    its total, and a line that converts to less than Hoard keeps."""
-    known = await units.load(db)
-    tracked = await units.tracking_units(db, [line.item_id for line in lines])
+    as the recipe is written, from ``known_units`` when they were read
+    already. Refused for a line in a unit that doesn't convert to its item's
+    tracking unit, a ratio with no line measured like its total, and a line
+    that converts to less than Hoard keeps."""
+    if known_units is None:
+        known_units = await know(db, [line.item_id for line in lines])
+    known, tracked = known_units.units, known_units.tracked
     tracking = [known.get(tracked.get(line.item_id, 0)) for line in lines]
     written = [
         known.get(line.unit_id) if line.unit_id is not None else unit
@@ -213,7 +231,8 @@ async def work_out(db: AsyncSession, recipe: Recipe, lines: Sequence[Line]) -> W
 
 async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recipe:
     """Save ``recipe`` holding ``lines``, in their order, in place of any it
-    held, each line's quantity derived from what was written. A bundle's
+    held, each line's quantity derived from what was written. Lines that
+    haven't changed are kept as they were, so runs see no change. A bundle's
     recipe marks its product as a bundle. What Hoard works out of a product,
     such as its allergens, is sent to each store mapping it
     (``hoard.store_fields``)."""
@@ -229,21 +248,25 @@ async def save(db: WriteSession, recipe: Recipe, lines: Sequence[Line]) -> Recip
     recipe.organization_id = db.organization_id
     db.add(recipe)
     await db.flush()
-    await db.execute(delete(RecipeLine).where(col(RecipeLine.recipe_id) == recipe.id))
-    db.add_all(
-        RecipeLine(
-            organization_id=db.organization_id,
-            recipe_id=recipe.id,
-            item_id=line.item_id,
-            quantity=quantity,
-            written=line.written,
-            unit_id=None if unit is None else unit.id,
-            position=position,
+    saved = [
+        (line.item_id, quantity, line.written, None if unit is None else unit.id)
+        for line, quantity, unit in zip(lines, worked.figures.quantities, worked.units, strict=True)
+    ]
+    held = (await lines_of(db, [recipe.id]))[recipe.id]
+    if saved != [(line.item_id, line.quantity, line.written, line.unit_id) for line in held]:
+        await db.execute(delete(RecipeLine).where(col(RecipeLine.recipe_id) == recipe.id))
+        db.add_all(
+            RecipeLine(
+                organization_id=db.organization_id,
+                recipe_id=recipe.id,
+                item_id=item_id,
+                quantity=quantity,
+                written=written,
+                unit_id=unit_id,
+                position=position,
+            )
+            for position, (item_id, quantity, written, unit_id) in enumerate(saved)
         )
-        for position, (line, quantity, unit) in enumerate(
-            zip(lines, worked.figures.quantities, worked.units, strict=True)
-        )
-    )
     if recipe.product_id is not None:
         product = await db.get_one(Product, recipe.product_id)
         product.bundle = True

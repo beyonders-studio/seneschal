@@ -224,6 +224,23 @@ async def test_a_run_makes_as_much_as_one_ingredient_allows(
     ]
     assert opened.json()["lines"][0]["short"] == "100.000000"
     assert opened.json()["recipe_changed"] is False
+    recipe_id = opened.json()["recipe_id"]
+    written = {
+        "batch_quantity": "931",
+        "by_ratio": True,
+        "total": "931",
+        "total_unit_id": unit.id,
+        "lines": [
+            {"item_id": item.id, "written": parts}
+            for item, parts in ((catnip, "2"), (chamomile, "1"), (rose_hip, "1"), (lychee, "0.1"))
+        ],
+    }
+    run_url = f"{RUNS}/{opened.json()['id']}"
+    assert (await client.put(f"/api/v1/recipes/{recipe_id}", json=written)).status_code == 200
+    assert (await client.get(run_url)).json()["recipe_changed"] is False
+    written["lines"][3]["written"] = "0.2"
+    assert (await client.put(f"/api/v1/recipes/{recipe_id}", json=written)).status_code == 200
+    assert (await client.get(run_url)).json()["recipe_changed"] is True
     missing = await client.post(
         RUNS, json={"item_id": alyx.id, "use": {"item_id": alyx.id, "amount": "1"}}
     )

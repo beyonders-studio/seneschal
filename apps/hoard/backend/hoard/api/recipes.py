@@ -184,11 +184,14 @@ async def _figures(
     recipe: Recipe,
     lines: Sequence[recipes.Line],
     scale: Decimal | units.Use = Decimal(1),
+    known: recipes.Known | None = None,
+    described: dict[int, AdjustmentItem] | None = None,
 ) -> dict[str, Any]:
     """``lines`` of ``recipe`` worked out, over ``scale`` batches or as an
-    amount of one line uses (``hoard.units.use``)."""
+    amount of one line uses (``hoard.units.use``), from the units and items
+    read already when given."""
     try:
-        worked = await recipes.work_out(db, recipe, lines)
+        worked = await recipes.work_out(db, recipe, lines, known)
     except RecipeRefused as refused:
         raise _refused(refused) from None
     figures = worked.figures
@@ -198,7 +201,8 @@ async def _figures(
         if isinstance(scale, Decimal)
         else scale.quantities
     )
-    described = await describe_items(db, [line.item_id for line in lines])
+    if described is None:
+        described = await describe_items(db, [line.item_id for line in lines])
     return {
         "by_ratio": recipe.by_ratio,
         "total": None
@@ -240,6 +244,7 @@ async def _scale(
     ingredient_id: int | None,
     amount: Decimal | None,
     unit_id: int | None,
+    known: recipes.Known | None = None,
 ) -> Decimal | units.Use:
     """The batches that make ``quantity`` of a recipe's output, or the scale
     that uses ``amount`` of its line of ``ingredient_id``, in ``unit_id`` or
@@ -251,7 +256,7 @@ async def _scale(
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ErrorCode.REQUEST_INVALID)
     try:
         tracked = await units.in_tracking_unit(db, ingredient_id, amount, unit_id)
-        worked = await recipes.work_out(db, recipe, lines)
+        worked = await recipes.work_out(db, recipe, lines, known)
     except (UnitRefused, RecipeRefused) as refused:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
     return units.use(worked.figures, index, tracked)
@@ -266,6 +271,9 @@ async def _read(
     """Each recipe as it reads, scaled to make ``quantity`` or to use an
     amount of one line (``use``: its item, the amount and its unit)."""
     lines = await recipes.lines_of(db, [recipe.id for recipe in found_recipes])
+    ingredients = {line.item_id for held in lines.values() for line in held}
+    known = await recipes.know(db, ingredients)
+    described_lines = await describe_items(db, ingredients)
     outputs = [recipe.variation_id or recipe.base_id or 0 for recipe in found_recipes]
     described = await describe_items(db, outputs)
     counted = await units.tracking_units(db, outputs)
@@ -285,7 +293,7 @@ async def _read(
     for recipe in found_recipes:
         held = [recipes.Line(line.item_id, line.written, line.unit_id) for line in lines[recipe.id]]
         ingredient_id, amount, unit_id = use or (None, None, None)
-        scale = await _scale(db, recipe, held, quantity, ingredient_id, amount, unit_id)
+        scale = await _scale(db, recipe, held, quantity, ingredient_id, amount, unit_id, known)
         if recipe.product_id is not None:
             output, output_id, product_id = (
                 RecipeOutput.BUNDLE,
@@ -308,7 +316,7 @@ async def _read(
                 attributes=attributes,
                 unit_id=counted.get(recipe.base_id or 0),
                 minutes=recipe.minutes,
-                **await _figures(db, recipe, held, scale),
+                **await _figures(db, recipe, held, scale, known, described_lines),
             )
         )
     return read
