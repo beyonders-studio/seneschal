@@ -256,7 +256,9 @@ async def waste(call: EndpointCall) -> dict[str, Any]:
             Adjustment.dated_on >= since,
             or_(
                 col(AdjustmentReason.key).is_(None),
-                col(AdjustmentReason.key) != DefaultReason.CORRECTION.value,
+                col(AdjustmentReason.key).not_in(
+                    [DefaultReason.CORRECTION.value, DefaultReason.SYNCED_FROM_STORE.value]
+                ),
             ),
         )
         .group_by(col(AdjustmentReason.id), col(Adjustment.item_id))

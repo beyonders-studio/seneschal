@@ -25,9 +25,9 @@
 * **Purchases** of materials, from a supplier among the community's contacts,
   with lines that are received into lots.
 * **Stores**: a community's connected store on a sales channel, the store's
-  locations mapped to Hoard's, its **listings** linked to items, the **stock
-  pushes** sent to it, and the **nudges** its webhooks leave for Hoard to
-  refetch a record.
+  locations mapped to Hoard's, its **listings** linked to items, Hoard's
+  **copy of each store product**, the **stock pushes** sent to it, and the
+  **nudges** its webhooks leave for Hoard to refetch a record.
 * **Orders**, by hand for a customer among the community's contacts or copied
   in from a store, with lines; **shipments** of their lines, which record the
   lots they draw; and **returns** of what was shipped.
@@ -576,6 +576,8 @@ class DefaultReason(StrEnum):
     PERSONAL_USE = "personal_use"
     #: What came back of a shipment damaged, written off rather than restocked.
     RETURNED_DAMAGED = "returned_damaged"
+    #: Stock set to a store's count when the store was first synced.
+    SYNCED_FROM_STORE = "synced_from_store"
 
 
 class DefaultHoldReason(StrEnum):
@@ -1271,8 +1273,10 @@ class Store(OrganizationRow, Stamped, table=True):
 
     ``last_check_error`` keeps why saving the connection was last refused,
     until it is saved again. The ``*_since`` stamps say how far the store's
-    orders and products have been read, and ``imported_at`` when its recent
-    orders were copied in."""
+    orders and products have been read. ``imported_at`` says the store is
+    synced (``hoard.store_sync``): it is when its sync began reading the
+    store's orders, and a fulfillment the store sent before then is history.
+    A connected store without it is pending."""
 
     __tablename__ = "stores"
     __table_args__ = (
@@ -1350,9 +1354,62 @@ class Listing(OrganizationRow, Stamped, table=True):
     inventory_item_id: str | None = None
     sku: str | None = None
     title: str | None = None
+    #: The variant's price in the store.
+    price: Decimal | None = amount(None)
     matched_by: MatchedBy | None = Field(
         default=None, sa_column=enum_column(MatchedBy, "matched_by", nullable=True)
     )
+
+
+class StoreProductCopy(OrganizationRow, Stamped, table=True):
+    """Hoard's copy of a store's product, as the store last answered it: what
+    pages show without asking the store. Each variant's SKU and price are on
+    its listing; ``variants`` keeps each one's id, title and option values, in
+    the store's order. ``images`` keeps each image's id, address and alt text;
+    ``published_on`` the store's ids for the sales channels showing it."""
+
+    __tablename__ = "store_products"
+    __table_args__ = (
+        reference("store_products", "store_id", "stores", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "store_id", "product_id", name="uq_store_products_external"
+        ),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    #: The store's id for it.
+    product_id: str
+    title: str
+    #: As the store keeps it: HTML.
+    description: str | None = None
+    #: The store's word for whether it sells it, such as ``active`` or ``draft``.
+    status: str | None = None
+    product_type: str | None = None
+    vendor: str | None = None
+    tags: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
+    )
+    #: The names of its options, in order.
+    options: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    variants: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    images: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    published_on: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    #: When the store last changed it, as the store said.
+    store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class StockPush(OrganizationRow, table=True):
@@ -1398,9 +1455,10 @@ class StockPush(OrganizationRow, table=True):
 
 class StoreNudge(OrganizationRow, table=True):
     """A store's webhook saying one of its records changed: Hoard refetches the
-    record, then marks it done. One waits per record at a time. An order's
-    keeps the webhook's own body, the newest delivered, which Hoard copies
-    when the store no longer returns the order."""
+    record, then marks it done. One waits per record at a time until the
+    worker takes it (``taken_at``); a webhook arriving after that leaves a
+    new one. An order's keeps the webhook's own body, the newest delivered,
+    which Hoard copies when the store no longer returns the order."""
 
     __tablename__ = "store_nudges"
     __table_args__ = (
@@ -1412,7 +1470,7 @@ class StoreNudge(OrganizationRow, table=True):
             "topic",
             "external_id",
             unique=True,
-            postgresql_where=text("done_at IS NULL"),
+            postgresql_where=text("done_at IS NULL AND taken_at IS NULL"),
         ),
         Index("ix_store_nudges_due", "organization_id", "done_at", "next_attempt_at"),
         CheckConstraint("attempts >= 0", name="ck_store_nudges_attempts"),
@@ -1433,6 +1491,8 @@ class StoreNudge(OrganizationRow, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
     )
+    #: When the worker took it to refetch its record.
+    taken_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     done_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     #: The webhook's body, for an order: what the order was when it was sent.
     body: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))

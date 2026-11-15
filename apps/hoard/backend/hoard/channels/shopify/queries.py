@@ -44,9 +44,13 @@ mutation HoardWebhookDelete($id: ID!) {
 
 VARIANT_FIELDS = "id title sku price selectedOptions { name value } inventoryItem { id }"
 
+#: What a product is, besides its variants, images and sales channels.
+PRODUCT_OWN_FIELDS = (
+    "id title descriptionHtml status updatedAt productType vendor tags options { name }"
+)
+
 PRODUCT_FIELDS = f"""
-id title descriptionHtml status updatedAt
-options {{ name }}
+{PRODUCT_OWN_FIELDS}
 variants(first: 50) {{ nodes {{ {VARIANT_FIELDS} }} {PAGE_INFO} }}
 media(first: 10) {{ nodes {{ id alt ... on MediaImage {{ image {{ url }} }} }} }}
 resourcePublicationsV2(first: 10, onlyPublished: true) {{ nodes {{ publication {{ id }} }} }}
@@ -331,4 +335,45 @@ def bulk_orders(search: str) -> str:
     }}
   }}
 }}
+"""
+
+
+def bulk_products() -> str:
+    """A bulk query for every product, with its variants, images and the sales
+    channels showing it, each nested row naming its type."""
+    return f"""
+{{
+  products {{
+    edges {{
+      node {{
+        {PRODUCT_OWN_FIELDS}
+        variants {{ edges {{ node {{ __typename {VARIANT_FIELDS} }} }} }}
+        media {{ edges {{ node {{ __typename id alt ... on MediaImage {{ image {{ url }} }} }} }} }}
+        resourcePublicationsV2(onlyPublished: true) {{
+          edges {{ node {{ __typename publication {{ id }} }} }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def bulk_stock() -> str:
+    """A bulk query for every inventory item's cost, and what is available of
+    it at each location."""
+    return """
+{
+  inventoryItems {
+    edges {
+      node {
+        id
+        unitCost { amount }
+        inventoryLevels {
+          edges { node { location { id } quantities(names: ["available"]) { name quantity } } }
+        }
+      }
+    }
+  }
+}
 """

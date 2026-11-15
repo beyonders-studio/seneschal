@@ -2,26 +2,28 @@
 in ``body["connection"]``:
 
 * ``after_connect``: an admin saved the connection. Its connector checks the
-  typed values at the store and subscribes to the store's webhooks, aimed at
-  Initiative's address for Hoard; the answer is the store's own address and
-  the secret its webhooks are signed with, as managed values. A store that
-  refuses is refused, and its reason kept on the store
-  (``last_check_error``). Subscriptions not made within
-  :data:`SUBSCRIBE_SECONDS` are finished by ``upkeep``.
+  typed values at the store, and the permissions its app was granted; the
+  answer is the store's own address and the secret its webhooks are signed
+  with, as managed values. Nothing is written to the store: the store is
+  pending until someone syncs it (``hoard.store_sync``), which subscribes to
+  its webhooks. A store that refuses is refused, and its reason kept on the
+  store (``last_check_error``).
 * ``revoke``: the connection was cleared or replaced. The subscriptions made
   with the values it held are removed, and the store is no longer connected
   if those values were its own.
-* ``webhook``: a delivery Initiative checked and routed here. What it says
-  changed is left as a nudge (:class:`~hoard.records.StoreNudge`), which
-  ``hoard.sync`` works. One nudge waits per record: an order's keeps the
-  newest body delivered for it.
+* ``webhook``: a delivery Initiative checked and routed here, for a synced
+  store. What it says changed is left as a nudge
+  (:class:`~hoard.records.StoreNudge`), which ``hoard.sync`` works. One nudge
+  waits per record until the worker takes it: an order's keeps the newest
+  body delivered for it. The hook answers Initiative's delivery, so it waits
+  on no row the worker holds.
 
-and the schedules, by ``body["schedule"]``:
+and the schedules, by ``body["schedule"]``, for each synced store:
 
-* ``reconcile``: each connected store's recent orders imported once, then
-  what changed since the last reconcile copied in (``hoard.sync``) and what
-  is available pushed where the store holds something else (``hoard.push``);
-* ``upkeep``: each connected store's subscriptions finished, the push log
+* ``reconcile``: what changed since the last reconcile copied in
+  (``hoard.sync``) and what is available pushed where the store holds
+  something else (``hoard.push``);
+* ``upkeep``: each synced store's subscriptions finished, the push log
   pruned (``hoard.push``), the holds whose ready date has come noted
   (``hoard.holds``), and the jobs finished a week ago pruned
   (``seneschal_core.jobs``).
@@ -29,10 +31,8 @@ and the schedules, by ``body["schedule"]``:
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping
-from contextlib import suppress
 from datetime import datetime
 from typing import Any
 
@@ -55,9 +55,9 @@ from seneschal_core.platform import (
 
 logger = logging.getLogger(__name__)
 
-#: How long ``after_connect`` waits on the store's subscriptions before
-#: leaving the rest to ``upkeep``.
-SUBSCRIBE_SECONDS = 5.0
+#: How many times a webhook tries to leave its nudge while the worker takes
+#: the one waiting meanwhile.
+LEAVE_TRIES = 3
 
 
 def webhook_address(public_api_url: str) -> str:
@@ -79,8 +79,9 @@ def _values(body: Mapping[str, Any]) -> Mapping[str, Any]:
     return values
 
 
-async def _store(db: OrganizationSession, channel: Channel) -> Store | None:
-    found = await db.exec(select(Store).where(Store.channel == channel).with_for_update())
+async def _store(db: OrganizationSession, channel: Channel, *, lock: bool = True) -> Store | None:
+    query = select(Store).where(Store.channel == channel)
+    found = await db.exec(query.with_for_update() if lock else query)
     return found.first()
 
 
@@ -105,12 +106,6 @@ async def _keep(
     return store
 
 
-async def _subscribe(connector: channels.Connector, address: str) -> None:
-    with suppress(TimeoutError):
-        async with asyncio.timeout(SUBSCRIBE_SECONDS):
-            await connector.subscribe(address)
-
-
 def _newer(
     connector: channels.Connector, body: Mapping[str, Any], held: Mapping[str, Any] | None
 ) -> bool:
@@ -130,9 +125,11 @@ async def _leave(
     db: WriteSession, connector: channels.Connector, store: Store, nudge: channels.Nudge
 ) -> None:
     """Leave ``nudge`` for the worker: a new one, or the one waiting for its
-    record, given the body when it is the newer. A waiting nudge the worker
-    finishes meanwhile leaves a new one."""
-    for _ in range(2):
+    record, given the body when it is the newer. One the worker has taken is
+    left alone, and a new one waits after it: the waiting one is locked only
+    by another delivery or for the moment the worker takes it, never while
+    the worker refetches its record."""
+    for _ in range(LEAVE_TRIES):
         made = await db.execute(
             insert(StoreNudge)
             .values(
@@ -144,7 +141,7 @@ async def _leave(
             )
             .on_conflict_do_nothing(
                 index_elements=["organization_id", "store_id", "topic", "external_id"],
-                index_where=text("done_at IS NULL"),
+                index_where=text("done_at IS NULL AND taken_at IS NULL"),
             )
             .returning(col(StoreNudge.id))
         )
@@ -158,6 +155,7 @@ async def _leave(
                     StoreNudge.topic == nudge.topic.value,
                     StoreNudge.external_id == nudge.external_id,
                     col(StoreNudge.done_at).is_(None),
+                    col(StoreNudge.taken_at).is_(None),
                 )
                 .with_for_update()
             )
@@ -167,6 +165,8 @@ async def _leave(
                 waiting.body = dict(nudge.body)
                 await db.flush()
             return
+    # The worker kept taking the waiting nudge: the reconcile reads the record.
+    logger.info("left no nudge for a %s record", nudge.topic.value)
 
 
 def hooks(address: str) -> dict[str, HookHandler]:
@@ -178,7 +178,6 @@ def hooks(address: str) -> dict[str, HookHandler]:
         connector = channels.connector_for(channel, _values(call.body))
         try:
             connected = await connector.check()
-            await _subscribe(connector, address)
         except ConnectRefused as refused:
             async with write_session(call) as db:
                 await _keep(db, channel, refused=refused)
@@ -222,8 +221,8 @@ def hooks(address: str) -> dict[str, HookHandler]:
         if nudge is None:
             return
         async with write_session(call) as db:
-            store = await _store(db, channel)
-            if store is None or not store.connected:
+            store = await _store(db, channel, lock=False)
+            if store is None or not store.connected or store.imported_at is None:
                 return
             await _leave(db, connector, store, nudge)
             await db.commit()
@@ -235,7 +234,7 @@ def hooks(address: str) -> dict[str, HookHandler]:
         since = _since(call.body.get("since"))
         async with organization_session(call) as db:
             organization_id = db.organization_id
-            found = await db.exec(select(Store).where(col(Store.connected)).order_by(col(Store.id)))
+            found = await db.exec(select(Store).where(push.synced()).order_by(col(Store.id)))
             stores = list(found.all())
         if organization_id is None:
             return
@@ -259,8 +258,6 @@ def hooks(address: str) -> dict[str, HookHandler]:
                         await _keep(db, store.channel, refused=refused)
                         await db.commit()
                 continue
-            if store.imported_at is None:
-                await sync.import_history(call.plugin, organization_id, store, connector)
             await sync.reconcile(call.plugin, organization_id, store, connector, since)
             await push.reconcile(call.plugin, organization_id, store, connector)
 

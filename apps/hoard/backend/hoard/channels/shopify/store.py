@@ -9,12 +9,15 @@
   (:data:`ORDER_BODY_TOPICS`) keeps its body, the order in the store's REST
   shape, which is read as the order when the store no longer returns it to
   Hoard: one created more than :data:`HISTORY_DAYS` days ago.
-* **Products** are read and written live: title, description, status,
-  options, variants and their prices and SKUs, images, and the sales
-  channels showing it.
+* **Products** are read and written: title, description, status, product
+  type, vendor and tags, options, variants and their prices and SKUs,
+  images, and the sales channels showing it. Every product is read at once
+  through a bulk query, for a store's sync.
 * **Stock** is set as the ``available`` quantity of an inventory item at a
   location, one setting a call, each with its own idempotency key and the
-  quantity Hoard last knew the store held.
+  quantity Hoard last knew the store held. Every inventory item's cost and
+  what is available of it at each location are read through a bulk query,
+  for a store's sync.
 * **Orders** carry their lines, each with how many it sells now and how
   many were refunded, the total refunded, the customer's number and nothing
   else about them, the fulfillments sent, and, where the store granted a
@@ -53,6 +56,7 @@ from hoard.channels import (
     StoreLine,
     StoreOrder,
     StoreProduct,
+    StoreStock,
     StoreVariant,
 )
 from hoard.channels.shopify import queries
@@ -354,6 +358,26 @@ class ShopifyConnector:
         nodes = await self._pages(queries.LOCATIONS, {}, ("locations",))
         return {str(node["id"]): str(node.get("name") or "") for node in nodes}
 
+    async def stock_levels(self) -> list[StoreStock]:
+        items, levels = await self._nested(queries.bulk_stock())
+        found = []
+        for item_id, node in items.items():
+            available: dict[str, int] = {}
+            for level in levels.get(item_id, []):
+                location = _id(level.get("location"))
+                for quantity in level.get("quantities") or []:
+                    if location is not None and quantity.get("name") == "available":
+                        available[location] = _count(quantity.get("quantity"))
+            cost = node.get("unitCost")
+            found.append(
+                StoreStock(
+                    inventory_item_id=item_id,
+                    unit_cost=_decimal(cost.get("amount")) if isinstance(cost, dict) else None,
+                    available=available,
+                )
+            )
+        return found
+
     async def push_available(self, sets: Sequence[StockSet]) -> list[PushResult]:
         return [await self._push(stock_set) for stock_set in sets]
 
@@ -581,25 +605,57 @@ class ShopifyConnector:
     async def import_history(self) -> AsyncIterator[StoreOrder]:
         start = datetime.now(UTC) - timedelta(days=HISTORY_DAYS)
         search = f"created_at:>='{_moment(start)}'"
-        data = await self.client.query(queries.BULK_RUN, {"query": queries.bulk_orders(search)})
+        orders, lines = await self._nested(queries.bulk_orders(search))
+        for order_id, node in orders.items():
+            rows = lines.get(order_id, [])
+            yield _store_order(node, rows, [], await self._refunded(order_id, rows))
+
+    async def import_products(self) -> AsyncIterator[StoreProduct]:
+        products, children = await self._nested(queries.bulk_products())
+        for product_id, node in products.items():
+            variants, media, publications = [], [], []
+            for row in children.get(product_id, []):
+                kind = row.get("__typename")
+                if kind == "ProductVariant":
+                    variants.append(row)
+                elif kind == "ResourcePublicationV2":
+                    publications.append(row)
+                else:
+                    media.append(row)
+            yield _store_product(
+                {
+                    **node,
+                    "media": {"nodes": media},
+                    "resourcePublicationsV2": {"nodes": publications},
+                },
+                variants,
+            )
+
+    async def _bulk(self, query: str) -> AsyncIterator[dict[str, Any]]:
+        """Each row a bulk query found."""
+        data = await self.client.query(queries.BULK_RUN, {"query": query})
         payload = data.get("bulkOperationRunQuery") or {}
         user_errors(payload)
         operation_id = str((payload.get("bulkOperation") or {})["id"])
         url = await self._finished(operation_id)
         if url is None:
             return
-        orders: dict[str, dict[str, Any]] = {}
-        lines: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
         async for line in self.client.lines(url):
-            row = json.loads(line)
+            yield json.loads(line)
+
+    async def _nested(
+        self, query: str
+    ) -> tuple[dict[str, dict[str, Any]], defaultdict[str, list[dict[str, Any]]]]:
+        """A bulk query's records by id, and the rows nested in each, by its id."""
+        records: dict[str, dict[str, Any]] = {}
+        nested: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        async for row in self._bulk(query):
             parent = row.pop("__parentId", None)
             if parent is None:
-                orders[str(row["id"])] = row
+                records[str(row["id"])] = row
             else:
-                lines[str(parent)].append(row)
-        for order_id, node in orders.items():
-            rows = lines.get(order_id, [])
-            yield _store_order(node, rows, [], await self._refunded(order_id, rows))
+                nested[str(parent)].append(row)
+        return records, nested
 
     async def _finished(self, operation_id: str) -> str | None:
         """The address of a bulk query's result once it finished; None when
@@ -738,6 +794,9 @@ def _store_product(node: Mapping[str, Any], variants: Sequence[Mapping[str, Any]
             if (publication := _id(resource.get("publication"))) is not None
         ],
         updated_at=_datetime(node.get("updatedAt")),
+        product_type=node.get("productType") or None,
+        vendor=node.get("vendor") or None,
+        tags=[str(tag) for tag in node.get("tags") or []],
     )
 
 

@@ -1,13 +1,17 @@
-"""Matching a store's products to the items they sell, linking by hand, and
-keeping the store's locations."""
+"""Matching a store's products to the items they sell, keeping their copy,
+taking them into Hoard, linking by hand, and keeping the store's locations."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
 import pytest
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hoard import listings
-from hoard.channels import StoreProduct, StoreVariant
+from hoard.channels import StoreImage, StoreProduct, StoreVariant
 from hoard.records import (
     Channel,
     Listing,
@@ -17,6 +21,7 @@ from hoard.records import (
     ProductStatus,
     Store,
     StoreLocation,
+    StoreProductCopy,
     Variation,
 )
 from hoard.stock import add_product, add_variation
@@ -163,12 +168,17 @@ async def test_several_listings_may_sell_one_item(db: WriteSession, store: Store
     assert [listing.item_id for listing in kept] == [chai.id, chai.id]
 
 
-async def test_forgetting_a_product_removes_its_listings(db: WriteSession, store: Store):
+async def test_forgetting_a_product_removes_its_listings_and_copy_only(
+    db: WriteSession, store: Store
+):
+    _, tea = await add_product(db, Product(name="Tea"))
     await listings.match(db, store, [_product("p1", "Tea", _variant("v1")), _product("p2", "Mug")])
 
     await listings.forget(db, store, "p1")
 
     assert (await db.exec(select(Listing.product_id))).all() == ["p2"]
+    assert (await db.exec(select(StoreProductCopy.product_id))).all() == ["p2"]
+    assert await db.get(Variation, tea.id) is not None
 
 
 async def test_linking_by_hand_takes_only_what_is_sold(db: WriteSession, store, base, material):
@@ -194,23 +204,143 @@ async def test_a_change_is_noted_for_pushing(db: WriteSession, store: Store):
     assert db.info["hoard.noted_items"] == {db.organization_id: {chai.id}}
 
 
-async def test_the_stores_locations_are_kept(db: WriteSession, store: Store, main: Location):
+async def test_the_stores_locations_are_kept_unmapped(
+    db: WriteSession, store: Store, main: Location
+):
     kept = await listings.keep_locations(db, store, {"l1": "Shop", "l2": "Warehouse"})
     assert [(found.external_id, found.name, found.location_id) for found in kept] == [
-        ("l1", "Shop", main.id),
-        ("l2", "Warehouse", main.id),
+        ("l1", "Shop", None),
+        ("l2", "Warehouse", None),
     ]
-    db.add(Location(organization_id=db.organization_id, name="Back room"))
-    kept[0].location_id = None
+    kept[0].location_id = main.id
     await db.flush()
 
     again = await listings.keep_locations(db, store, {"l1": "Front shop", "l3": "Pop-up"})
 
     assert [(found.external_id, found.name, found.location_id) for found in again] == [
-        ("l1", "Front shop", None),
+        ("l1", "Front shop", main.id),
         ("l3", "Pop-up", None),
     ]
     assert len((await db.exec(select(StoreLocation))).all()) == 2
+
+
+async def _copy(db: WriteSession) -> StoreProductCopy | None:
+    return (
+        await db.exec(select(StoreProductCopy).execution_options(populate_existing=True))
+    ).first()
+
+
+async def test_matching_keeps_the_products_copy_and_prices_and_the_newest_wins(
+    db: WriteSession, store: Store
+):
+    first = datetime(2026, 11, 1, tzinfo=UTC)
+    product = StoreProduct(
+        id="p1",
+        title="Tea",
+        description="<p>Leaf</p>",
+        status="active",
+        options=["Size"],
+        variants=[
+            _variant("v1", "Small", sku="T-S", price=Decimal("4.50"), options={"Size": "Small"}),
+            _variant("v2", "Large", sku="T-L", price=Decimal("8"), options={"Size": "Large"}),
+        ],
+        images=[StoreImage("https://i/1", "Tin", "m1")],
+        published_on=["pub-1"],
+        updated_at=first,
+        product_type="Loose leaf",
+        vendor="Hills",
+        tags=["green", "organic"],
+    )
+
+    kept = await listings.match(db, store, [product])
+
+    assert [(listing.variant_id, listing.price) for listing in kept] == [
+        ("v1", Decimal("4.50")),
+        ("v2", Decimal("8")),
+    ]
+    copy = await _copy(db)
+    assert copy is not None
+    assert (copy.title, copy.status, copy.product_type, copy.vendor, copy.tags) == (
+        "Tea",
+        "active",
+        "Loose leaf",
+        "Hills",
+        ["green", "organic"],
+    )
+    assert copy.variants == [
+        {"id": "v1", "title": "Small", "options": {"Size": "Small"}},
+        {"id": "v2", "title": "Large", "options": {"Size": "Large"}},
+    ]
+    assert copy.images == [{"id": "m1", "url": "https://i/1", "alt": "Tin"}]
+    assert (copy.published_on, copy.store_updated_at) == (["pub-1"], first)
+
+    # A read older than the copy changes nothing; a newer one replaces it.
+    older = replace(product, title="Old tea", variants=[], updated_at=first - timedelta(hours=1))
+    await listings.match(db, store, [older])
+    assert (copy := await _copy(db)) is not None and copy.title == "Tea"
+    assert len((await db.exec(select(Listing))).all()) == 2
+    later = replace(product, title="Green tea", updated_at=first + timedelta(hours=1))
+    await listings.match(db, store, [later])
+    assert (copy := await _copy(db)) is not None and copy.title == "Green tea"
+
+
+async def test_adopting_overwrites_matched_products_and_makes_the_others(
+    db: WriteSession, store: Store
+):
+    chai, small = await add_product(db, Product(name="Chai"))
+    small.sku, small.attributes = "CHAI-S", {"size": "small"}
+    sizes = [
+        _variant("v1", "Small", sku="chai-s", options={"Size": "S"}),
+        _variant("v2", "Large", sku="CHAI-L", options={"Size": "L"}),
+    ]
+    store_chai = StoreProduct(id="p1", title="Masala chai", options=["Size"], variants=sizes)
+    mugs = StoreProduct(id="p2", title="Mug", status="archived", variants=[_variant("v3", sku="M")])
+
+    await listings.adopt(db, store, [store_chai, mugs], every=True)
+
+    await db.refresh(chai)
+    assert chai.name == "Masala chai"
+    found = await db.exec(
+        select(Variation).where(Variation.product_id == chai.id).order_by(col(Variation.id))
+    )
+    assert [(variation.sku, variation.attributes) for variation in found.all()] == [
+        ("chai-s", {"Size": "S"}),
+        ("CHAI-L", {"Size": "L"}),
+    ]
+    [mug] = (await db.exec(select(Product).where(Product.name == "Mug"))).all()
+    assert mug.status is ProductStatus.ARCHIVED
+    [mug_variation] = (await db.exec(select(Variation).where(Variation.product_id == mug.id))).all()
+    assert (mug_variation.sku, mug_variation.attributes, mug_variation.is_default) == (
+        "M",
+        {},
+        True,
+    )
+    linked = await db.exec(select(Listing.variant_id, Listing.matched_by).order_by(col(Listing.id)))
+    assert linked.all() == [
+        ("v1", MatchedBy.SKU),
+        ("v2", MatchedBy.EXTERNAL_ID),
+        ("v3", MatchedBy.EXTERNAL_ID),
+    ]
+
+
+async def test_adopting_takes_only_products_not_listed_before_unless_asked(
+    db: WriteSession, store: Store
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    chai.sku = "C"
+    await listings.match(db, store, [_product("p1", "Masala chai", _variant("v1", sku="C"))])
+
+    await listings.adopt(
+        db,
+        store,
+        [
+            _product("p1", "Masala chai", _variant("v1", sku="C")),
+            _product("p2", "Mug", _variant("v2")),
+        ],
+    )
+
+    names = await db.exec(select(Product.name).order_by(col(Product.id)))
+    assert names.all() == ["Chai", "Mug"]
 
 
 def test_a_listing_is_titled_by_its_variant_where_it_has_several():

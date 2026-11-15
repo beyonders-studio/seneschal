@@ -11,9 +11,11 @@ the orders it delivered it describes, as the body's ``delivery``.
 from __future__ import annotations
 
 import json
+from collections import defaultdict
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from hoard.channels import (
@@ -28,6 +30,7 @@ from hoard.channels import (
     StoreFulfillment,
     StoreOrder,
     StoreProduct,
+    StoreStock,
 )
 
 CAPABILITIES = Capabilities(
@@ -55,6 +58,8 @@ class FakeConnector:
     shop_locations: dict[str, str] = field(default_factory=lambda: {"loc-1": "Shop"})
     #: What is available, by inventory item (else variant, else product) and location.
     stock: dict[tuple[str, str | None], int] = field(default_factory=dict)
+    #: What one of each inventory item cost, where the store keeps it.
+    unit_costs: dict[str, Decimal] = field(default_factory=dict)
     shop_orders: dict[str, StoreOrder] = field(default_factory=dict)
     #: What :meth:`import_history` reads.
     history: list[StoreOrder] = field(default_factory=list)
@@ -113,6 +118,17 @@ class FakeConnector:
     async def locations(self) -> dict[str, str]:
         self._checked()
         return dict(self.shop_locations)
+
+    async def stock_levels(self) -> list[StoreStock]:
+        self._checked()
+        available: dict[str, dict[str, int]] = defaultdict(dict)
+        for (item, location), quantity in self.stock.items():
+            if location is not None:
+                available[item][location] = quantity
+        return [
+            StoreStock(item, self.unit_costs.get(item), dict(available.get(item, {})))
+            for item in sorted(set(available) | set(self.unit_costs))
+        ]
 
     async def push_available(self, sets: Sequence[StockSet]) -> list[PushResult]:
         self._checked()
@@ -176,3 +192,8 @@ class FakeConnector:
         self._checked()
         for order in list(self.history):
             yield order
+
+    async def import_products(self) -> AsyncIterator[StoreProduct]:
+        self._checked()
+        for product in list(self.shop_products.values()):
+            yield product

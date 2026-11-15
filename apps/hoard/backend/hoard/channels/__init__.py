@@ -11,10 +11,14 @@ A connector:
 
 * checks the connection (:meth:`Connector.check`) and keeps the store's
   webhook subscriptions, aimed at Initiative's address for Hoard;
-* reads and edits the store's products live, and creates one, keeping no
-  copy: the store's titles, descriptions, images, options, prices and
-  visibility stay the store's;
+* reads and edits the store's products, and creates one: the store's titles,
+  descriptions, images, options, prices and visibility stay the store's,
+  and Hoard keeps a copy of what it last read (``hoard.listings``);
+* reads every product in bulk (:meth:`Connector.import_products`), for a
+  store's sync;
 * lists the store's locations, and sets what is available at each;
+* reads, in bulk, what each inventory item cost and what is available of it
+  at each location (:meth:`Connector.stock_levels`), for a store's sync;
 * reads the store's orders, with their fulfillments, and pushes a shipment
   back as a fulfillment;
 * reads a webhook delivery Initiative checked and forwarded as a
@@ -158,6 +162,20 @@ class StoreProduct:
     #: The store's sales channels showing it, by the store's ids.
     published_on: Sequence[str] = ()
     updated_at: datetime | None = None
+    product_type: str | None = None
+    vendor: str | None = None
+    tags: Sequence[str] = ()
+
+
+@dataclass(frozen=True)
+class StoreStock:
+    """What the store holds of one inventory item: what one cost, where the
+    store keeps that, and what is available at each of its locations, by the
+    store's location id."""
+
+    inventory_item_id: str
+    unit_cost: Decimal | None
+    available: Mapping[str, int]
 
 
 @dataclass(frozen=True)
@@ -309,6 +327,11 @@ class Connector(Protocol):
         """The store's locations: each one's name, by the store's id."""
         ...
 
+    async def stock_levels(self) -> list[StoreStock]:
+        """Every inventory item's cost and what is available of it at each
+        location, read in bulk."""
+        ...
+
     async def push_available(self, sets: Sequence[StockSet]) -> list[PushResult]:
         """Set what is available, at most ``capabilities.batch_size`` at a time."""
         ...
@@ -338,6 +361,10 @@ class Connector(Protocol):
 
     def import_history(self) -> AsyncIterator[StoreOrder]:
         """The orders of the window the store keeps, read in bulk."""
+        ...
+
+    def import_products(self) -> AsyncIterator[StoreProduct]:
+        """Every product, read in bulk."""
         ...
 
 

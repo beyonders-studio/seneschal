@@ -2,8 +2,13 @@
 the app's lifespan runs, each refetching its record from the store; orders
 copied in, bundles split into their parts, claiming stock once paid; the
 store's fulfillments recorded as shipments, their lots assumed; cancellations;
-the import of the store's recent orders when it connects; and the
-reconcile on Initiative's schedule, for whatever a webhook missed.
+the import of the store's recent orders, which a store's sync runs
+(``hoard.store_sync``); and the reconcile on Initiative's schedule, for
+whatever a webhook missed. A store that is not synced is left alone.
+
+A product's nudge, and the reconcile, keep each product's listings and copy
+(``hoard.listings``), and take a product the store made since into Hoard; a
+product the store no longer has loses its listings and copy.
 
 A store's order is copied in whole each time (:func:`copy_order`): its lines
 by the store's line ids, each sold item found through its listing, with how
@@ -21,8 +26,8 @@ body instead, kept on the nudge, when Hoard holds it.
 
 Each fulfillment the store has sent becomes a shipment from the location the
 store sent it from, shipped on its date, each line drawing on the lot Hoard
-assumes. A fulfillment sent before the store was connected is history: it is
-copied as shipped, and moves no stock. A fulfillment the store cancels is
+assumes. A fulfillment sent before the store's sync read its orders is
+history: it is copied as shipped, and moves no stock. A fulfillment the store cancels is
 unshipped, and an order the store cancels takes back, as returned, whatever
 its shipments moved; the store's own restock is not read.
 """
@@ -32,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -79,6 +84,8 @@ FIRST_WAIT = timedelta(seconds=30)
 LONGEST_WAIT = timedelta(hours=1)
 #: The attempts after which a nudge is let go: the reconcile copies its record in.
 MOST_ATTEMPTS = 8
+#: How long a nudge the worker took waits before another takes it, its worker lost.
+TAKEN_FOR = timedelta(minutes=10)
 #: How many of a store's products are matched to listings at a time.
 PRODUCTS_AT_ONCE = 50
 #: What the codes of each channel's orders start with.
@@ -146,7 +153,7 @@ class _Items:
             self.read.add(line.product_id)
             product = await self.connector.product(line.product_id)
             if product is not None:
-                await listings.match(self.db, self.store, [product])
+                await listings.adopt(self.db, self.store, [product])
                 item_id = await self._linked(line)
         return item_id
 
@@ -164,8 +171,11 @@ def _sent(fulfillment: StoreFulfillment) -> bool:
 
 
 def _history(store: Store, fulfillment: StoreFulfillment) -> bool:
-    """Whether the store sent a fulfillment before it was connected."""
-    return fulfillment.shipped_at is not None and fulfillment.shipped_at < store.created_at
+    """Whether the store sent a fulfillment before its sync read its orders:
+    every one it sent, while the sync runs."""
+    return fulfillment.shipped_at is not None and (
+        store.imported_at is None or fulfillment.shipped_at < store.imported_at
+    )
 
 
 async def _order_lines(db: WriteSession, order: Order) -> list[OrderLine]:
@@ -459,8 +469,10 @@ async def _refetch(db: WriteSession, store: Store, connector: Connector, nudge: 
             await copy_order(db, store, connector, found)
     elif nudge.topic == NudgeTopic.PRODUCT:
         product = await connector.product(nudge.external_id)
-        if product is not None:
-            await listings.match(db, store, [product])
+        if product is None:
+            await listings.forget(db, store, nudge.external_id)
+        else:
+            await listings.adopt(db, store, [product])
     elif nudge.topic == NudgeTopic.INVENTORY:
         # The store changed its own count: each listing is pushed Hoard's again.
         linked = await db.exec(
@@ -494,8 +506,9 @@ class _Connectors:
         return self.built[channel]
 
 
-async def _work_next(plugin: Plugin, organization_id: int, connectors: _Connectors) -> bool:
-    """Work the organization's next due nudge; answers whether there was one."""
+async def _take(plugin: Plugin, organization_id: int) -> int | None:
+    """Take the organization's next due nudge, so that a webhook arriving
+    while it is worked leaves a new one rather than waiting; answers its id."""
     async with plugin.database.write_session(organization_id, actor=None) as db:
         nudge = (
             await db.exec(
@@ -507,12 +520,25 @@ async def _work_next(plugin: Plugin, organization_id: int, connectors: _Connecto
             )
         ).first()
         if nudge is None:
-            return False
+            return None
         nudge_id = nudge.id
+        nudge.taken_at, nudge.next_attempt_at = _now(), _now() + TAKEN_FOR
+        await db.commit()
+        return nudge_id
+
+
+async def _work_next(plugin: Plugin, organization_id: int, connectors: _Connectors) -> bool:
+    """Work the organization's next due nudge; answers whether there was one.
+    A store that is not synced has its nudges let go."""
+    nudge_id = await _take(plugin, organization_id)
+    if nudge_id is None:
+        return False
+    async with plugin.database.write_session(organization_id, actor=None) as db:
+        nudge = await db.get_one(StoreNudge, nudge_id)
         try:
             store = await db.get(Store, nudge.store_id)
             connector = None
-            if store is not None and store.connected:
+            if store is not None and store.connected and store.imported_at is not None:
                 connector = await connectors.get(store.channel)
             if store is not None and connector is not None:
                 await _refetch(db, store, connector, nudge)
@@ -614,15 +640,24 @@ async def work_forever(plugin: Plugin, *, sweep_seconds: float = SWEEP_SECONDS) 
             _waker = None
 
 
+#: Told how many orders were copied in, out of how many.
+Progress = Callable[[int, int], Awaitable[None]]
+
+
 async def _copy_all(
-    db: WriteSession, store: Store, connector: Connector, found: AsyncIterator[StoreOrder]
+    db: WriteSession,
+    store: Store,
+    connector: Connector,
+    found: list[StoreOrder],
+    progress: Progress | None = None,
 ) -> tuple[Store, bool]:
-    """Copy in each order ``found`` yields, each committed on its own. One that
-    fails is left for the next reconcile. Answers the store, as read again
-    after a failure, and whether every order was copied."""
+    """Copy in each order of ``found``, each committed on its own, telling
+    ``progress`` every :data:`PRODUCTS_AT_ONCE`. One that fails is left for
+    the next reconcile. Answers the store, as read again after a failure, and
+    whether every order was copied."""
     items = _Items(db, store, connector)
     copied = True
-    async for order in found:
+    for done, order in enumerate(found, 1):
         try:
             await _copy(db, items, order)
             await db.commit()
@@ -631,6 +666,8 @@ async def _copy_all(
             await db.rollback()
             copied = False
             items.store = await db.get_one(Store, store.id, populate_existing=True)
+        if progress is not None and (done % PRODUCTS_AT_ONCE == 0 or done == len(found)):
+            await progress(done, len(found))
     return items.store, copied
 
 
@@ -651,29 +688,34 @@ async def reconcile(
         async for product in connector.products(products_since):
             batch.append(product)
             if len(batch) >= PRODUCTS_AT_ONCE:
-                await listings.match(db, kept, batch)
+                await listings.adopt(db, kept, batch)
                 await db.commit()
                 batch = []
         if batch:
-            await listings.match(db, kept, batch)
+            await listings.adopt(db, kept, batch)
         kept.products_since = started
         await db.commit()
-        kept, copied = await _copy_all(db, kept, connector, connector.orders(orders_since))
+        changed = [order async for order in connector.orders(orders_since)]
+        kept, copied = await _copy_all(db, kept, connector, changed)
         if copied:
             kept.orders_since = started
         await db.commit()
 
 
 async def import_history(
-    plugin: Plugin, organization_id: int, store: Store, connector: Connector
+    plugin: Plugin,
+    organization_id: int,
+    store: Store,
+    connector: Connector,
+    progress: Progress | None = None,
 ) -> None:
     """Copy in the orders of the window the store keeps, moving no stock but
-    for what was sent once the store was connected, and stamp the store
-    imported."""
+    for what was sent once the store was synced, telling ``progress`` how
+    many are copied. The reconcile reads on from when this began."""
     started = _now()
+    found = [order async for order in connector.import_history()]
     async with plugin.database.write_session(organization_id, actor=None) as db:
         kept = await db.get_one(Store, store.id, populate_existing=True)
-        kept, _ = await _copy_all(db, kept, connector, connector.import_history())
-        kept.imported_at = _now()
+        kept, _ = await _copy_all(db, kept, connector, found, progress)
         kept.orders_since = kept.orders_since or started
         await db.commit()

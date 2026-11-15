@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
 from fastapi.routing import APIRoute
 
-from hoard import plugin_manifest, push, sync, tracking
+from hoard import plugin_manifest, push, store_sync, sync, tracking
 from hoard.api import export
 from hoard.api import router as api_router
 from hoard.channels import hooks as store_hooks
@@ -45,7 +45,10 @@ def frame_ancestors(parent: str | None) -> str | None:
 
 
 #: The handler of each kind of job Hoard runs, by kind.
-JOB_HANDLERS: dict[str, jobs.Handler] = {export.EXPORT_JOB: export.export}
+JOB_HANDLERS: dict[str, jobs.Handler] = {
+    export.EXPORT_JOB: export.export,
+    store_sync.STORE_SYNC_JOB: store_sync.run,
+}
 
 
 def plugin_for(settings: Settings) -> Plugin:
@@ -119,6 +122,9 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
         generate_unique_id_function=_operation_id,
     )
     install(app, plugin)
+    webhook_address = store_hooks.webhook_address(settings.public_api_url)
+    # The address a store's sync subscribes its webhooks to.
+    app.state.webhook_address = webhook_address
 
     framing = frame_ancestors(settings.embed_parent_origin)
     if framing is not None:
@@ -136,7 +142,7 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
         platform_router(
             hooks={
                 **ORGANIZATION_HOOKS,
-                **store_hooks.hooks(store_hooks.webhook_address(settings.public_api_url)),
+                **store_hooks.hooks(webhook_address),
             },
             endpoints=ENDPOINTS,
             public=plugin_manifest.PUBLIC_ENDPOINTS,

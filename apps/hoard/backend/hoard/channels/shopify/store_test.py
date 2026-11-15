@@ -22,6 +22,7 @@ from hoard.channels import (
     StoreLine,
     StoreOrder,
     StoreProduct,
+    StoreStock,
     StoreVariant,
     connector_for,
 )
@@ -57,6 +58,9 @@ def _product_node(variants: dict[str, Any] | None = None) -> dict[str, Any]:
         "descriptionHtml": "<p>Leaf</p>",
         "status": "ACTIVE",
         "updatedAt": "2026-11-01T10:00:00Z",
+        "productType": "Loose leaf",
+        "vendor": "",
+        "tags": ["green"],
         "options": [{"name": "Size"}],
         "variants": variants or _page([_variant(11, "Small"), _variant(12, "Large", "20.00")]),
         "media": _page(
@@ -182,6 +186,9 @@ async def test_a_product_is_read_with_every_variant():
         images=[StoreImage("https://i/5", "Tin", "gid://shopify/MediaImage/5")],
         published_on=["gid://shopify/Publication/1"],
         updated_at=datetime(2026, 11, 1, 10, tzinfo=UTC),
+        product_type="Loose leaf",
+        vendor=None,
+        tags=["green"],
     )
     assert shop.variables("HoardVariantsPage") == [{"id": PRODUCT, "after": "c1"}]
     shop.answer("HoardProduct", {"product": None})
@@ -790,6 +797,90 @@ async def test_the_history_import_reads_a_bulk_query():
     query = shop.variables("HoardBulkRun")[0]["query"]
     assert "orders(query: \"created_at:>='" in query
     assert shop.slept == [1.0]
+
+
+def _bulk(shop: FakeShop, rows: list[dict[str, Any]]) -> None:
+    """Answer the next bulk query with ``rows``."""
+    shop.answer(
+        "HoardBulkRun",
+        {"bulkOperationRunQuery": {"bulkOperation": {"id": "b"}, "userErrors": []}},
+    )
+    shop.answer(
+        "HoardBulkStatus",
+        {"bulkOperation": {"status": "COMPLETED", "url": "https://files.example/2.jsonl"}},
+    )
+    shop.files["https://files.example/2.jsonl"] = [json.dumps(row) for row in rows]
+
+
+async def test_every_product_is_read_in_one_bulk_query():
+    shop = FakeShop()
+    node = {
+        key: value
+        for key, value in _product_node().items()
+        if key not in ("variants", "media", "resourcePublicationsV2")
+    }
+    child = {"__parentId": PRODUCT}
+    _bulk(
+        shop,
+        [
+            node,
+            {**child, "__typename": "ProductVariant", **_variant(11, "Small")},
+            {
+                **child,
+                "__typename": "MediaImage",
+                "id": "gid://shopify/MediaImage/5",
+                "alt": "Tin",
+                "image": {"url": "https://i/5"},
+            },
+            {**child, "__typename": "Video", "id": "gid://shopify/Video/6", "alt": None},
+            {
+                **child,
+                "__typename": "ResourcePublicationV2",
+                "publication": {"id": "gid://shopify/Publication/1"},
+            },
+            {**child, "__typename": "ProductVariant", **_variant(12, "Large", "20.00")},
+        ],
+    )
+
+    [product] = [product async for product in shop.connector().import_products()]
+
+    shop.answer("HoardProduct", {"product": _product_node()})
+    assert product == await shop.connector().product(PRODUCT)
+    query = shop.variables("HoardBulkRun")[0]["query"]
+    assert "productType vendor tags" in query
+
+
+async def test_stock_levels_are_read_in_one_bulk_query():
+    shop = FakeShop()
+    item = "gid://shopify/InventoryItem/11"
+    _bulk(
+        shop,
+        [
+            {"id": item, "unitCost": {"amount": "2.5"}},
+            {
+                "__parentId": item,
+                "location": {"id": "gid://shopify/Location/1"},
+                "quantities": [{"name": "available", "quantity": 7}],
+            },
+            {
+                "__parentId": item,
+                "location": {"id": "gid://shopify/Location/2"},
+                "quantities": [{"name": "available", "quantity": -1}],
+            },
+            {"id": "gid://shopify/InventoryItem/12", "unitCost": None},
+        ],
+    )
+
+    levels = await shop.connector().stock_levels()
+
+    assert levels == [
+        StoreStock(
+            item,
+            Decimal("2.5"),
+            {"gid://shopify/Location/1": 7, "gid://shopify/Location/2": -1},
+        ),
+        StoreStock("gid://shopify/InventoryItem/12", None, {}),
+    ]
 
 
 async def test_a_failed_bulk_query_is_a_refusal():

@@ -45,7 +45,13 @@ def shop(
 
 @pytest.fixture
 async def store(db: WriteSession) -> Store:
-    made = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY, connected=True)
+    """A synced store."""
+    made = Store(
+        organization_id=db.organization_id,
+        channel=Channel.SHOPIFY,
+        connected=True,
+        imported_at=datetime.now(UTC),
+    )
     db.add(made)
     await db.flush()
     return made
@@ -162,7 +168,7 @@ async def test_nothing_is_queued_where_the_store_was_last_pushed_as_much(
     assert (queued.quantity, queued.compare_quantity) == (5, 4)
 
 
-async def test_nothing_is_queued_for_unmapped_locations_or_cleared_stores(
+async def test_nothing_is_queued_for_unmapped_locations_cleared_or_pending_stores(
     db: WriteSession,
     listing: Listing,
     shop_location: StoreLocation,
@@ -181,6 +187,13 @@ async def test_nothing_is_queued_for_unmapped_locations_or_cleared_stores(
     shop_location.location_id = main.id
     store.connected = False
     db.add_all([shop_location, store])
+    await db.flush()
+
+    assert await push.queue(db, [chai.id]) == []
+
+    # A pending store is pushed nothing either.
+    store.connected, store.imported_at = True, None
+    db.add(store)
     await db.flush()
 
     assert await push.queue(db, [chai.id]) == []
@@ -441,7 +454,15 @@ async def test_a_rolled_back_change_is_not_pushed(db: WriteSession, chai, lot):
 
 
 async def test_reconcile_reads_the_locations_and_pushes_what_differs(
-    db: WriteSession, plugin, serving_database, shop: FakeConnector, listing, store, chai, lot
+    db: WriteSession,
+    plugin,
+    serving_database,
+    shop: FakeConnector,
+    listing,
+    shop_location,
+    store,
+    chai,
+    lot,
 ):
     await lot(chai.id, "L1", "3")
     await db.commit()
@@ -456,3 +477,50 @@ async def test_reconcile_reads_the_locations_and_pushes_what_differs(
     await push.reconcile(plugin, db.organization_id, store, shop)
 
     assert len(await _pushes(serving_database, db.organization_id)) == 1
+
+
+async def test_the_baseline_records_what_is_available_as_pushed_without_sending(
+    db: WriteSession,
+    plugin,
+    serving_database,
+    shop: FakeConnector,
+    listing,
+    shop_location,
+    store,
+    chai,
+    lot,
+):
+    await lot(chai.id, "L1", "6")
+    store.imported_at = None
+    db.add(store)
+    db.add(
+        StockPush(
+            organization_id=db.organization_id,
+            listing_id=listing.id,
+            store_location_id=shop_location.id,
+            quantity=2,
+            idempotency_key="left-over",
+        )
+    )
+    await db.flush()
+    # A pending store's waiting pushes are not sent.
+    await db.commit()
+    await push.send(plugin, db.organization_id, {store.id: shop})
+    assert shop.pushes == []
+
+    await push.drop_queued(db, store)
+    assert await push.baseline(db, store) == 1
+    assert await push.baseline(db, store) == 0
+    store.imported_at = datetime.now(UTC)
+    db.add(store)
+    await db.commit()
+
+    [recorded] = await _pushes(serving_database, db.organization_id)
+    assert (recorded.status, recorded.quantity, recorded.pushed_at is not None) == (
+        PushStatus.PUSHED,
+        6,
+        True,
+    )
+    assert await push.queue(db, [chai.id]) == []
+    await push.reconcile(plugin, db.organization_id, store, shop)
+    assert shop.pushes == []

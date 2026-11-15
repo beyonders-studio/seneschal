@@ -36,6 +36,7 @@ from hoard.records import (
     ShipmentStatus,
     Store,
     StoreNudge,
+    StoreProductCopy,
     Variation,
 )
 from hoard.stock import add_product, on_hand
@@ -73,11 +74,13 @@ async def plugin(
 
 @pytest.fixture
 async def store(db: WriteSession) -> Store:
+    """A synced store."""
     store = Store(
         organization_id=db.organization_id,
         channel=Channel.SHOPIFY,
         shop_domain="tea.myshopify.com",
         connected=True,
+        imported_at=datetime.now(UTC),
     )
     db.add(store)
     await db.flush()
@@ -294,7 +297,7 @@ async def test_an_older_copy_never_replaces_a_newer_one(
     assert order.status is OrderStatus.CANCELLED
 
 
-async def test_a_line_of_an_unlisted_product_waits_for_its_listing(
+async def test_a_line_of_a_product_new_to_hoard_makes_the_product(
     db: WriteSession, store: Store, fake: FakeConnector, sold: Sold
 ):
     tea = await sold("Tea", "v-tea")
@@ -303,17 +306,12 @@ async def test_a_line_of_an_unlisted_product_waits_for_its_listing(
     )
     found = _order(_line("l-1", "v-tea", "1"), _line("l-2", "v-mug", "2"), paid=True)
 
-    # The mug matches nothing: the order is copied without it, and its listing
-    # waits to be linked.
+    # The mug matches nothing: it is made in Hoard, as the sync makes products.
     order = await sync.copy_order(db, store, fake, found)
-    assert [line.item_id for line in await _lines(db, order)] == [tea.id]
-    mug = (await db.exec(select(Listing).where(Listing.variant_id == "v-mug"))).one()
-    assert mug.item_id is None
 
-    # Linked, the next copy of the order brings the line in.
-    _, made = await add_product(db, Product(name="Mug"))
-    await listings.link(db, mug, made.id)
-    order = await sync.copy_order(db, store, fake, found)
+    mug = (await db.exec(select(Listing).where(Listing.variant_id == "v-mug"))).one()
+    made = await db.get_one(Variation, mug.item_id)
+    assert (made.sku, (await db.get_one(Product, made.product_id)).name) == ("MUG", "Mug")
     assert [line.item_id for line in await _lines(db, order)] == [tea.id, made.id]
 
 
@@ -441,7 +439,6 @@ async def test_the_history_import_copies_orders_moving_no_stock_but_what_is_open
     # What was sent before the store was connected moved nothing.
     assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (10, 1)
     await db.refresh(store)
-    assert store.imported_at is not None
     assert store.orders_since is not None
 
 
@@ -458,10 +455,10 @@ async def test_the_worker_refetches_what_each_nudge_names(
 ):
     matched: list[list[str | None]] = []
 
-    async def match(_db: WriteSession, _store: Store, products: Iterable[StoreProduct]) -> None:
+    async def adopt(_db: WriteSession, _store: Store, products: Iterable[StoreProduct]) -> None:
         matched.append([product.id for product in products])
 
-    monkeypatch.setattr(listings, "match", match)
+    monkeypatch.setattr(listings, "adopt", adopt)
     initiative_stand_in.connections[community_ref] = {"shopify": {"shop": "tea.myshopify.com"}}
     await sold("Tea", "v-tea")
     fake.shop_orders["o-1"] = _order(_line("l-1", "v-tea", "1"), paid=True)
@@ -502,6 +499,88 @@ async def test_the_worker_refetches_what_each_nudge_names(
     [nudge] = waiting.all()
     assert nudge.attempts == 1
     assert nudge.next_attempt_at > datetime.now(UTC)
+
+
+async def test_a_product_nudge_keeps_the_copy_makes_new_products_and_forgets_gone_ones(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    plugin: Plugin,
+    organization_id: int,
+    initiative_stand_in: InitiativeStandIn,
+    community_ref: str,
+):
+    initiative_stand_in.connections[community_ref] = {"shopify": {"shop": "tea.myshopify.com"}}
+    moment = datetime(2026, 11, 14, tzinfo=UTC)
+    mug = StoreProduct(
+        id="p-mug",
+        title="Mug",
+        variants=[StoreVariant(id="v-mug", title="Mug", sku="MUG", price=Decimal(9))],
+        updated_at=moment,
+    )
+
+    async def nudged(product_id: str) -> None:
+        db.add(
+            StoreNudge(
+                organization_id=db.organization_id,
+                store_id=store.id,
+                topic="product",
+                external_id=product_id,
+            )
+        )
+        await db.commit()
+        await sync.work(plugin, organization_id)
+
+    # Made in the store after the sync: made in Hoard, its copy kept.
+    fake.shop_products["p-mug"] = mug
+    await nudged("p-mug")
+    listing = (await db.exec(select(Listing))).one()
+    made = await db.get_one(Variation, listing.item_id)
+    copy = (await db.exec(select(StoreProductCopy))).one()
+    assert (copy.title, listing.price, made.sku) == ("Mug", 9, "MUG")
+
+    # Changed in the store: the copy follows, and Hoard's product is left alone.
+    fake.shop_products["p-mug"] = replace(mug, title="Big mug", updated_at=moment + timedelta(1))
+    await nudged("p-mug")
+    copy = (await db.exec(select(StoreProductCopy).execution_options(populate_existing=True))).one()
+    assert copy.title == "Big mug"
+    assert (await db.get_one(Product, made.product_id, populate_existing=True)).name == "Mug"
+
+    # Deleted in the store: its listing and copy go, Hoard's product stays.
+    del fake.shop_products["p-mug"]
+    await nudged("p-mug")
+    assert (await db.exec(select(Listing))).all() == []
+    assert (await db.exec(select(StoreProductCopy))).all() == []
+    assert await db.get(Variation, made.id, populate_existing=True) is not None
+
+
+async def test_a_pending_stores_nudges_are_let_go(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    sold: Sold,
+    plugin: Plugin,
+    organization_id: int,
+    initiative_stand_in: InitiativeStandIn,
+    community_ref: str,
+):
+    initiative_stand_in.connections[community_ref] = {"shopify": {"shop": "tea.myshopify.com"}}
+    await sold("Tea", "v-tea")
+    fake.shop_orders["o-1"] = _order(_line("l-1", "v-tea", "1"), paid=True)
+    store.imported_at = None
+    db.add(store)
+    db.add(
+        StoreNudge(
+            organization_id=db.organization_id, store_id=store.id, topic="order", external_id="o-1"
+        )
+    )
+    await db.commit()
+
+    await sync.work(plugin, organization_id)
+
+    assert (await db.exec(select(Order))).all() == []
+    nudge = (await db.exec(select(StoreNudge).execution_options(populate_existing=True))).one()
+    assert nudge.done_at is not None
 
 
 async def test_an_order_the_store_no_longer_returns_is_kept_from_its_webhook(
@@ -556,10 +635,10 @@ async def test_the_reconcile_copies_in_what_changed(
 ):
     matched: list[str | None] = []
 
-    async def match(_db: WriteSession, _store: Store, products: Iterable[StoreProduct]) -> None:
+    async def adopt(_db: WriteSession, _store: Store, products: Iterable[StoreProduct]) -> None:
         matched.extend(product.id for product in products)
 
-    monkeypatch.setattr(listings, "match", match)
+    monkeypatch.setattr(listings, "adopt", adopt)
     await sold("Tea", "v-tea")
     await db.commit()
     since = datetime(2026, 11, 1, tzinfo=UTC)

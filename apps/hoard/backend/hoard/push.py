@@ -24,6 +24,12 @@ log (:class:`hoard.records.StockPush`).
 * **Pruning** (:func:`prune`), on ``upkeep``: pushes finished more than
   :data:`KEEP_FINISHED` ago leave the push log, but for the last one each
   listing was pushed at each location, which the next push compares with.
+* **The baseline** (:func:`baseline`), at the end of a store's sync: each
+  listing is recorded as pushed what is available at each mapped location,
+  without asking the store, which the sync made hold that already.
+
+Only a synced store is pushed anything (``hoard.store_sync``): a pending
+store's listings are neither queued nor sent.
 """
 
 from __future__ import annotations
@@ -93,6 +99,16 @@ def note(db: WriteSession, item_id: int) -> None:
     once it commits."""
     noted: dict[int, set[int]] = db.info.setdefault(_NOTED, {})
     noted.setdefault(db.organization_id, set()).add(item_id)
+
+
+def forget_noted(db: WriteSession) -> None:
+    """Forget the items ``db`` noted, so that its commit queues no push."""
+    db.info.pop(_NOTED, None)
+
+
+def synced() -> Any:
+    """Whether a store has been synced, and so is pushed what is available."""
+    return col(Store.connected) & col(Store.imported_at).is_not(None)
 
 
 def whole(quantity: Decimal) -> int:
@@ -169,7 +185,7 @@ def _set_quantity(stock_push: StockPush, quantity: int) -> None:
 async def queue(
     db: WriteSession, item_ids: Iterable[int], *, store_id: int | None = None
 ) -> list[StockPush]:
-    """Queue a push for each listing of ``item_ids`` in a connected store, or
+    """Queue a push for each listing of ``item_ids`` in a synced store, or
     in ``store_id``'s alone, at each of the store's mapped locations, where
     what is available is not what the store was last pushed. Answers the
     pushes queued or changed."""
@@ -179,7 +195,7 @@ async def queue(
     query = (
         select(Listing)
         .join(Store, col(Store.id) == Listing.store_id)
-        .where(col(Listing.item_id).in_(ids), col(Store.connected))
+        .where(col(Listing.item_id).in_(ids), synced())
         .order_by(col(Listing.id))
     )
     if store_id is not None:
@@ -336,7 +352,11 @@ async def send(
             .join(Listing, col(Listing.id) == StockPush.listing_id)
             .join(StoreLocation, col(StoreLocation.id) == StockPush.store_location_id)
             .join(Store, col(Store.id) == Listing.store_id)
-            .where(StockPush.status == PushStatus.QUEUED, StockPush.next_attempt_at <= now)
+            .where(
+                StockPush.status == PushStatus.QUEUED,
+                StockPush.next_attempt_at <= now,
+                col(Store.imported_at).is_not(None),
+            )
             .order_by(col(StockPush.id))
         )
         stores: dict[int, Store] = {}
@@ -407,6 +427,61 @@ async def prune(db: WriteSession, now: datetime | None = None) -> None:
             col(StockPush.id).not_in(last),
         )
     )
+
+
+async def drop_queued(db: WriteSession, store: Store) -> None:
+    """Remove the store's pushes still waiting to be sent."""
+    listed = select(Listing.id).where(Listing.store_id == store.id)
+    await db.execute(
+        delete(StockPush).where(
+            col(StockPush.status) == PushStatus.QUEUED, col(StockPush.listing_id).in_(listed)
+        )
+    )
+
+
+async def baseline(db: WriteSession, store: Store) -> int:
+    """Record each of the store's linked listings as pushed, at each of its
+    mapped locations, what is available there now, without asking the store;
+    where it was last pushed that already, nothing is added. Answers how many
+    were recorded."""
+    located = await db.exec(
+        select(StoreLocation)
+        .where(StoreLocation.store_id == store.id, col(StoreLocation.location_id).is_not(None))
+        .order_by(col(StoreLocation.id))
+    )
+    store_locations = list(located.all())
+    sold = await db.exec(
+        select(Listing)
+        .where(Listing.store_id == store.id, col(Listing.item_id).is_not(None))
+        .order_by(col(Listing.id))
+    )
+    now = datetime.now(UTC)
+    available: dict[tuple[int, int], int] = {}
+    recorded = 0
+    for listing in sold.all():
+        assert listing.item_id is not None
+        for store_location in store_locations:
+            assert store_location.location_id is not None
+            where = (listing.item_id, store_location.location_id)
+            if where not in available:
+                available[where] = whole(await orders.available(db, *where))
+            last = await _last_pushed(db, listing.id, store_location.id)
+            if last is not None and last.quantity == available[where]:
+                continue
+            db.add(
+                StockPush(
+                    organization_id=db.organization_id,
+                    listing_id=listing.id,
+                    store_location_id=store_location.id,
+                    quantity=available[where],
+                    idempotency_key=_key(),
+                    status=PushStatus.PUSHED,
+                    pushed_at=now,
+                )
+            )
+            recorded += 1
+    await db.flush()
+    return recorded
 
 
 async def queue_noted(plugin: Plugin, organization_id: int, item_ids: Iterable[int]) -> None:

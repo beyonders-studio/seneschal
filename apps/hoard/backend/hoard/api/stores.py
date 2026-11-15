@@ -1,13 +1,15 @@
-"""The community's connected stores: each one's state, its locations mapped
-to Hoard's, its push log, and its products, read and edited live.
+"""The community's connected stores: each one's state, its sync, its
+locations mapped to Hoard's, its push log, and its products.
 
-A store's products are read from the store and written back to it as they
-are edited, with no copy kept in Hoard (``hoard.channels``): their titles,
-descriptions, images, prices and visibility are the store's. Prices are sent
-and taken only for a member who sees costs. A Hoard product can be made in a
-store, its listings linked to its variations at once.
+A store is pending, syncing or synced (``hoard.store_sync``). Syncing it, and
+removing its sync, is an administrator's, as are reading the store again and
+mapping its locations.
 
-Reading the store again and mapping its locations is an administrator's.
+A store's products are shown from Hoard's copy of them (``hoard.listings``),
+which the store's webhooks and the reconcile keep up to date, and written
+back to the store as they are edited; the store's answer is kept as the copy.
+Prices are sent and taken only for a member who sees costs. A Hoard product
+can be made in a store, its listings linked to its variations at once.
 """
 
 from __future__ import annotations
@@ -16,16 +18,16 @@ from dataclasses import replace
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Depends, Request, status
 from fastapi.exceptions import HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import channels, listings, push
+from hoard import channels, listings, push, store_sync
 from hoard.api import items
 from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.api.listings import ListingRead, reads
@@ -42,8 +44,10 @@ from hoard.records import (
     StockPush,
     Store,
     StoreLocation,
+    StoreProductCopy,
     Variation,
 )
+from seneschal_core import jobs
 from seneschal_core.api import (
     OrganizationSessionDep,
     Plugin,
@@ -54,6 +58,7 @@ from seneschal_core.api import (
 )
 from seneschal_core.db import WriteSession
 from seneschal_core.initiative_api import InitiativeRefused, InitiativeUnavailable
+from seneschal_core.jobs import JobRead
 
 router = APIRouter(prefix="/stores", tags=["stores"])
 
@@ -82,6 +87,31 @@ class StoreError(StrEnum):
     STORE_NOT_CONNECTED = "STORE_NOT_CONNECTED"
     #: The location named is not one of the organization's.
     LOCATION_UNKNOWN = "LOCATION_UNKNOWN"
+    #: The store is synced already: its sync is removed first.
+    STORE_SYNCED = "STORE_SYNCED"
+    #: The store is not synced yet.
+    STORE_NOT_SYNCED = "STORE_NOT_SYNCED"
+    #: The store's sync is running.
+    STORE_SYNCING = "STORE_SYNCING"
+
+
+class StoreState(StrEnum):
+    """Where a store's sync stands."""
+
+    #: Connected, and not synced: Hoard reads and writes nothing of it.
+    PENDING = "pending"
+    #: Its sync is waiting or running.
+    SYNCING = "syncing"
+    #: Synced: it and Hoard keep each other up to date.
+    SYNCED = "synced"
+
+
+def _webhook_address(request: Request) -> str:
+    return request.app.state.webhook_address
+
+
+#: Initiative's address for Hoard's webhooks.
+WebhookAddressDep = Annotated[str, Depends(_webhook_address)]
 
 
 class StoreLocationRead(BaseModel):
@@ -107,8 +137,11 @@ class StoreRead(BaseModel):
     connected: bool
     #: Why saving the connection was last refused: a code pages translate.
     last_check_error: str | None
-    #: When its recent orders were copied in.
+    state: StoreState
+    #: Since when it is synced; null while it is not.
     imported_at: datetime | None
+    #: Its sync running or waiting, else the last one it had.
+    sync_job_id: int | None
     locations: list[StoreLocationRead]
     #: Its listings, and how many of them sell an item.
     listings: int
@@ -138,6 +171,30 @@ class StorePushRead(BaseModel):
     pushed_at: datetime | None
 
 
+class StoreLocationFound(BaseModel):
+    """One of the store's locations, as the store has it now."""
+
+    external_id: str
+    name: str
+
+
+class StoreLocationChoice(BaseModel):
+    """Where a store location's stock goes once the store is synced: a Hoard
+    location, a new one named as the store names it, or, with neither,
+    nowhere: its stock is not read and nothing is pushed there."""
+
+    external_id: str = Field(min_length=1, max_length=200)
+    location_id: int | None = None
+    new: bool = False
+
+
+class StoreSyncWrite(BaseModel):
+    """Where each of the store's locations takes its stock from; one not
+    named takes none."""
+
+    locations: list[StoreLocationChoice] = []
+
+
 class StoreImageRead(BaseModel):
     id: str | None
     url: str
@@ -154,7 +211,7 @@ class StoreVariantRead(BaseModel):
 
 
 class StoreProductRead(BaseModel):
-    """A store's product, as the store keeps it now."""
+    """A store's product, as Hoard's copy of it holds it."""
 
     store_id: int
     id: str
@@ -168,6 +225,11 @@ class StoreProductRead(BaseModel):
     images: list[StoreImageRead]
     #: The store's sales channels showing it, by the store's ids.
     published_on: list[str]
+    product_type: str | None
+    vendor: str | None
+    tags: list[str]
+    #: When the store last changed it.
+    updated_at: datetime | None
     #: Its listings, each with the item it sells.
     listings: list[ListingRead]
 
@@ -251,9 +313,19 @@ async def _store_read(db: AsyncSession, store: Store) -> StoreRead:
             .where(Listing.store_id == store.id)
         )
     ).one()
+    job = await store_sync.sync_job(db, store)
+    state = (
+        StoreState.SYNCED
+        if store.imported_at is not None
+        else StoreState.SYNCING
+        if store_sync.syncing(job)
+        else StoreState.PENDING
+    )
     return StoreRead.model_validate(
         {
             **store.model_dump(),
+            "state": state,
+            "sync_job_id": None if job is None else job.id,
             "locations": [location.model_dump() for location in located.all()],
             "listings": total,
             "linked": linked,
@@ -286,9 +358,12 @@ async def list_stores(db: OrganizationSessionDep) -> list[StoreRead]:
 async def refresh_store(
     store_id: int, db: WriteSessionDep, plugin: PluginDep, session: AdminDep
 ) -> StoreRead:
-    """Read the store's locations and products again, matching each product
-    not yet linked, and push each listing what is available."""
+    """Read a synced store's locations and products again, taking each
+    product not yet listed into Hoard as its sync did, and push each listing
+    what is available."""
     store = await found(db, Store, store_id)
+    if store.imported_at is None:
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_SYNCED)
     connector = await _connector(plugin, session.community_ref, store)
     try:
         locations = await connector.locations()
@@ -296,8 +371,103 @@ async def refresh_store(
     except ConnectRefused as refused:
         raise _store_refused(refused) from None
     await listings.keep_locations(db, store, locations)
-    await listings.match(db, store, products)
+    await listings.adopt(db, store, products)
     await _queue_store(db, store)
+    await db.commit()
+    return await _store_read(db, store)
+
+
+@router.get("/{store_id}/store-locations", responses={**_LIVE, 403: {"description": "ADMIN_ONLY"}})
+async def read_store_locations(
+    store_id: int, db: OrganizationSessionDep, plugin: PluginDep, session: AdminDep
+) -> list[StoreLocationFound]:
+    """The store's locations, read from the store now, for choosing where
+    each one's stock goes before a sync."""
+    store = await found(db, Store, store_id)
+    connector = await _connector(plugin, session.community_ref, store)
+    try:
+        locations = await connector.locations()
+    except ConnectRefused as refused:
+        raise _store_refused(refused) from None
+    return [
+        StoreLocationFound(external_id=external_id, name=name)
+        for external_id, name in locations.items()
+    ]
+
+
+@router.post(
+    "/{store_id}/sync",
+    status_code=status.HTTP_202_ACCEPTED,
+    responses={
+        **_READ,
+        403: {"description": "ADMIN_ONLY, READ_ONLY"},
+        409: {"description": "STORE_NOT_CONNECTED, STORE_SYNCED"},
+        422: {"description": "LOCATION_UNKNOWN"},
+    },
+)
+async def sync_store(
+    store_id: int,
+    body: StoreSyncWrite,
+    db: WriteSessionDep,
+    session: AdminDep,
+    address: WebhookAddressDep,
+) -> JobRead:
+    """Queue the store's sync, taking each store location's stock as
+    ``body`` says. A sync already waiting or running is answered instead."""
+    store = await found(db, Store, store_id)
+    if not store.connected:
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_CONNECTED)
+    if store.imported_at is not None:
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_SYNCED)
+    for choice in body.locations:
+        if (
+            not choice.new
+            and choice.location_id is not None
+            and await db.get(Location, choice.location_id) is None
+        ):
+            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.LOCATION_UNKNOWN)
+    choices = [
+        store_sync.LocationChoice(choice.external_id, choice.location_id, choice.new)
+        for choice in body.locations
+    ]
+    job = await jobs.enqueue(
+        db,
+        store_sync.STORE_SYNC_JOB,
+        store_sync.job_args(store, address, choices),
+        started_by=session.member_ref,
+        unique_key=str(store.id),
+    )
+    await db.commit()
+    return JobRead.model_validate(job, from_attributes=True)
+
+
+@router.post(
+    "/{store_id}/unsync",
+    responses={**_ADMIN, 409: {"description": "STORE_SYNCING"}},
+)
+async def unsync_store(
+    store_id: int,
+    db: WriteSessionDep,
+    plugin: PluginDep,
+    session: AdminDep,
+    address: WebhookAddressDep,
+) -> StoreRead:
+    """Remove the store's sync: Hoard stops hearing from it and pushing to it,
+    and it is pending again. Everything the sync brought in stays."""
+    store = await found(db, Store, store_id)
+    if store_sync.syncing(await store_sync.sync_job(db, store)):
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_SYNCING)
+    connector = None
+    if store.connected:
+        try:
+            connector = await channels.connect(plugin, session.community_ref, store.channel)
+        except (InitiativeUnavailable, InitiativeRefused):
+            raise refuse(
+                status.HTTP_503_SERVICE_UNAVAILABLE, HoardError.INITIATIVE_UNAVAILABLE
+            ) from None
+        except ConnectRefused:
+            connector = None
+    await store_sync.unsync(db, store, connector, address)
     await db.commit()
     return await _store_read(db, store)
 
@@ -373,59 +543,72 @@ async def list_store_pushes(
 
 
 async def _product_read(
-    db: AsyncSession, store: Store, product: StoreProduct, sees_costs: bool
+    db: AsyncSession, store: Store, copy: StoreProductCopy, sees_costs: bool
 ) -> StoreProductRead:
-    assert product.id is not None
-    held = await db.exec(
-        select(Listing, Store)
-        .join(Store, col(Store.id) == Listing.store_id)
-        .where(Listing.store_id == store.id, Listing.product_id == product.id)
-        .order_by(col(Listing.id))
+    held = list(
+        (
+            await db.exec(
+                select(Listing, Store)
+                .join(Store, col(Store.id) == Listing.store_id)
+                .where(Listing.store_id == store.id, Listing.product_id == copy.product_id)
+                .order_by(col(Listing.id))
+            )
+        ).all()
     )
+    by_variant = {listing.variant_id: listing for listing, _ in held}
+    variants = []
+    for variant in copy.variants:
+        listing = by_variant.get(variant.get("id"))
+        variants.append(
+            StoreVariantRead(
+                id=variant.get("id"),
+                title=str(variant.get("title") or ""),
+                sku=None if listing is None else listing.sku,
+                price=listing.price if listing is not None and sees_costs else None,
+                options=dict(variant.get("options") or {}),
+            )
+        )
     return StoreProductRead(
         store_id=store.id,
-        id=product.id,
-        title=product.title,
-        description=product.description,
-        status=product.status,
-        options=list(product.options),
-        variants=[
-            StoreVariantRead(
-                id=variant.id,
-                title=variant.title,
-                sku=variant.sku,
-                price=variant.price if sees_costs else None,
-                options=dict(variant.options),
-            )
-            for variant in product.variants
-        ],
+        id=copy.product_id,
+        title=copy.title,
+        description=copy.description,
+        status=copy.status,
+        options=list(copy.options),
+        variants=variants,
         images=[
-            StoreImageRead(id=image.id, url=image.url, alt=image.alt) for image in product.images
+            StoreImageRead(id=image.get("id"), url=str(image["url"]), alt=image.get("alt"))
+            for image in copy.images
         ],
-        published_on=list(product.published_on),
-        listings=await reads(db, held.all()),
+        published_on=list(copy.published_on),
+        product_type=copy.product_type,
+        vendor=copy.vendor,
+        tags=list(copy.tags),
+        updated_at=copy.store_updated_at,
+        listings=await reads(db, held),
     )
 
 
-@router.get("/{store_id}/products/{product_id}", responses=_LIVE)
-async def read_store_product(
-    store_id: int,
-    product_id: str,
-    db: OrganizationSessionDep,
-    plugin: PluginDep,
-    session: SessionDep,
-    sees_costs: SeesCostsDep,
-) -> StoreProductRead:
-    """A store's product, read from the store now."""
-    store = await found(db, Store, store_id)
-    connector = await _connector(plugin, session.community_ref, store)
-    try:
-        product = await connector.product(product_id)
-    except ConnectRefused as refused:
-        raise _store_refused(refused) from None
-    if product is None:
+async def _copy(db: AsyncSession, store: Store, product_id: str) -> StoreProductCopy:
+    """Hoard's copy of the store's product, or 404 ``NOT_FOUND``."""
+    found_copy = await db.exec(
+        select(StoreProductCopy).where(
+            StoreProductCopy.store_id == store.id, StoreProductCopy.product_id == product_id
+        )
+    )
+    copy = found_copy.first()
+    if copy is None:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
-    return await _product_read(db, store, product, sees_costs)
+    return copy
+
+
+@router.get("/{store_id}/products/{product_id}", responses=_READ)
+async def read_store_product(
+    store_id: int, product_id: str, db: OrganizationSessionDep, sees_costs: SeesCostsDep
+) -> StoreProductRead:
+    """A store's product, from Hoard's copy of it."""
+    store = await found(db, Store, store_id)
+    return await _product_read(db, store, await _copy(db, store, product_id), sees_costs)
 
 
 def _edited(product: StoreProduct, body: StoreProductWrite, sees_costs: bool) -> StoreProduct:
@@ -459,7 +642,8 @@ async def save_store_product(
     sees_costs: SeesCostsDep,
 ) -> StoreProductRead:
     """Write a product's edits to the store, and answer it as the store keeps
-    it now. Its listings are kept, and those not yet linked matched again."""
+    it now, kept as Hoard's copy. Its listings are kept, and those not yet
+    linked matched again."""
     store = await found(db, Store, store_id)
     connector = await _connector(plugin, session.community_ref, store)
     try:
@@ -471,7 +655,7 @@ async def save_store_product(
         raise _store_refused(refused) from None
     await listings.match(db, store, [saved])
     await db.commit()
-    return await _product_read(db, store, saved, sees_costs)
+    return await _product_read(db, store, await _copy(db, store, product_id), sees_costs)
 
 
 def _new_product(product: Product, variations: list[Variation], sees_costs: bool) -> StoreProduct:
@@ -530,4 +714,5 @@ async def create_store_product(
     await db.flush()
     await push.queue(db, [variation.id for variation in variations], store_id=store.id)
     await db.commit()
-    return await _product_read(db, store, made, sees_costs)
+    assert made.id is not None
+    return await _product_read(db, store, await _copy(db, store, made.id), sees_costs)
