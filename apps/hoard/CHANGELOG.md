@@ -6,6 +6,10 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Search all of Hoard from the top of every page,** or press Ctrl K (⌘ K on a Mac). Find materials, bases, products, lots, production runs, purchases, orders, stocktakes, holds and locations by name, notes and text properties, or by any code on them: SKUs, supplier codes, lot numbers, run, purchase and order codes, and a store's order and customer numbers. Codes match however they're written (`LOT/24/07` finds `lot 2407`), and accents don't matter. Suggestions show as you type; scan a label and press Enter to go straight to its record. The results page has a tab for each kind of record, can include archived ones, and offers close matches when nothing matches. Costs and prices are never searched.
+
 ### Changed
 
 - **Hoard follows its own state in your community.** When Initiative sets Hoard read-only, on hold or deleted in a community, Hoard stops its own work there (pushing stock to stores, updating linked tasks and running background jobs) and changes nothing, while everything it holds is kept and stays readable. It picks up where it left off once Hoard is active again. Hoard deletes nothing in any state.
