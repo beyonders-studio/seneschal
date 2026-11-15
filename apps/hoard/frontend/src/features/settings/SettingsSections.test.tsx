@@ -15,7 +15,13 @@ globalThis.ResizeObserver ??= class {
 /** What Settings reads: one of each kind of setting. */
 const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings": { status: 200, data: { currency: "EUR" } },
-  "GET /api/v1/settings/units": { status: 200, data: [{ id: 1, name: "kg" }] },
+  "GET /api/v1/settings/units": {
+    status: 200,
+    data: [
+      { id: 1, name: "kg", standard: "kilogram", measure: "mass", aliases: ["kg", "kilo"] },
+      { id: 2, name: "Jar", standard: null, measure: null, aliases: [] },
+    ],
+  },
   "GET /api/v1/settings/categories": {
     status: 200,
     data: [{ id: 2, kind: "material", name: "Tea", picking: "earliest_expiry" }],
@@ -80,7 +86,8 @@ describe("Settings", () => {
   it("shows a member the settings without a way to change them", async () => {
     await openSignedIn("/settings", signedIn({ page: "settings" }), SETTINGS);
 
-    await screen.findByText("kg");
+    await screen.findByText("kilogram");
+    screen.getByText("Jar");
     screen.getByText("Main location");
     screen.getByText("Back room");
     screen.getByText("Tea");

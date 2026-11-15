@@ -9,9 +9,11 @@ import {
   getReadMaterialQueryKey,
   updateMaterial,
 } from "@/api/generated/materials/materials";
+import { useReadUnitConversion } from "@/api/generated/settings/settings";
 import { SupplierPicker } from "@/features/contacts/SupplierPicker";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import {
@@ -74,6 +76,12 @@ function MaterialForm({
   const [trackingUnitId, setTrackingUnitId] = useState(material?.tracking_unit_id ?? null);
   const [purchaseUnitId, setPurchaseUnitId] = useState(material?.purchase_unit_id ?? null);
   const [conversion, setConversion] = useState(material?.purchase_conversion ?? "1");
+  const [unitWeight, setUnitWeight] = useState(material?.unit_weight ?? "");
+  const pair = { from_unit_id: purchaseUnitId ?? 0, to_unit_id: trackingUnitId ?? 0 };
+  const known = useReadUnitConversion(pair, {
+    query: { enabled: purchaseUnitId !== null && trackingUnitId !== null },
+  }).data?.factor;
+  const weighed = units.find((unit) => unit.id === trackingUnitId)?.measure === "mass";
   const [lowStockLimit, setLowStockLimit] = useState(material?.low_stock_limit ?? "");
   const [inventoriable, setInventoriable] = useState(material?.inventoriable ?? true);
   const [supplierId, setSupplierId] = useState(material?.supplier_contact_id ?? null);
@@ -97,7 +105,8 @@ function MaterialForm({
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
       purchase_unit_id: purchaseUnitId,
-      purchase_conversion: purchaseUnitId === null ? "1" : conversion,
+      purchase_conversion: purchaseUnitId === null ? "1" : (known ?? conversion),
+      unit_weight: weighed ? null : orNull(unitWeight),
       low_stock_limit: orNull(lowStockLimit),
       inventoriable,
       supplier_contact_id: supplierId,
@@ -126,27 +135,36 @@ function MaterialForm({
               none={t("hoard:common.none")}
             />
           </Field>
-          <Field
-            label={t("materials.trackingUnit")}
-            hint={units.length === 0 ? t("materials.noUnits") : undefined}
-          >
-            <IdSelect value={trackingUnitId} options={units} onChange={setTrackingUnitId} />
+          <Field label={t("materials.trackingUnit")}>
+            <UnitPicker value={trackingUnitId} onChange={setTrackingUnitId} />
           </Field>
           <Field label={t("materials.purchaseUnit")}>
-            <IdSelect
+            <UnitPicker
               value={purchaseUnitId}
-              options={units}
               onChange={setPurchaseUnitId}
               none={t("materials.sameUnit")}
             />
           </Field>
           {purchaseUnitId !== null && (
-            <Field label={t("materials.conversion")} hint={t("materials.conversionHint")}>
+            <Field
+              label={t("materials.conversion")}
+              hint={known ? t("materials.conversionKnown") : t("materials.conversionHint")}
+            >
               <Input
                 inputMode="decimal"
-                value={conversion}
+                value={known ?? conversion}
                 onChange={(event) => setConversion(event.target.value)}
+                disabled={!!known}
                 required
+              />
+            </Field>
+          )}
+          {trackingUnitId !== null && !weighed && (
+            <Field label={t("materials.unitWeight")} hint={t("materials.unitWeightHint")}>
+              <Input
+                inputMode="decimal"
+                value={unitWeight}
+                onChange={(event) => setUnitWeight(event.target.value)}
               />
             </Field>
           )}

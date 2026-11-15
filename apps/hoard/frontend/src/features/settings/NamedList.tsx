@@ -49,6 +49,7 @@ export function NamedList<T extends Named>({
   rename,
   remove,
   removable = () => true,
+  fixed = () => false,
   detail,
 }: {
   words: string;
@@ -60,6 +61,8 @@ export function NamedList<T extends Named>({
   rename: (item: T, name: string) => Promise<unknown>;
   remove: (item: T) => Promise<unknown>;
   removable?: (item: T) => boolean;
+  /** Whether an item is neither renamed nor removed. */
+  fixed?: (item: T) => boolean;
   /** What else a row shows of its item, beside its name. */
   detail?: (item: T) => ReactNode;
 }) {
@@ -94,12 +97,12 @@ export function NamedList<T extends Named>({
                 {detail && <TableCell className="text-right">{detail(item)}</TableCell>}
                 <TableCell className="w-12">
                   <RowActionsMenu subject={nameOf(item)}>
-                    {changes && (
+                    {changes && !fixed(item) && (
                       <DropdownMenuItem onSelect={() => setNaming(item)}>
                         {t("settings.rename")}
                       </DropdownMenuItem>
                     )}
-                    {changes && removable(item) && (
+                    {changes && !fixed(item) && removable(item) && (
                       <DropdownMenuItem
                         className="text-destructive"
                         onSelect={() => setRemoving(item)}

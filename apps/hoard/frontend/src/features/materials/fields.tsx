@@ -51,6 +51,19 @@ const PurchaseUnit = ({ item }: Shown) => {
   );
 };
 
+const UnitWeight = ({ item }: Shown) => {
+  const { t } = useTranslation("catalog");
+  const quantity = useQuantity();
+  const names = useSettingsNames();
+  return (
+    item.unit_weight !== null &&
+    t("materials.unitWeightIs", {
+      unit: names.unit(item.tracking_unit_id),
+      weight: quantity(item.unit_weight),
+    })
+  );
+};
+
 const Supplier = ({ item }: Shown) => useSupplierNames()(item.supplier_contact_id);
 
 const AverageCost = ({ item }: Shown) => {
@@ -109,6 +122,12 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       PurchaseUnit
     ),
     builtin(
+      "unit_weight",
+      "catalog:materials.unitWeight",
+      (material) => material.unit_weight,
+      UnitWeight
+    ),
+    builtin(
       "supplier",
       "catalog:materials.supplier",
       (material) => material.supplier_contact_id,
@@ -164,6 +183,7 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
             "category",
             "tracking_unit",
             "purchase_unit",
+            "unit_weight",
             "supplier",
             "supplier_code",
             "average_cost",

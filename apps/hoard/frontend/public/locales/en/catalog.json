@@ -9,8 +9,11 @@
     "sameUnit": "The unit it's counted in",
     "conversion": "How many it holds",
     "conversionHint": "How many of the unit it's counted in make one of the unit it's bought in.",
+    "conversionKnown": "Set by the two units.",
+    "unitWeight": "What one weighs, in grams",
+    "unitWeightHint": "Only for ingredient lists and fragrance allergens, which list by weight. Leave it blank if you don't know.",
+    "unitWeightIs": "1 {{unit}} weighs {{weight}} g",
     "purchaseUnitIs": "{{unit}} of {{conversion}} {{trackingUnit}}",
-    "noUnits": "Add the units you count in under Settings first.",
     "supplier": "Preferred supplier",
     "supplierCode": "Supplier's code",
     "inventoriable": "Keeps stock",
@@ -82,8 +85,9 @@
     "units": {
       "title": "Units",
       "add": "Add unit",
-      "empty": "No units yet. Add the ones you count and buy in, such as g, kg or box.",
-      "name": "Unit"
+      "empty": "No units of your own yet. Add the ones Hoard doesn't know, such as a jar or a bag.",
+      "name": "Unit",
+      "standard": "Standard"
     },
     "categories": {
       "title": "Categories",
@@ -145,7 +149,9 @@
     "IMAGE_TYPE": "Add a GIF, JPEG, PNG or WebP picture.",
     "IMAGE_TOO_LARGE": "That picture is larger than 5 MB.",
     "LISTED_IN_STORE": "It's listed in a synced store. Archive the product instead, or delete it in the store first.",
-    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now."
+    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now.",
+    "TRACKING_UNIT_IN_USE": "Stock, purchases, stocktakes, recipes or runs already count in this unit, so it stays. If all it has is its starting stock, delete that adjustment first.",
+    "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted."
   },
   "items": {
     "stock": "Stock by location",
