@@ -62,7 +62,7 @@ async def on_claimed(db: WriteSession, order: Order) -> None:
         rule = await rule_for(db, variation)
         if rule is AutoManufacture.OFF:
             continue
-        wanted = sum((line.quantity for line in lines), Decimal(0))
+        wanted = sum((orders.selling(line) for line in lines), Decimal(0))
         if rule is AutoManufacture.OUT_OF_STOCK:
             # What is available for this order: what others do not commit.
             free = await orders.available(db, item_id, order.location_id)

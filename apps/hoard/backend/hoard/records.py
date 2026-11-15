@@ -25,9 +25,11 @@
 * **Purchases** of materials, from a supplier among the community's contacts,
   with lines that are received into lots.
 * **Stores**: a community's connected store on a sales channel, the store's
-  locations mapped to Hoard's, its **listings** linked to items, the **stock
-  pushes** sent to it, and the **nudges** its webhooks leave for Hoard to
-  refetch a record.
+  locations mapped to Hoard's, its **listings** linked to items, Hoard's
+  **copy of each store product**, the **stock pushes** sent to it, the
+  **nudges** its webhooks leave for Hoard to refetch a record, and the
+  **store fields** mapped to what they fill in Hoard, with the last value the
+  store holds of each field Hoard works out.
 * **Orders**, by hand for a customer among the community's contacts or copied
   in from a store, with lines; **shipments** of their lines, which record the
   lots they draw; and **returns** of what was shipped.
@@ -272,6 +274,22 @@ class MatchedBy(StrEnum):
     TITLE = "title"
     EXTERNAL_ID = "external_id"
     HAND = "hand"
+
+
+class FieldOwner(StrEnum):
+    """What a store's field is kept on: its products, or their variants."""
+
+    PRODUCT = "product"
+    VARIANT = "variant"
+
+
+class FieldTarget(StrEnum):
+    """What a store's field fills in Hoard: the allergens or the ingredient
+    list Hoard works out from recipes, or a product property."""
+
+    ALLERGENS = "allergens"
+    INGREDIENTS = "ingredients"
+    PROPERTY = "property"
 
 
 class Allergen(StrEnum):
@@ -576,6 +594,8 @@ class DefaultReason(StrEnum):
     PERSONAL_USE = "personal_use"
     #: What came back of a shipment damaged, written off rather than restocked.
     RETURNED_DAMAGED = "returned_damaged"
+    #: Stock set to a store's count when the store was first synced.
+    SYNCED_FROM_STORE = "synced_from_store"
 
 
 class DefaultHoldReason(StrEnum):
@@ -1271,8 +1291,10 @@ class Store(OrganizationRow, Stamped, table=True):
 
     ``last_check_error`` keeps why saving the connection was last refused,
     until it is saved again. The ``*_since`` stamps say how far the store's
-    orders and products have been read, and ``imported_at`` when its recent
-    orders were copied in."""
+    orders and products have been read. ``imported_at`` says the store is
+    synced (``hoard.store_sync``): it is when its sync began reading the
+    store's orders, and a fulfillment the store sent before then is history.
+    A connected store without it is pending."""
 
     __tablename__ = "stores"
     __table_args__ = (
@@ -1350,9 +1372,121 @@ class Listing(OrganizationRow, Stamped, table=True):
     inventory_item_id: str | None = None
     sku: str | None = None
     title: str | None = None
+    #: The variant's price in the store.
+    price: Decimal | None = amount(None)
     matched_by: MatchedBy | None = Field(
         default=None, sa_column=enum_column(MatchedBy, "matched_by", nullable=True)
     )
+
+
+class StoreProductCopy(OrganizationRow, Stamped, table=True):
+    """Hoard's copy of a store's product, as the store last answered it: what
+    pages show without asking the store. Each variant's SKU and price are on
+    its listing; ``variants`` keeps each one's id, title and option values, in
+    the store's order. ``images`` keeps each image's id, address and alt text;
+    ``published_on`` the store's ids for the sales channels showing it."""
+
+    __tablename__ = "store_products"
+    __table_args__ = (
+        reference("store_products", "store_id", "stores", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "store_id", "product_id", name="uq_store_products_external"
+        ),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    #: The store's id for it.
+    product_id: str
+    title: str
+    #: As the store keeps it: HTML.
+    description: str | None = None
+    #: The store's word for whether it sells it, such as ``active`` or ``draft``.
+    status: str | None = None
+    product_type: str | None = None
+    vendor: str | None = None
+    tags: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'")),
+    )
+    #: The names of its options, in order.
+    options: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    variants: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    images: list[dict[str, Any]] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    published_on: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    #: When the store last changed it, as the store said.
+    store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+
+
+class StoreFieldMapping(OrganizationRow, Stamped, table=True):
+    """One of a store's fields, by its ``namespace.key``, and what it fills in
+    Hoard (``hoard.store_fields``); a field filling nothing has no row.
+
+    ``pairs`` pairs each value the store keeps for it with Hoard's: for
+    allergens, an allergen's key, or None where none is paired yet; for a
+    select property, the option's value."""
+
+    __tablename__ = "store_fields"
+    __table_args__ = (
+        referable("store_fields"),
+        reference("store_fields", "store_id", "stores", ondelete="CASCADE"),
+        reference("store_fields", "property_id", "property_definitions", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "store_id", "owner", "handle", name="uq_store_fields_handle"
+        ),
+        CheckConstraint(
+            "(target = 'property') = (property_id IS NOT NULL)", name="ck_store_fields_property"
+        ),
+    )
+
+    id: int = identity()
+    store_id: int = Field(sa_type=BigInteger)
+    owner: FieldOwner = Field(sa_column=enum_column(FieldOwner, "field_owner"))
+    #: The store's ``namespace.key`` for it.
+    handle: str
+    #: The store's name for it, and its type's.
+    name: str
+    type: str
+    target: FieldTarget = Field(sa_column=enum_column(FieldTarget, "field_target"))
+    property_id: int | None = Field(default=None, sa_type=BigInteger)
+    pairs: dict[str, str | None] = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
+    )
+
+
+class StoreFieldValue(OrganizationRow, table=True):
+    """A field Hoard works out, on one of the store's products or variants:
+    what the store holds of it, as Hoard last sent it or read it, and Hoard's
+    own value when it last compared them, each as the store keeps it. None
+    for no value, and for Hoard's, one it does not know."""
+
+    __tablename__ = "store_field_values"
+    __table_args__ = (
+        reference("store_field_values", "field_id", "store_fields", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id", "field_id", "owner_id", name="uq_store_field_values_owner"
+        ),
+    )
+
+    id: int = identity()
+    field_id: int = Field(sa_type=BigInteger)
+    #: The store's id for the product or variant.
+    owner_id: str
+    store_value: str | None = None
+    hoard_value: str | None = None
 
 
 class StockPush(OrganizationRow, table=True):
@@ -1398,7 +1532,10 @@ class StockPush(OrganizationRow, table=True):
 
 class StoreNudge(OrganizationRow, table=True):
     """A store's webhook saying one of its records changed: Hoard refetches the
-    record, then marks it done. One waits per record at a time."""
+    record, then marks it done. One waits per record at a time until the
+    worker takes it (``taken_at``); a webhook arriving after that leaves a
+    new one. An order's keeps the webhook's own body, the newest delivered,
+    which Hoard copies when the store no longer returns the order."""
 
     __tablename__ = "store_nudges"
     __table_args__ = (
@@ -1410,7 +1547,7 @@ class StoreNudge(OrganizationRow, table=True):
             "topic",
             "external_id",
             unique=True,
-            postgresql_where=text("done_at IS NULL"),
+            postgresql_where=text("done_at IS NULL AND taken_at IS NULL"),
         ),
         Index("ix_store_nudges_due", "organization_id", "done_at", "next_attempt_at"),
         CheckConstraint("attempts >= 0", name="ck_store_nudges_attempts"),
@@ -1431,7 +1568,11 @@ class StoreNudge(OrganizationRow, table=True):
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=False, server_default=text("now()")),
     )
+    #: When the worker took it to refetch its record.
+    taken_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     done_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    #: The webhook's body, for an order: what the order was when it was sent.
+    body: dict[str, Any] | None = Field(default=None, sa_column=Column(JSONB, nullable=True))
 
 
 class Order(OrganizationRow, Stamped, table=True):
@@ -1448,11 +1589,15 @@ class Order(OrganizationRow, Stamped, table=True):
         UniqueConstraint("organization_id", "code", name="uq_orders_code"),
         UniqueConstraint("organization_id", "store_id", "external_id", name="uq_orders_external"),
         Index("ix_orders_status", "organization_id", "status"),
+        Index("ix_orders_store_customer", "organization_id", "store_id", "store_customer"),
         CheckConstraint("(store_id IS NULL) = (external_id IS NULL)", name="ck_orders_external"),
         CheckConstraint(
             "store_id IS NOT NULL OR customer_contact_id IS NOT NULL", name="ck_orders_customer"
         ),
-        CheckConstraint("shipping >= 0 AND tax >= 0 AND discount >= 0", name="ck_orders_amounts"),
+        CheckConstraint(
+            "shipping >= 0 AND tax >= 0 AND discount >= 0 AND refunded >= 0",
+            name="ck_orders_amounts",
+        ),
     )
 
     id: int = identity()
@@ -1476,13 +1621,22 @@ class Order(OrganizationRow, Stamped, table=True):
     shipping: Decimal = amount()
     tax: Decimal = amount()
     discount: Decimal = amount()
+    #: What the store has refunded of it.
+    refunded: Decimal = amount()
     delivery_address: str | None = None
+    #: The store's number for its customer, for a store's order; Hoard keeps
+    #: nothing else about them.
+    store_customer: str | None = None
+    #: When the store last changed it, as of the copy Hoard holds.
+    store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
 
 
 class OrderLine(OrganizationRow, Stamped, table=True):
     """A variation sold, so many at a price each. A bundle's parts are lines
     of their own, each naming the bundle's line (``bundle_line_id``), and the
-    bundle's own line commits nothing. A line may name the run that made it."""
+    bundle's own line commits nothing. A line may name the run that made it.
+    A store's line keeps how many it sells now, after the store's edits and
+    refunds, beside how many were ordered."""
 
     __tablename__ = "order_lines"
     __table_args__ = (
@@ -1493,13 +1647,22 @@ class OrderLine(OrganizationRow, Stamped, table=True):
         reference("order_lines", "production_run_id", "production_runs"),
         Index("ix_order_lines_order", "organization_id", "order_id"),
         Index("ix_order_lines_item", "organization_id", "item_id"),
-        CheckConstraint("quantity > 0 AND price >= 0", name="ck_order_lines_amounts"),
+        CheckConstraint(
+            "quantity > 0 AND price >= 0 AND current_quantity >= 0 AND refunded_quantity >= 0",
+            name="ck_order_lines_amounts",
+        ),
     )
 
     id: int = identity()
     order_id: int = Field(sa_type=BigInteger)
     item_id: int = Field(sa_type=BigInteger)
+    #: How many were ordered.
     quantity: Decimal = amount()
+    #: How many a store's line sells now, after edits and refunds; None for a
+    #: line that sells its whole quantity, as a hand order's does.
+    current_quantity: Decimal | None = amount(None)
+    #: How many the store refunded.
+    refunded_quantity: Decimal = amount()
     #: What one sold for.
     price: Decimal = amount()
     #: The store's id for the line.

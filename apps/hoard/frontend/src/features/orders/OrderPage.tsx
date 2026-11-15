@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
-import { Ban, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
+import { Link, useNavigate } from "@tanstack/react-router";
+import { Ban, ExternalLink, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -54,7 +54,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 const ASSUMED = "assumed";
 
 /** One order, under Orders: its customer and lines, its shipments with the
- *  lots they draw and what came back, cancelling and reopening it. */
+ *  lots they draw and what came back, cancelling and reopening it. An order
+ *  its synced store manages is shown as it stands, with a link to it in the
+ *  store: only the lots its shipments draw and what comes back change here. */
 export function OrderPage({ orderId }: { orderId: number }) {
   const { t } = useTranslation("orders");
   const order = useReadOrder(orderId);
@@ -94,12 +96,12 @@ function useChange() {
 }
 
 function Order({ order }: { order: OrderRead }) {
-  const { t } = useTranslation("orders");
+  const { t } = useTranslation(["orders", "stores"]);
   const queries = useQueryClient();
   const navigate = useNavigate();
   const { read_only } = useSession();
   const money = useMoney();
-  const { date, location, item, quantity } = useMovementLabels();
+  const { date, location, item } = useMovementLabels();
   const orderFor = useOrderFor();
   const memberName = useMemberNames([order.created_by]);
   const saved = useSaved();
@@ -113,8 +115,8 @@ function Order({ order }: { order: OrderRead }) {
   const cancel = useCancelOrder();
   const reopen = useReopenOrder();
   const cancelled = order.status === "cancelled";
-  const byHand = order.store_id === null;
-  const editsLines = byHand && !cancelled && !read_only;
+  const managed = order.managed_by_store !== null;
+  const editsLines = !managed && !read_only && !cancelled;
 
   return (
     <section className="flex flex-col gap-4">
@@ -137,6 +139,7 @@ function Order({ order }: { order: OrderRead }) {
               .filter(Boolean)
               .join(" · ")}
           </p>
+          {order.store_customer !== null && <CustomerOrders order={order} />}
           {order.delivery_address && (
             <p className="text-sm whitespace-pre-line">{order.delivery_address}</p>
           )}
@@ -146,37 +149,52 @@ function Order({ order }: { order: OrderRead }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <HoldFromOrder order={order} />
-          <Button variant="outline" onClick={() => setEditing(true)} disabled={read_only}>
-            <Pencil aria-hidden />
-            {t("hoard:common.edit")}
-          </Button>
-          {cancelled ? (
-            <Button
-              variant="outline"
-              disabled={read_only || reopen.isPending}
-              onClick={() => void change(reopen.mutateAsync({ orderId: order.id }))}
-            >
-              <RotateCcw aria-hidden />
-              {t("order.reopen")}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              disabled={read_only || cancel.isPending}
-              onClick={() => void change(cancel.mutateAsync({ orderId: order.id }))}
-            >
-              <Ban aria-hidden />
-              {t("order.cancel")}
+          {order.store_url && order.managed_by_store && (
+            <Button variant="outline" asChild>
+              <a href={order.store_url} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden />
+                {t("order.openInStore", { store: t(`stores:channels.${order.managed_by_store}`) })}
+              </a>
             </Button>
           )}
-          {byHand && (
-            <Button variant="outline" onClick={() => setDeleting(true)} disabled={read_only}>
-              <Trash2 aria-hidden />
-              {t("hoard:common.delete")}
-            </Button>
+          {!managed && (
+            <>
+              <Button variant="outline" onClick={() => setEditing(true)} disabled={read_only}>
+                <Pencil aria-hidden />
+                {t("hoard:common.edit")}
+              </Button>
+              {cancelled ? (
+                <Button
+                  variant="outline"
+                  disabled={read_only || reopen.isPending}
+                  onClick={() => void change(reopen.mutateAsync({ orderId: order.id }))}
+                >
+                  <RotateCcw aria-hidden />
+                  {t("order.reopen")}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  disabled={read_only || cancel.isPending}
+                  onClick={() => void change(cancel.mutateAsync({ orderId: order.id }))}
+                >
+                  <Ban aria-hidden />
+                  {t("order.cancel")}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setDeleting(true)} disabled={read_only}>
+                <Trash2 aria-hidden />
+                {t("hoard:common.delete")}
+              </Button>
+            </>
           )}
         </div>
       </div>
+      {order.managed_by_store && (
+        <p className="text-sm text-muted-foreground">
+          {t("order.managed", { store: t(`stores:channels.${order.managed_by_store}`) })}
+        </p>
+      )}
 
       <Table>
         <TableHeader>
@@ -196,7 +214,9 @@ function Order({ order }: { order: OrderRead }) {
               <TableCell className={line.bundle_line_id ? "pl-8" : undefined}>
                 {line.bundle_line_id ? t("lines.part", { item: item(line.item) }) : item(line.item)}
               </TableCell>
-              <TableCell className="text-right">{quantity(line.quantity)}</TableCell>
+              <TableCell className="text-right">
+                <Sold line={line} />
+              </TableCell>
               <TableCell className="text-right">
                 {line.bundle_line_id ? "" : money(line.price, { exact: true })}
               </TableCell>
@@ -239,19 +259,21 @@ function Order({ order }: { order: OrderRead }) {
       )}
 
       <dl className="grid grid-cols-fill-40/4 gap-4 text-sm">
-        {(["discount", "shipping", "tax", "total"] as const).map((name) => (
-          <div key={name}>
-            <dt className="text-muted-foreground">
-              {name === "total" ? t("hoard:common.total") : t(`order.${name}`)}
-            </dt>
-            <dd className="font-medium">{money(order[name])}</dd>
-          </div>
-        ))}
+        {(["discount", "shipping", "tax", "total", "refunded"] as const)
+          .filter((name) => name !== "refunded" || Number(order.refunded) > 0)
+          .map((name) => (
+            <div key={name}>
+              <dt className="text-muted-foreground">
+                {name === "total" ? t("hoard:common.total") : t(`order.${name}`)}
+              </dt>
+              <dd className="font-medium">{money(order[name])}</dd>
+            </div>
+          ))}
       </dl>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold tracking-tight">{t("shipments.title")}</h3>
-        {!cancelled && leftToShip(order).length > 0 && (
+        {!managed && !cancelled && leftToShip(order).length > 0 && (
           <Button
             variant="outline"
             disabled={read_only}
@@ -271,6 +293,7 @@ function Order({ order }: { order: OrderRead }) {
           shipment={shipment}
           number={index + 1}
           cancelled={cancelled}
+          managed={managed}
           onAction={setShipmentAction}
         />
       ))}
@@ -311,6 +334,56 @@ function Order({ order }: { order: OrderRead }) {
   );
 }
 
+/** The store's number for an order's customer, and their other orders. */
+function CustomerOrders({ order }: { order: OrderRead }) {
+  const { t } = useTranslation("orders");
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 text-sm">
+      <span>{t("order.storeCustomer", { number: order.store_customer })}</span>
+      {order.customer_orders.length > 0 ? (
+        <>
+          <span className="text-muted-foreground">{t("order.otherOrders")}</span>
+          {order.customer_orders.map((other) => (
+            <Link
+              key={other.id}
+              to="/orders/$orderId"
+              params={{ orderId: String(other.id) }}
+              className="underline-offset-4 hover:underline"
+            >
+              {other.code}
+            </Link>
+          ))}
+        </>
+      ) : (
+        <span className="text-muted-foreground">{t("order.noOtherOrders")}</span>
+      )}
+    </p>
+  );
+}
+
+/** How many a line sells now, and, where the store refunded or removed some,
+ *  how many were ordered and refunded. */
+function Sold({ line }: { line: OrderLineRead }) {
+  const { t } = useTranslation("orders");
+  const { quantity } = useMovementLabels();
+  const changed = Number(line.current_quantity) !== Number(line.quantity);
+  return (
+    <span className="inline-flex flex-wrap items-center justify-end gap-2">
+      {Number(line.refunded_quantity) > 0 && (
+        <Badge variant="secondary">
+          {t("lines.refunded", { quantity: quantity(line.refunded_quantity) })}
+        </Badge>
+      )}
+      {changed
+        ? t("lines.ofOrdered", {
+            current: quantity(line.current_quantity),
+            quantity: quantity(line.quantity),
+          })
+        : quantity(line.current_quantity)}
+    </span>
+  );
+}
+
 /** How much of a line has shipped, and how short it is; nothing for a
  *  bundle, whose parts ship. */
 function Shipped({ line, bundle }: { line: OrderLineRead; bundle: boolean }) {
@@ -324,7 +397,10 @@ function Shipped({ line, bundle }: { line: OrderLineRead; bundle: boolean }) {
           {t("lines.short", { quantity: quantity(line.short) })}
         </Badge>
       )}
-      {t("lines.shippedOf", { shipped: quantity(line.shipped), quantity: quantity(line.quantity) })}
+      {t("lines.shippedOf", {
+        shipped: quantity(line.shipped),
+        quantity: quantity(line.current_quantity),
+      })}
     </span>
   );
 }
@@ -333,11 +409,14 @@ function ShipmentCard({
   shipment,
   number,
   cancelled,
+  managed,
   onAction,
 }: {
   shipment: OrderShipmentRead;
   number: number;
   cancelled: boolean;
+  /** Whether its order's store manages it: only lots and returns change here. */
+  managed: boolean;
   onAction: (action: ShipmentAction) => void;
 }) {
   const { t } = useTranslation("orders");
@@ -386,7 +465,7 @@ function ShipmentCard({
               .join(" · ")}
           </p>
         </div>
-        {!read_only && (
+        {!read_only && !managed && (
           <div className="flex flex-wrap gap-2">
             {pending && !cancelled && (
               <Button size="sm" onClick={() => onAction({ kind: "ship", shipment })}>
@@ -516,7 +595,7 @@ function ShipmentCard({
                       {t("shipments.return")}
                     </Button>
                   )}
-                  {!read_only && pending && (
+                  {!read_only && !managed && pending && (
                     <Button
                       size="sm"
                       variant="ghost"

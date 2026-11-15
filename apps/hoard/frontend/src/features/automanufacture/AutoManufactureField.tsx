@@ -18,6 +18,7 @@ import {
   useReadSettings,
 } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
+import { productWrite } from "@/features/products/storeVersions";
 import { useVariationName } from "@/features/products/variations";
 import { useChangesSettings } from "@/features/settings/NamedList";
 import { SettingsSection } from "@/features/settings/SettingsSection";
@@ -137,14 +138,7 @@ function ProductChoice({ product }: { product: ProductDetail }) {
     toast.error(errorMessage(error, t, "autoManufacture.saveFailed"));
   const saveProduct = useMutation({
     mutationFn: (value: AutoManufacture | null) =>
-      updateProduct(product.id, {
-        name: product.name,
-        status: product.status,
-        category_id: product.category_id,
-        low_stock_limit: product.low_stock_limit,
-        ...(seesCosts ? { default_price: product.default_price } : {}),
-        auto_manufacture: value,
-      }),
+      updateProduct(product.id, { ...productWrite(product, seesCosts), auto_manufacture: value }),
     onSuccess: saved,
     onError: failed,
   });

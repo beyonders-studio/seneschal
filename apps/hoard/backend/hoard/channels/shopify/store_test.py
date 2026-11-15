@@ -13,16 +13,23 @@ from hoard.channels import (
     Connected,
     ConnectError,
     ConnectRefused,
+    FieldOwner,
+    FieldValue,
     Nudge,
     NudgeTopic,
     PushResult,
     StockSet,
+    StoreField,
     StoreFulfillment,
     StoreImage,
+    StoreLine,
+    StoreOrder,
     StoreProduct,
+    StoreStock,
     StoreVariant,
     connector_for,
 )
+from hoard.channels.shopify import queries
 from hoard.channels.shopify.fake import FakeShop
 from hoard.channels.shopify.store import REQUIRED_SCOPES, TOPICS, ShopifyConnector
 from hoard.records import Channel
@@ -54,6 +61,9 @@ def _product_node(variants: dict[str, Any] | None = None) -> dict[str, Any]:
         "descriptionHtml": "<p>Leaf</p>",
         "status": "ACTIVE",
         "updatedAt": "2026-11-01T10:00:00Z",
+        "productType": "Loose leaf",
+        "vendor": "",
+        "tags": ["green"],
         "options": [{"name": "Size"}],
         "variants": variants or _page([_variant(11, "Small"), _variant(12, "Large", "20.00")]),
         "media": _page(
@@ -80,7 +90,10 @@ async def test_check_names_the_permissions_missing():
     with pytest.raises(ConnectRefused) as refused:
         await shop.connector().check()
     assert refused.value.code is ConnectError.STORE_SCOPES_MISSING
-    assert refused.value.detail == "read_orders, write_files, write_inventory, write_publications"
+    assert refused.value.detail == (
+        "read_customers, read_metaobjects, read_orders, write_files, write_inventory, "
+        "write_publications"
+    )
     # Writing a resource covers reading it.
     shop.scopes = [scope.replace("read_", "write_") for scope in REQUIRED_SCOPES]
     await shop.connector().check()
@@ -177,6 +190,9 @@ async def test_a_product_is_read_with_every_variant():
         images=[StoreImage("https://i/5", "Tin", "gid://shopify/MediaImage/5")],
         published_on=["gid://shopify/Publication/1"],
         updated_at=datetime(2026, 11, 1, 10, tzinfo=UTC),
+        product_type="Loose leaf",
+        vendor=None,
+        tags=["green"],
     )
     assert shop.variables("HoardVariantsPage") == [{"id": PRODUCT, "after": "c1"}]
     shop.answer("HoardProduct", {"product": None})
@@ -485,6 +501,8 @@ def _order_node(lines: dict[str, Any]) -> dict[str, Any]:
         "totalShippingPriceSet": _money("8.00"),
         "totalTaxSet": _money("3.90"),
         "totalDiscountsSet": None,
+        "totalRefundedSet": _money("12.50"),
+        "customer": {"id": "gid://shopify/Customer/99"},
         "lineItems": lines,
     }
 
@@ -494,6 +512,7 @@ def _line(number: int, quantity: int, **extra: Any) -> dict[str, Any]:
         "id": f"gid://shopify/LineItem/{number}",
         "name": f"Tea {number}",
         "sku": f"TEA-{number}",
+        "quantity": quantity,
         "currentQuantity": quantity,
         "originalUnitPriceSet": _money("12.50"),
         "product": {"id": PRODUCT},
@@ -504,8 +523,37 @@ def _line(number: int, quantity: int, **extra: Any) -> dict[str, Any]:
     }
 
 
+def _refunds(shop: FakeShop) -> None:
+    """One unit of line 1 refunded, its lines read on a second page."""
+    shop.answer(
+        "HoardRefunds",
+        {
+            "order": {
+                "refunds": [
+                    {
+                        "id": "gid://shopify/Refund/5",
+                        "refundLineItems": _page([], cursor="r1"),
+                    }
+                ]
+            }
+        },
+    )
+    shop.answer(
+        "HoardRefundLinesPage",
+        {
+            "refund": {
+                "refundLineItems": _page(
+                    [{"quantity": 1, "lineItem": {"id": "gid://shopify/LineItem/1"}}]
+                )
+            }
+        },
+    )
+
+
 def _orders(shop: FakeShop) -> None:
-    shop.answer("HoardOrder", {"order": _order_node(_page([_line(1, 2)], cursor="l1"))})
+    line = _line(1, 3, currentQuantity=2)
+    shop.answer("HoardOrder", {"order": _order_node(_page([line], cursor="l1"))})
+    _refunds(shop)
     shop.answer(
         "HoardLinesPage",
         {
@@ -601,18 +649,26 @@ async def test_an_order_carries_its_lines_and_fulfillments():
     assert (order.id, order.number, order.currency) == (ORDER, "#1007", "CAD")
     assert order.ordered_at == datetime(2026, 11, 2, 9, 30, tzinfo=UTC)
     assert (order.paid, order.cancelled, order.fulfilled) == (True, False, False)
-    assert (order.shipping, order.tax, order.discount) == (
+    assert (order.shipping, order.tax, order.discount, order.refunded) == (
         Decimal("8.00"),
         Decimal("3.90"),
         Decimal(0),
+        Decimal("12.50"),
     )
+    # Of the customer, only the number at the end of their id.
+    assert order.customer == "99"
+    assert "customer { id }" in queries.ORDER_FIELDS
+    assert queries.ORDER_FIELDS.count("customer") == 1
     first, second = order.lines
     assert (first.id, first.quantity, first.price, first.sku) == (
         "gid://shopify/LineItem/1",
-        Decimal(2),
+        Decimal(3),
         Decimal("12.50"),
         "TEA-1",
     )
+    assert (first.current_quantity, first.refunded_quantity) == (Decimal(2), Decimal(1))
+    assert (second.current_quantity, second.refunded_quantity) == (Decimal(1), Decimal(0))
+    assert shop.variables("HoardRefunds") == [{"id": ORDER}]
     assert (second.bundle_id, second.selling_plan) == (
         "gid://shopify/LineItemGroup/3",
         "gid://shopify/SellingPlan/4",
@@ -726,18 +782,109 @@ async def test_the_history_import_reads_a_bulk_query():
             "bulkOperation": {"status": next(statuses), "url": "https://files.example/1.jsonl"}
         },
     )
+    _refunds(shop)
     order = {key: value for key, value in _order_node({}).items() if key != "lineItems"}
     shop.files["https://files.example/1.jsonl"] = [
         json.dumps(order),
-        json.dumps({**_line(1, 2), "__parentId": ORDER}),
+        json.dumps({**_line(1, 3, currentQuantity=2), "__parentId": ORDER}),
         json.dumps({**order, "id": "gid://shopify/Order/8", "name": "#1008"}),
         json.dumps({**_line(2, 1), "__parentId": ORDER}),
     ]
     orders = [order async for order in shop.connector().import_history()]
     assert [(order.number, len(order.lines)) for order in orders] == [("#1007", 2), ("#1008", 0)]
+    assert [
+        (line.quantity, line.current_quantity, line.refunded_quantity) for line in orders[0].lines
+    ] == [(3, 2, 1), (1, 1, 0)]
+    assert orders[0].customer == "99"
+    # Only the order with a line selling fewer than were ordered has its refunds read.
+    assert shop.variables("HoardRefunds") == [{"id": ORDER}]
     query = shop.variables("HoardBulkRun")[0]["query"]
     assert "orders(query: \"created_at:>='" in query
     assert shop.slept == [1.0]
+
+
+def _bulk(shop: FakeShop, rows: list[dict[str, Any]]) -> None:
+    """Answer the next bulk query with ``rows``."""
+    shop.answer(
+        "HoardBulkRun",
+        {"bulkOperationRunQuery": {"bulkOperation": {"id": "b"}, "userErrors": []}},
+    )
+    shop.answer(
+        "HoardBulkStatus",
+        {"bulkOperation": {"status": "COMPLETED", "url": "https://files.example/2.jsonl"}},
+    )
+    shop.files["https://files.example/2.jsonl"] = [json.dumps(row) for row in rows]
+
+
+async def test_every_product_is_read_in_one_bulk_query():
+    shop = FakeShop()
+    node = {
+        key: value
+        for key, value in _product_node().items()
+        if key not in ("variants", "media", "resourcePublicationsV2")
+    }
+    child = {"__parentId": PRODUCT}
+    _bulk(
+        shop,
+        [
+            node,
+            {**child, "__typename": "ProductVariant", **_variant(11, "Small")},
+            {
+                **child,
+                "__typename": "MediaImage",
+                "id": "gid://shopify/MediaImage/5",
+                "alt": "Tin",
+                "image": {"url": "https://i/5"},
+            },
+            {**child, "__typename": "Video", "id": "gid://shopify/Video/6", "alt": None},
+            {
+                **child,
+                "__typename": "ResourcePublicationV2",
+                "publication": {"id": "gid://shopify/Publication/1"},
+            },
+            {**child, "__typename": "ProductVariant", **_variant(12, "Large", "20.00")},
+        ],
+    )
+
+    [product] = [product async for product in shop.connector().import_products()]
+
+    shop.answer("HoardProduct", {"product": _product_node()})
+    assert product == await shop.connector().product(PRODUCT)
+    query = shop.variables("HoardBulkRun")[0]["query"]
+    assert "productType vendor tags" in query
+
+
+async def test_stock_levels_are_read_in_one_bulk_query():
+    shop = FakeShop()
+    item = "gid://shopify/InventoryItem/11"
+    _bulk(
+        shop,
+        [
+            {"id": item, "unitCost": {"amount": "2.5"}},
+            {
+                "__parentId": item,
+                "location": {"id": "gid://shopify/Location/1"},
+                "quantities": [{"name": "available", "quantity": 7}],
+            },
+            {
+                "__parentId": item,
+                "location": {"id": "gid://shopify/Location/2"},
+                "quantities": [{"name": "available", "quantity": -1}],
+            },
+            {"id": "gid://shopify/InventoryItem/12", "unitCost": None},
+        ],
+    )
+
+    levels = await shop.connector().stock_levels()
+
+    assert levels == [
+        StoreStock(
+            item,
+            Decimal("2.5"),
+            {"gid://shopify/Location/1": 7, "gid://shopify/Location/2": -1},
+        ),
+        StoreStock("gid://shopify/InventoryItem/12", None, {}),
+    ]
 
 
 async def test_a_failed_bulk_query_is_a_refusal():
@@ -752,6 +899,214 @@ async def test_a_failed_bulk_query_is_a_refusal():
     assert refused.value.detail == "bulk query failed: TIMEOUT"
 
 
+# Fields.
+
+
+async def test_fields_are_read_with_the_entries_they_pick_from():
+    shop = FakeShop()
+
+    def definitions(variables: dict[str, Any]) -> dict[str, Any]:
+        if variables["ownerType"] == "PRODUCTVARIANT":
+            return {"metafieldDefinitions": _page([])}
+        return {
+            "metafieldDefinitions": _page(
+                [
+                    {
+                        "name": "Allergen information",
+                        "namespace": "shopify",
+                        "key": "allergen-information",
+                        "type": {"name": "list.metaobject_reference"},
+                        "validations": [
+                            {"name": "metaobject_definition_id", "value": "gid://def/1"}
+                        ],
+                        "metafieldsCount": 12,
+                    },
+                    {
+                        "name": "Leaf",
+                        "namespace": "custom",
+                        "key": "leaf",
+                        "type": {"name": "single_line_text_field"},
+                        "validations": [{"name": "choices", "value": '["Loose", "Bagged"]'}],
+                        "metafieldsCount": 3,
+                    },
+                ]
+            )
+        }
+
+    shop.answer("HoardFieldDefinitions", definitions)
+    shop.answer(
+        "HoardFieldEntries",
+        {
+            "metaobjectDefinition": {
+                "metaobjects": _page(
+                    [{"id": "gid://m/1", "displayName": "Milk"}, {"id": "gid://m/2"}]
+                )
+            }
+        },
+    )
+
+    found = await shop.connector().fields()
+
+    assert found == [
+        StoreField(
+            FieldOwner.PRODUCT,
+            "shopify",
+            "allergen-information",
+            "Allergen information",
+            "list.metaobject_reference",
+            {"gid://m/1": "Milk", "gid://m/2": "gid://m/2"},
+            12,
+        ),
+        StoreField(
+            FieldOwner.PRODUCT,
+            "custom",
+            "leaf",
+            "Leaf",
+            "single_line_text_field",
+            {"Loose": "Loose", "Bagged": "Bagged"},
+            3,
+        ),
+    ]
+    assert shop.variables("HoardFieldEntries")[0]["id"] == "gid://def/1"
+
+
+async def test_every_products_field_values_are_read_in_one_bulk_query():
+    shop = FakeShop()
+    variant = "gid://shopify/ProductVariant/11"
+    _bulk(
+        shop,
+        [
+            {"id": PRODUCT},
+            {
+                "__parentId": PRODUCT,
+                "__typename": "Metafield",
+                "namespace": "custom",
+                "key": "origin",
+                "value": "Assam",
+            },
+            {
+                "__parentId": PRODUCT,
+                "__typename": "Metafield",
+                "namespace": "reviews",
+                "key": "rating",
+                "value": "4",
+            },
+            {"__parentId": PRODUCT, "__typename": "ProductVariant", "id": variant},
+            {
+                "__parentId": variant,
+                "__typename": "Metafield",
+                "namespace": "custom",
+                "key": "allergens",
+                "value": "Milk",
+            },
+            {"id": "gid://shopify/Product/2"},
+        ],
+    )
+
+    found = await shop.connector().field_values(
+        {FieldOwner.PRODUCT: ["custom.origin"], FieldOwner.VARIANT: ["custom.allergens"]}, None
+    )
+
+    assert found == {
+        PRODUCT: {"custom.origin": "Assam"},
+        variant: {"custom.allergens": "Milk"},
+        "gid://shopify/Product/2": {},
+    }
+    assert "variants" in shop.variables("HoardBulkRun")[0]["query"]
+
+
+async def test_a_products_field_values_are_read_by_key():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldValues",
+        {
+            "product": {
+                "id": PRODUCT,
+                "metafields": {
+                    "nodes": [{"namespace": "custom", "key": "origin", "value": "Assam"}]
+                },
+                "variants": {"nodes": [{"id": "v", "metafields": {"nodes": []}}]},
+            }
+        },
+    )
+
+    found = await shop.connector().field_values({FieldOwner.PRODUCT: ["custom.origin"]}, [PRODUCT])
+
+    assert found == {PRODUCT: {"custom.origin": "Assam"}}
+    assert shop.variables("HoardFieldValues") == [
+        {"id": PRODUCT, "keys": ["custom.origin"], "count": 1, "variants": 1}
+    ]
+
+
+async def test_field_values_are_written_and_taken_off():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldsSet",
+        {
+            "metafieldsSet": {
+                "metafields": [
+                    {
+                        "namespace": "custom",
+                        "key": "origin",
+                        "type": "single_line_text_field",
+                        "value": "Assam",
+                        "owner": {"id": PRODUCT},
+                    }
+                ],
+                "userErrors": [],
+            }
+        },
+    )
+    shop.answer(
+        "HoardFieldsDelete", {"metafieldsDelete": {"deletedMetafields": [], "userErrors": []}}
+    )
+
+    written = await shop.connector().set_field_values(
+        [
+            FieldValue(PRODUCT, "custom.origin", "single_line_text_field", " Assam"),
+            FieldValue(PRODUCT, "custom.grade", "single_line_text_field", None),
+        ]
+    )
+
+    assert written == [
+        FieldValue(PRODUCT, "custom.origin", "single_line_text_field", "Assam"),
+        FieldValue(PRODUCT, "custom.grade", "single_line_text_field", None),
+    ]
+    assert shop.variables("HoardFieldsSet") == [
+        {
+            "metafields": [
+                {
+                    "ownerId": PRODUCT,
+                    "namespace": "custom",
+                    "key": "origin",
+                    "type": "single_line_text_field",
+                    "value": " Assam",
+                }
+            ]
+        }
+    ]
+    assert shop.variables("HoardFieldsDelete") == [
+        {"metafields": [{"ownerId": PRODUCT, "namespace": "custom", "key": "grade"}]}
+    ]
+
+
+async def test_a_refused_field_write_is_a_refusal():
+    shop = FakeShop()
+    shop.answer(
+        "HoardFieldsSet",
+        {
+            "metafieldsSet": {
+                "metafields": [],
+                "userErrors": [{"field": ["value"], "message": "bad"}],
+            }
+        },
+    )
+    with pytest.raises(ConnectRefused):
+        await shop.connector().set_field_values(
+            [FieldValue(PRODUCT, "custom.origin", "number_integer", "x")]
+        )
+
+
 # Webhooks.
 
 
@@ -761,9 +1116,9 @@ async def test_a_failed_bulk_query_is_a_refusal():
         (
             "orders/updated",
             {"id": 7, "admin_graphql_api_id": ORDER},
-            Nudge(NudgeTopic.ORDER, ORDER),
+            Nudge(NudgeTopic.ORDER, ORDER, {"id": 7, "admin_graphql_api_id": ORDER}),
         ),
-        ("orders/cancelled", {"id": 7}, Nudge(NudgeTopic.ORDER, ORDER)),
+        ("orders/cancelled", {"id": 7}, Nudge(NudgeTopic.ORDER, ORDER, {"id": 7})),
         ("refunds/create", {"id": 3, "order_id": 7}, Nudge(NudgeTopic.ORDER, ORDER)),
         ("products/delete", {"id": 1}, Nudge(NudgeTopic.PRODUCT, PRODUCT)),
         (
@@ -784,3 +1139,103 @@ def test_a_webhook_names_what_changed(topic: str, body: dict[str, Any], nudge: N
 def test_a_webhook_that_is_not_json_is_ignored():
     connector = connector_for(Channel.SHOPIFY, {})
     assert connector.parse_webhook({"x-shopify-topic": "orders/create"}, "not json") is None
+
+
+def test_an_order_webhook_body_reads_as_the_order():
+    connector = connector_for(Channel.SHOPIFY, {})
+    body = {
+        "id": 7,
+        "admin_graphql_api_id": ORDER,
+        "name": "#1007",
+        "processed_at": "2026-11-02T04:30:00-05:00",
+        "updated_at": "2026-11-20T10:00:00-05:00",
+        "cancelled_at": None,
+        "financial_status": "partially_refunded",
+        "fulfillment_status": "fulfilled",
+        "currency": "CAD",
+        "total_shipping_price_set": {"shop_money": {"amount": "8.00"}},
+        "total_tax_set": {"shop_money": {"amount": "3.90"}},
+        "total_discounts_set": {"shop_money": {"amount": "0.00"}},
+        "customer": {"id": 99, "first_name": "Ada", "email": "ada@example.com", "phone": "555"},
+        "line_items": [
+            {
+                "id": 1,
+                "admin_graphql_api_id": "gid://shopify/LineItem/1",
+                "name": "Tea 1",
+                "sku": "TEA-1",
+                "price": "12.50",
+                "quantity": 3,
+                "current_quantity": 2,
+                "product_id": 1,
+                "variant_id": 1,
+                "sales_line_item_group_id": None,
+                "selling_plan_id": None,
+            }
+        ],
+        "fulfillments": [
+            {
+                "id": 8,
+                "admin_graphql_api_id": "gid://shopify/Fulfillment/8",
+                "status": "success",
+                "created_at": "2026-11-03T08:00:00Z",
+                "location_id": 1,
+                "tracking_number": "1Z",
+                "tracking_company": "Post",
+                "tracking_url": None,
+                "line_items": [{"id": 1, "quantity": 2}],
+            },
+            {"id": 9, "status": "failure", "line_items": [{"id": 1, "quantity": 1}]},
+        ],
+        "refunds": [
+            {
+                "id": 5,
+                "refund_line_items": [{"line_item_id": 1, "quantity": 1}],
+                "transactions": [
+                    {"kind": "refund", "status": "success", "amount": "12.50"},
+                    {"kind": "refund", "status": "failure", "amount": "12.50"},
+                ],
+            }
+        ],
+    }
+
+    order = connector.webhook_order(body)
+
+    assert order == StoreOrder(
+        id=ORDER,
+        number="#1007",
+        ordered_at=datetime(2026, 11, 2, 9, 30, tzinfo=UTC),
+        lines=[
+            StoreLine(
+                id="gid://shopify/LineItem/1",
+                title="Tea 1",
+                quantity=Decimal(3),
+                price=Decimal("12.50"),
+                product_id=PRODUCT,
+                variant_id="gid://shopify/ProductVariant/1",
+                sku="TEA-1",
+                current_quantity=Decimal(2),
+                refunded_quantity=Decimal(1),
+            )
+        ],
+        paid=True,
+        fulfilled=True,
+        currency="CAD",
+        shipping=Decimal("8.00"),
+        tax=Decimal("3.90"),
+        discount=Decimal(0),
+        refunded=Decimal("12.50"),
+        # Of the customer, only their number.
+        customer="99",
+        fulfillments=[
+            StoreFulfillment(
+                id="gid://shopify/Fulfillment/8",
+                location_id="gid://shopify/Location/1",
+                lines={"gid://shopify/LineItem/1": Decimal(2)},
+                shipped_at=datetime(2026, 11, 3, 8, tzinfo=UTC),
+                tracking_number="1Z",
+                tracking_company="Post",
+            )
+        ],
+        updated_at=datetime(2026, 11, 20, 15, tzinfo=UTC),
+    )
+    assert connector.webhook_order({"name": "#1007"}) is None

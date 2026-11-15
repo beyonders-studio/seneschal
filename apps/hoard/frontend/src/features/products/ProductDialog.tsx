@@ -16,6 +16,12 @@ import {
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import {
+  changedInStore,
+  storeVersions,
+  useListedIn,
+  useRefreshStoreProducts,
+} from "@/features/products/storeVersions";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
@@ -36,6 +42,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 /**
  * Adding a product, or editing `product`, in a dialog. Closing it drops what
  * was typed. Its default price is a field only for a member who sees costs.
+ * A new name or status of a product a synced store lists is written to the
+ * store first; when the store's product changed since the page read it,
+ * nothing is saved and the page shows the store's version.
  */
 export function ProductDialog({
   product,
@@ -84,13 +93,19 @@ function ProductForm({
   const [cureDays, setCureDays] = useState(product?.cure_days?.toString() ?? "");
   const [traceabilityList, setTraceabilityList] = useState(product?.traceability_list ?? false);
   const [rinseOff, setRinseOff] = useState(product?.rinse_off ?? false);
+  const listedIn = useListedIn();
+  const refresh = useRefreshStoreProducts();
   const save = useMutation({
     mutationFn: (body: ProductWrite) =>
       product ? updateProduct(product.id, body) : createProduct(body),
     onSuccess: async (saved) => {
       queryClient.setQueryData(getReadProductQueryKey(saved.id), saved);
       await queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
+      if (product) await refresh(product);
       onSaved(saved);
+    },
+    onError: (error) => {
+      if (product && changedInStore(error)) void refresh(product);
     },
   });
 
@@ -105,6 +120,7 @@ function ProductForm({
       traceability_list: traceabilityList,
       rinse_off: rinseOff,
       ...(seesCosts ? { default_price: orNull(defaultPrice) } : {}),
+      ...(product ? { store_versions: storeVersions(product) } : {}),
     });
   };
 
@@ -180,7 +196,9 @@ function ProductForm({
         ))}
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
-            {errorMessage(save.error, t, "products.saveFailed")}
+            {product && changedInStore(save.error)
+              ? t("products.changedInStore", { store: listedIn(product) })
+              : errorMessage(save.error, t, "products.saveFailed")}
           </p>
         )}
       </DialogBody>

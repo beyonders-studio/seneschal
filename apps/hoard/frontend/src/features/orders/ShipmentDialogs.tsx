@@ -44,7 +44,7 @@ export const leftToShip = (order: OrderRead) => {
   const bundles = new Set(order.lines.map((line) => line.bundle_line_id));
   return order.lines
     .filter((line) => !bundles.has(line.id))
-    .map((line) => ({ line, left: Number(line.quantity) - Number(line.held) }))
+    .map((line) => ({ line, left: Number(line.current_quantity) - Number(line.held) }))
     .filter(({ left }) => left > 0);
 };
 

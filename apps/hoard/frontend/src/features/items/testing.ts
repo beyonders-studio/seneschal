@@ -93,6 +93,7 @@ export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetai
   ...product(),
   ...STAMPS,
   variations: [],
+  store_products: [],
   ...fields,
 });
 

@@ -5,18 +5,34 @@
   or a store whose app lacks a permission in :data:`REQUIRED_SCOPES`.
 * **Webhooks** are subscribed per topic in :data:`TOPICS`, aimed at the
   address Hoard is given. A delivery names the order, product or inventory
-  item that changed, by its Admin API id.
-* **Products** are read and written live: title, description, status,
-  options, variants and their prices and SKUs, images, and the sales
-  channels showing it.
+  item that changed, by its Admin API id. An order's delivery
+  (:data:`ORDER_BODY_TOPICS`) keeps its body, the order in the store's REST
+  shape, which is read as the order when the store no longer returns it to
+  Hoard: one created more than :data:`HISTORY_DAYS` days ago.
+* **Products** are read and written: title, description, status, product
+  type, vendor and tags, options, variants and their prices and SKUs,
+  images, and the sales channels showing it. Every product is read at once
+  through a bulk query, for a store's sync.
 * **Stock** is set as the ``available`` quantity of an inventory item at a
   location, one setting a call, each with its own idempotency key and the
-  quantity Hoard last knew the store held.
-* **Orders** carry their lines, the fulfillments sent, and, where the store
-  granted a fulfillment order permission, the parts still to send: a
-  scheduled part carries the fulfillment order's id and the day it is due.
+  quantity Hoard last knew the store held. Every inventory item's cost and
+  what is available of it at each location are read through a bulk query,
+  for a store's sync.
+* **Orders** carry their lines, each with how many it sells now and how
+  many were refunded, the total refunded, the customer's number and nothing
+  else about them, the fulfillments sent, and, where the store granted a
+  fulfillment order permission, the parts still to send: a scheduled part
+  carries the fulfillment order's id and the day it is due. An order's
+  refunds are read only where a line sells fewer than were ordered.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
+* **Fields** are the store's metafields. Their definitions are read for
+  products and variants, with how many hold a value, and the entries a field
+  picks from: a text field's choices, or the display names of the metaobject
+  entries a reference field points at, as category metafields do. Their
+  values are read for a few products at a time, by key, or for every product
+  through a bulk query, and written with ``metafieldsSet``, a value taken off
+  with ``metafieldsDelete``.
 * **Pushing a fulfillment** stays off (:data:`PUSH_FULFILLMENTS`) until the
   permission it needs can be held by a store's own app.
 """
@@ -38,15 +54,20 @@ from hoard.channels import (
     Connected,
     ConnectError,
     ConnectRefused,
+    FieldOwner,
+    FieldValue,
+    FieldValues,
     Nudge,
     NudgeTopic,
     PushResult,
     StockSet,
+    StoreField,
     StoreFulfillment,
     StoreImage,
     StoreLine,
     StoreOrder,
     StoreProduct,
+    StoreStock,
     StoreVariant,
 )
 from hoard.channels.shopify import queries
@@ -57,7 +78,9 @@ logger = logging.getLogger(__name__)
 
 #: The permissions a store's app is granted for Hoard to connect.
 REQUIRED_SCOPES = (
+    "read_customers",
     "read_locations",
+    "read_metaobjects",
     "read_orders",
     "write_files",
     "write_inventory",
@@ -92,6 +115,9 @@ TOPICS = (
     "INVENTORY_LEVELS_UPDATE",
 )
 
+#: The webhook topics whose body is the order whole.
+ORDER_BODY_TOPICS = frozenset({"orders/create", "orders/updated", "orders/cancelled"})
+
 #: How many days back the store lets Hoard read orders.
 HISTORY_DAYS = 60
 
@@ -108,6 +134,15 @@ CAPABILITIES = Capabilities(
 
 #: The most items one input list carries.
 INPUT_LIMIT = 250
+
+#: The most field values one write carries.
+FIELDS_AT_ONCE = 25
+
+#: How many of a product's variants a read of its fields' values takes.
+FIELD_VARIANTS = 100
+
+#: The store's name for each owner of a field.
+_FIELD_OWNERS = {FieldOwner.PRODUCT: "PRODUCT", FieldOwner.VARIANT: "PRODUCTVARIANT"}
 
 #: How long the history import waits between asking after its bulk query,
 #: doubling from the first to the most.
@@ -344,6 +379,26 @@ class ShopifyConnector:
         nodes = await self._pages(queries.LOCATIONS, {}, ("locations",))
         return {str(node["id"]): str(node.get("name") or "") for node in nodes}
 
+    async def stock_levels(self) -> list[StoreStock]:
+        items, levels = await self._nested(queries.bulk_stock())
+        found = []
+        for item_id, node in items.items():
+            available: dict[str, int] = {}
+            for level in levels.get(item_id, []):
+                location = _id(level.get("location"))
+                for quantity in level.get("quantities") or []:
+                    if location is not None and quantity.get("name") == "available":
+                        available[location] = _count(quantity.get("quantity"))
+            cost = node.get("unitCost")
+            found.append(
+                StoreStock(
+                    inventory_item_id=item_id,
+                    unit_cost=_decimal(cost.get("amount")) if isinstance(cost, dict) else None,
+                    available=available,
+                )
+            )
+        return found
+
     async def push_available(self, sets: Sequence[StockSet]) -> list[PushResult]:
         return [await self._push(stock_set) for stock_set in sets]
 
@@ -417,7 +472,27 @@ class ShopifyConnector:
             node.get("lineItems"), queries.LINES_PAGE, {"id": order_id}, ("order", "lineItems")
         )
         fulfillments = [*await self._fulfillments(order_id), *await self._due(order_id)]
-        return _store_order(node, lines, fulfillments)
+        return _store_order(node, lines, fulfillments, await self._refunded(order_id, lines))
+
+    async def _refunded(
+        self, order_id: str, lines: Sequence[Mapping[str, Any]]
+    ) -> dict[str, Decimal]:
+        """How many of each of the order's lines were refunded, by line id:
+        read only where a line sells fewer than were ordered."""
+        if not any(
+            _count(line.get("currentQuantity")) < _count(line.get("quantity")) for line in lines
+        ):
+            return {}
+        data = await self.client.query(queries.REFUNDS, {"id": order_id})
+        items: list[dict[str, Any]] = []
+        for refund in (data.get("order") or {}).get("refunds") or []:
+            items += await self._rest(
+                refund.get("refundLineItems"),
+                queries.REFUND_LINES_PAGE,
+                {"id": refund["id"]},
+                ("refund", "refundLineItems"),
+            )
+        return _quantities(items, "quantity")
 
     async def _fulfillments(self, order_id: str) -> list[StoreFulfillment]:
         data = await self.client.query(queries.FULFILLMENTS, {"id": order_id})
@@ -538,39 +613,216 @@ class ShopifyConnector:
             return None
         if not isinstance(payload, dict):
             return None
-        api_id = payload.get("admin_graphql_api_id")
-        if (
-            field == "id"
-            and isinstance(api_id, str)
-            and api_id.startswith(f"gid://shopify/{kind}/")
-        ):
-            return Nudge(nudge_topic, api_id)
-        number = payload.get(field)
-        if isinstance(number, bool) or not isinstance(number, int | str) or not str(number):
+        external_id = (
+            _gid(kind, payload.get("admin_graphql_api_id")) if field == "id" else None
+        ) or _gid(kind, payload.get(field))
+        if external_id is None:
             return None
-        return Nudge(nudge_topic, f"gid://shopify/{kind}/{number}")
+        return Nudge(nudge_topic, external_id, payload if topic in ORDER_BODY_TOPICS else None)
+
+    def webhook_order(self, body: Mapping[str, Any]) -> StoreOrder | None:
+        return _webhook_order(body)
 
     async def import_history(self) -> AsyncIterator[StoreOrder]:
         start = datetime.now(UTC) - timedelta(days=HISTORY_DAYS)
         search = f"created_at:>='{_moment(start)}'"
-        data = await self.client.query(queries.BULK_RUN, {"query": queries.bulk_orders(search)})
+        orders, lines = await self._nested(queries.bulk_orders(search))
+        for order_id, node in orders.items():
+            rows = lines.get(order_id, [])
+            yield _store_order(node, rows, [], await self._refunded(order_id, rows))
+
+    async def import_products(self) -> AsyncIterator[StoreProduct]:
+        products, children = await self._nested(queries.bulk_products())
+        for product_id, node in products.items():
+            variants, media, publications = [], [], []
+            for row in children.get(product_id, []):
+                kind = row.get("__typename")
+                if kind == "ProductVariant":
+                    variants.append(row)
+                elif kind == "ResourcePublicationV2":
+                    publications.append(row)
+                else:
+                    media.append(row)
+            yield _store_product(
+                {
+                    **node,
+                    "media": {"nodes": media},
+                    "resourcePublicationsV2": {"nodes": publications},
+                },
+                variants,
+            )
+
+    # Fields.
+
+    async def fields(self) -> list[StoreField]:
+        found: list[StoreField] = []
+        for owner, owner_type in _FIELD_OWNERS.items():
+            nodes = await self._pages(
+                queries.FIELD_DEFINITIONS, {"ownerType": owner_type}, ("metafieldDefinitions",)
+            )
+            for node in nodes:
+                validations = {
+                    str(validation.get("name")): validation.get("value")
+                    for validation in node.get("validations") or []
+                    if isinstance(validation, dict)
+                }
+                found.append(
+                    StoreField(
+                        owner=owner,
+                        namespace=str(node.get("namespace") or ""),
+                        key=str(node.get("key") or ""),
+                        name=str(node.get("name") or node.get("key") or ""),
+                        type=str((node.get("type") or {}).get("name") or ""),
+                        choices=await self._choices(validations),
+                        count=_count(node.get("metafieldsCount")),
+                    )
+                )
+        return found
+
+    async def _choices(self, validations: Mapping[str, Any]) -> dict[str, str]:
+        """The entries a field picks from, each one's name by the value the
+        store keeps for it; none for a field that picks from no list."""
+        listed = validations.get("choices")
+        if isinstance(listed, str):
+            try:
+                values = json.loads(listed)
+            except ValueError:
+                return {}
+            if not isinstance(values, list):
+                return {}
+            return {value: value for value in values if isinstance(value, str)}
+        definition = validations.get("metaobject_definition_id")
+        by_type = validations.get("metaobject_definition_type")
+        if isinstance(definition, str) and definition:
+            nodes = await self._pages(
+                queries.FIELD_ENTRIES, {"id": definition}, ("metaobjectDefinition", "metaobjects")
+            )
+        elif isinstance(by_type, str) and by_type:
+            nodes = await self._pages(
+                queries.FIELD_ENTRIES_BY_TYPE, {"type": by_type}, ("metaobjects",)
+            )
+        else:
+            return {}
+        return {
+            str(node["id"]): str(node.get("displayName") or node["id"])
+            for node in nodes
+            if node.get("id")
+        }
+
+    async def field_values(
+        self, handles: Mapping[FieldOwner, Sequence[str]], product_ids: Sequence[str] | None
+    ) -> FieldValues:
+        product_keys = set(handles.get(FieldOwner.PRODUCT, ()))
+        variant_keys = set(handles.get(FieldOwner.VARIANT, ()))
+        if product_ids is None:
+            return await self._bulk_field_values(product_keys, variant_keys)
+        keys = sorted(product_keys | variant_keys)
+        found: FieldValues = {}
+        for product_id in product_ids:
+            data = await self.client.query(
+                queries.FIELD_VALUES,
+                {
+                    "id": product_id,
+                    "keys": keys,
+                    "count": max(len(keys), 1),
+                    "variants": FIELD_VARIANTS if variant_keys else 1,
+                },
+            )
+            node = data.get("product")
+            if not isinstance(node, dict):
+                continue
+            found[str(node["id"])] = _field_values(
+                (node.get("metafields") or {}).get("nodes"), product_keys
+            )
+            if variant_keys:
+                for variant in (node.get("variants") or {}).get("nodes") or []:
+                    found[str(variant["id"])] = _field_values(
+                        (variant.get("metafields") or {}).get("nodes"), variant_keys
+                    )
+        return found
+
+    async def _bulk_field_values(
+        self, product_keys: set[str], variant_keys: set[str]
+    ) -> FieldValues:
+        """Every product's values, and its variants', of the fields named,
+        through one bulk query. A row comes after the row it is nested in."""
+        found: FieldValues = {}
+        kept: dict[str, set[str]] = {}
+        async for row in self._bulk(queries.bulk_field_values(bool(variant_keys))):
+            parent = row.pop("__parentId", None)
+            if parent is None:
+                found[str(row["id"])], kept[str(row["id"])] = {}, product_keys
+            elif row.get("__typename") == "ProductVariant":
+                found[str(row["id"])], kept[str(row["id"])] = {}, variant_keys
+            elif str(parent) in found:
+                found[str(parent)].update(_field_values([row], kept[str(parent)]))
+        return found
+
+    async def set_field_values(self, values: Sequence[FieldValue]) -> list[FieldValue]:
+        answered: dict[tuple[str, str], FieldValue] = {}
+        kept = [value for value in values if value.value is not None]
+        for chunk in _chunks(kept, FIELDS_AT_ONCE):
+            data = await self.client.query(
+                queries.FIELDS_SET,
+                {
+                    "metafields": [
+                        {
+                            "ownerId": value.owner_id,
+                            **_handle(value.handle),
+                            "type": value.type,
+                            "value": value.value,
+                        }
+                        for value in chunk
+                    ]
+                },
+            )
+            payload = data.get("metafieldsSet") or {}
+            user_errors(payload)
+            for node in payload.get("metafields") or []:
+                owner = _id(node.get("owner"))
+                handle = f"{node.get('namespace')}.{node.get('key')}"
+                if owner is not None and isinstance(node.get("value"), str):
+                    answered[(owner, handle)] = FieldValue(
+                        owner, handle, str(node.get("type") or ""), node["value"]
+                    )
+        gone = [value for value in values if value.value is None]
+        for chunk in _chunks(gone, FIELDS_AT_ONCE):
+            data = await self.client.query(
+                queries.FIELDS_DELETE,
+                {
+                    "metafields": [
+                        {"ownerId": value.owner_id, **_handle(value.handle)} for value in chunk
+                    ]
+                },
+            )
+            user_errors(data.get("metafieldsDelete"))
+        return [answered.get((value.owner_id, value.handle), value) for value in values]
+
+    async def _bulk(self, query: str) -> AsyncIterator[dict[str, Any]]:
+        """Each row a bulk query found."""
+        data = await self.client.query(queries.BULK_RUN, {"query": query})
         payload = data.get("bulkOperationRunQuery") or {}
         user_errors(payload)
         operation_id = str((payload.get("bulkOperation") or {})["id"])
         url = await self._finished(operation_id)
         if url is None:
             return
-        orders: dict[str, dict[str, Any]] = {}
-        lines: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
         async for line in self.client.lines(url):
-            row = json.loads(line)
+            yield json.loads(line)
+
+    async def _nested(
+        self, query: str
+    ) -> tuple[dict[str, dict[str, Any]], defaultdict[str, list[dict[str, Any]]]]:
+        """A bulk query's records by id, and the rows nested in each, by its id."""
+        records: dict[str, dict[str, Any]] = {}
+        nested: defaultdict[str, list[dict[str, Any]]] = defaultdict(list)
+        async for row in self._bulk(query):
             parent = row.pop("__parentId", None)
             if parent is None:
-                orders[str(row["id"])] = row
+                records[str(row["id"])] = row
             else:
-                lines[str(parent)].append(row)
-        for order_id, node in orders.items():
-            yield _store_order(node, lines.get(order_id, []), [])
+                nested[str(parent)].append(row)
+        return records, nested
 
     async def _finished(self, operation_id: str) -> str | None:
         """The address of a bulk query's result once it finished; None when
@@ -709,6 +961,9 @@ def _store_product(node: Mapping[str, Any], variants: Sequence[Mapping[str, Any]
             if (publication := _id(resource.get("publication"))) is not None
         ],
         updated_at=_datetime(node.get("updatedAt")),
+        product_type=node.get("productType") or None,
+        vendor=node.get("vendor") or None,
+        tags=[str(tag) for tag in node.get("tags") or []],
     )
 
 
@@ -761,7 +1016,9 @@ def _store_order(
     node: Mapping[str, Any],
     lines: Sequence[Mapping[str, Any]],
     fulfillments: Sequence[StoreFulfillment],
+    refunded: Mapping[str, Decimal],
 ) -> StoreOrder:
+    customer = _id(node.get("customer"))
     return StoreOrder(
         id=str(node["id"]),
         number=str(node.get("name") or ""),
@@ -770,14 +1027,15 @@ def _store_order(
             StoreLine(
                 id=str(line["id"]),
                 title=str(line.get("name") or ""),
-                # Excludes what was removed or refunded.
-                quantity=Decimal(int(line.get("currentQuantity") or 0)),
+                quantity=Decimal(_count(line.get("quantity"))),
                 price=_money(line.get("originalUnitPriceSet")),
                 product_id=_id(line.get("product")),
                 variant_id=_id(line.get("variant")),
                 sku=line.get("sku") or None,
                 bundle_id=_id(line.get("lineItemGroup")),
                 selling_plan=(line.get("sellingPlan") or {}).get("sellingPlanId"),
+                current_quantity=Decimal(_count(line.get("currentQuantity"))),
+                refunded_quantity=refunded.get(str(line["id"]), Decimal(0)),
             )
             for line in lines
         ],
@@ -788,8 +1046,102 @@ def _store_order(
         shipping=_money(node.get("totalShippingPriceSet")),
         tax=_money(node.get("totalTaxSet")),
         discount=_money(node.get("totalDiscountsSet")),
+        refunded=_money(node.get("totalRefundedSet")),
+        # The number at the end of the customer's id.
+        customer=None if customer is None else customer.rsplit("/", 1)[-1],
         fulfillments=list(fulfillments),
         updated_at=_datetime(node.get("updatedAt")),
+    )
+
+
+#: A webhook's fulfillment statuses that Hoard copies.
+_SENT = frozenset({"success", "cancelled"})
+
+
+def _webhook_order(body: Mapping[str, Any]) -> StoreOrder | None:
+    """An order as a webhook's body describes it, in the store's REST shape:
+    its ids as numbers, which become Admin API ids."""
+    order_id = _gid("Order", body.get("admin_graphql_api_id")) or _gid("Order", body.get("id"))
+    if order_id is None:
+        return None
+    refunded_lines: dict[str, Decimal] = defaultdict(Decimal)
+    refunded = Decimal(0)
+    for refund in _list(body.get("refunds")):
+        for item in _list(refund.get("refund_line_items")):
+            line_id = _gid("LineItem", item.get("line_item_id"))
+            if line_id is not None:
+                refunded_lines[line_id] += _count(item.get("quantity"))
+        for transaction in _list(refund.get("transactions")):
+            if transaction.get("kind") == "refund" and transaction.get("status") == "success":
+                refunded += _decimal(transaction.get("amount")) or Decimal(0)
+    lines = []
+    for item in _list(body.get("line_items")):
+        line_id = _gid("LineItem", item.get("admin_graphql_api_id")) or _gid(
+            "LineItem", item.get("id")
+        )
+        if line_id is None:
+            continue
+        current = item.get("current_quantity")
+        lines.append(
+            StoreLine(
+                id=line_id,
+                title=str(item.get("name") or ""),
+                quantity=Decimal(_count(item.get("quantity"))),
+                price=_decimal(item.get("price")) or Decimal(0),
+                product_id=_gid("Product", item.get("product_id")),
+                variant_id=_gid("ProductVariant", item.get("variant_id")),
+                sku=item.get("sku") or None,
+                bundle_id=_gid("LineItemGroup", item.get("sales_line_item_group_id")),
+                selling_plan=_gid("SellingPlan", item.get("selling_plan_id")),
+                current_quantity=None if current is None else Decimal(_count(current)),
+                refunded_quantity=refunded_lines.get(line_id, Decimal(0)),
+            )
+        )
+    fulfillments = []
+    for sent in _list(body.get("fulfillments")):
+        fulfillment_id = _gid("Fulfillment", sent.get("admin_graphql_api_id")) or _gid(
+            "Fulfillment", sent.get("id")
+        )
+        if fulfillment_id is None or sent.get("status") not in _SENT:
+            continue
+        sent_lines: dict[str, Decimal] = defaultdict(Decimal)
+        for item in _list(sent.get("line_items")):
+            line_id = _gid("LineItem", item.get("admin_graphql_api_id")) or _gid(
+                "LineItem", item.get("id")
+            )
+            if line_id is not None:
+                sent_lines[line_id] += _count(item.get("quantity"))
+        fulfillments.append(
+            StoreFulfillment(
+                id=fulfillment_id,
+                location_id=_gid("Location", sent.get("location_id")),
+                lines=dict(sent_lines),
+                shipped_at=_datetime(sent.get("created_at")),
+                cancelled=sent.get("status") == "cancelled",
+                tracking_number=sent.get("tracking_number") or None,
+                tracking_company=sent.get("tracking_company") or None,
+                tracking_url=sent.get("tracking_url") or None,
+            )
+        )
+    customer = body.get("customer")
+    # Of the customer, only their number.
+    number = customer.get("id") if isinstance(customer, dict) else None
+    return StoreOrder(
+        id=order_id,
+        number=str(body.get("name") or ""),
+        ordered_at=_datetime(body.get("processed_at")) or datetime.now(UTC),
+        lines=lines,
+        paid=body.get("financial_status") in ("paid", "partially_refunded", "refunded"),
+        cancelled=body.get("cancelled_at") is not None,
+        fulfilled=body.get("fulfillment_status") == "fulfilled",
+        currency=body.get("currency"),
+        shipping=_money(body.get("total_shipping_price_set")),
+        tax=_money(body.get("total_tax_set")),
+        discount=_money(body.get("total_discounts_set")),
+        refunded=refunded,
+        customer=str(number) if _count(number) else None,
+        fulfillments=fulfillments,
+        updated_at=_datetime(body.get("updated_at")),
     )
 
 
@@ -803,8 +1155,24 @@ def _quantities(items: Iterable[Mapping[str, Any]], field: str) -> dict[str, Dec
     return totals
 
 
-def _chunks(items: Sequence[Any]) -> list[Sequence[Any]]:
-    return [items[start : start + INPUT_LIMIT] for start in range(0, len(items), INPUT_LIMIT)]
+def _chunks(items: Sequence[Any], size: int = INPUT_LIMIT) -> list[Sequence[Any]]:
+    return [items[start : start + size] for start in range(0, len(items), size)]
+
+
+def _handle(handle: str) -> dict[str, str]:
+    """A field's ``namespace.key`` as the store's inputs take it."""
+    namespace, _, key = handle.rpartition(".")
+    return {"namespace": namespace, "key": key}
+
+
+def _field_values(nodes: object, keys: set[str]) -> dict[str, str]:
+    """The values among metafield ``nodes`` of the fields ``keys`` names."""
+    found: dict[str, str] = {}
+    for node in nodes if isinstance(nodes, list) else []:
+        handle = f"{node.get('namespace')}.{node.get('key')}"
+        if handle in keys and isinstance(node.get("value"), str):
+            found[handle] = node["value"]
+    return found
 
 
 def _dig(data: Mapping[str, Any], path: Sequence[str]) -> Mapping[str, Any]:
@@ -827,8 +1195,31 @@ def _id(node: object) -> str | None:
 
 
 def _money(bag: object) -> Decimal:
-    money = bag.get("shopMoney") if isinstance(bag, dict) else None
+    """An amount in the store's currency, in the Admin API's shape or the
+    REST one."""
+    money = (bag.get("shopMoney") or bag.get("shop_money")) if isinstance(bag, dict) else None
     return _decimal(money.get("amount") if isinstance(money, dict) else None) or Decimal(0)
+
+
+def _gid(kind: str, value: object) -> str | None:
+    """The Admin API id of the store's ``kind`` of record, from that id or the
+    record's number; None for neither."""
+    if isinstance(value, bool) or not isinstance(value, int | str) or not str(value):
+        return None
+    prefix = f"gid://shopify/{kind}/"
+    if isinstance(value, str) and value.startswith("gid://"):
+        return value if value.startswith(prefix) else None
+    return f"{prefix}{value}"
+
+
+def _list(value: object) -> list[dict[str, Any]]:
+    """The objects of a list in a webhook's body."""
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _count(value: object) -> int:
+    """A whole quantity the store gave, or none."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _decimal(value: object) -> Decimal | None:

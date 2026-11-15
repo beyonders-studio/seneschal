@@ -1,0 +1,28 @@
+{
+  "queued": "Waiting to start",
+  "running": "Working…",
+  "done": "Done",
+  "failed": "This didn't finish. Try again in a moment.",
+  "count": "{{step}}: {{done}} of {{total}}",
+  "steps": {
+    "reading": "Reading the records",
+    "store_locations": "Locations",
+    "store_products": "Products",
+    "store_fields": "Fields",
+    "store_orders": "Orders",
+    "store_stock": "Stock",
+    "store_finish": "Finishing",
+    "store_fields_read": "Reading the field",
+    "store_fields_send": "Sending Hoard's values"
+  },
+  "errors": {
+    "JOB_FAILED": "Something went wrong, and Hoard stopped after trying again. Try again in a moment.",
+    "STORE_UNREACHABLE": "The store couldn't be reached, and Hoard stopped after trying again. Try again in a moment.",
+    "STORE_CREDENTIALS_REFUSED": "The store didn't accept the client ID and secret.",
+    "STORE_SCOPES_MISSING": "The store's app is missing permissions Hoard needs.",
+    "STORE_SUBSCRIPTION_REFUSED": "The store didn't let Hoard hear about its orders and products.",
+    "STORE_NOT_CONNECTED": "The store isn't connected.",
+    "CHANNEL_UNSUPPORTED": "Hoard can't connect to this kind of store yet.",
+    "STORE_NOT_SYNCED": "The store isn't synced."
+  }
+}

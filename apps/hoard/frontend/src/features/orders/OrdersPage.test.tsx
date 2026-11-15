@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { orderRead } from "@/features/orders/testing";
@@ -43,6 +43,26 @@ describe("OrdersPage", () => {
     expect(screen.getByRole("cell", { name: "Store order #1001" })).toBeTruthy();
     expect(screen.getByText("Unpaid")).toBeTruthy();
     expect(screen.getByText("Paid")).toBeTruthy();
+  });
+
+  it("lists a store customer's orders by their number", async () => {
+    const asked = await openSignedIn("/orders", undefined, {
+      "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
+      "GET /api/v1/contacts": { status: 200, data: CONTACTS },
+      "GET /api/v1/orders": { status: 200, data: { items: [orderRead()], total: 1 } },
+    });
+
+    fireEvent.change(await screen.findByRole("searchbox", { name: "Customer number" }), {
+      target: { value: " 99 " },
+    });
+
+    await waitFor(() =>
+      expect(
+        asked.some(
+          (request) => request.url === "/api/v1/orders" && request.params?.store_customer === "99"
+        )
+      ).toBe(true)
+    );
   });
 
   it("adds an order for a customer among the community's contacts", async () => {

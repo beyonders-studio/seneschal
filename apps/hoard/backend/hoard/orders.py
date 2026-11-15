@@ -2,16 +2,21 @@
 copied in from a store, and shipped in one or more shipments
 (``hoard.shipments``).
 
-An open order **commits** what its lines have not yet shipped, at its
-location: a pending, shipped or cancelled one commits nothing, and a bundle's
-own line commits nothing, since its parts are lines of their own. What is
+An open order **commits** what its lines sell and have not yet shipped, at
+its location: a pending, shipped or cancelled one commits nothing, and a
+bundle's own line commits nothing, since its parts are lines of their own. A
+store's line sells what the store says it does now (``current_quantity``), so
+one refunded before it shipped commits nothing more; one refunded after it
+shipped stays shipped. What is
 **available** is what is on hand less what is committed and what is on hold
 (``hoard.holds``), which is what Hoard tells each store it may sell. Where
 less is available than nothing, the open orders are **short**: each of their
 lines, by as much as the item lacks, up to what the line has left to ship.
 
 An order is made by hand, with its lines, or copied in from a store
-(``hoard.sync``), whose lines change only there. A bundle sold by hand is
+(``hoard.sync``). Once that store is synced, the store manages its orders
+(:func:`store_owned`): Hoard changes nothing of one but the lots its
+shipments draw and what comes back of them. A bundle sold by hand is
 split into its parts, as its recipe holds them, each a line of its own at no
 price. An order is **shipped** once its shipments have shipped every line, and
 open again once one is unshipped; cancelling it cancels the shipments still
@@ -25,7 +30,7 @@ from collections import defaultdict
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import func, update
+from sqlalchemy import ColumnElement, func, update
 from sqlalchemy.orm import aliased
 from sqlmodel import col, exists, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -42,6 +47,7 @@ from hoard.records import (
     Shipment,
     ShipmentLine,
     ShipmentStatus,
+    Store,
     Variation,
 )
 from hoard.stock import on_hand
@@ -57,8 +63,8 @@ class OrderError(StrEnum):
     ORDER_CANCELLED = "ORDER_CANCELLED"
     #: The order is not cancelled, so there is nothing to reopen.
     ORDER_NOT_CANCELLED = "ORDER_NOT_CANCELLED"
-    #: A store's order: its lines change in the store.
-    ORDER_FROM_STORE = "ORDER_FROM_STORE"
+    #: A synced store's order: it changes in the store.
+    MANAGED_BY_STORE = "MANAGED_BY_STORE"
     #: A bundle's part: it changes with its bundle's line.
     ORDER_LINE_PART = "ORDER_LINE_PART"
     #: A shipment holds the line, or more of it than asked for.
@@ -71,6 +77,22 @@ class OrderRefused(Exception):
     def __init__(self, code: OrderError) -> None:
         super().__init__(code.value)
         self.code = code
+
+
+#: How many a line sells now, in a query.
+SELLING = func.coalesce(OrderLine.current_quantity, OrderLine.quantity)
+
+
+def ships_itself() -> ColumnElement[bool]:
+    """Whether a line ships itself, in a query: all but a bundle's own line,
+    whose parts are lines of their own."""
+    part = aliased(OrderLine)
+    return ~exists().where(col(part.bundle_line_id) == OrderLine.id)
+
+
+def selling(line: OrderLine) -> Decimal:
+    """How many a line sells now: a store's after its edits and refunds."""
+    return line.quantity if line.current_quantity is None else line.current_quantity
 
 
 async def committed(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
@@ -86,15 +108,10 @@ async def committed(db: AsyncSession, item_id: int, location_id: int | None = No
         .correlate(OrderLine)
         .scalar_subquery()
     )
-    part = aliased(OrderLine)
     query = (
-        select(func.coalesce(func.sum(func.greatest(OrderLine.quantity - shipped, 0)), 0))
+        select(func.coalesce(func.sum(func.greatest(SELLING - shipped, 0)), 0))
         .join(Order, col(Order.id) == OrderLine.order_id)
-        .where(
-            OrderLine.item_id == item_id,
-            Order.status == OrderStatus.OPEN,
-            ~exists().where(col(part.bundle_line_id) == OrderLine.id),
-        )
+        .where(OrderLine.item_id == item_id, Order.status == OrderStatus.OPEN, ships_itself())
     )
     if location_id is not None:
         query = query.where(Order.location_id == location_id)
@@ -122,7 +139,7 @@ async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
         return found
     shipped = await held(db, order.id, shipped_only=True)
     for line in shippable(await lines(db, order.id)):
-        left = line.quantity - shipped[line.id]
+        left = selling(line) - shipped[line.id]
         if left <= 0:
             continue
         if line.item_id not in lacking:
@@ -131,6 +148,16 @@ async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
         if lacking[line.item_id] > 0:
             found[line.id] = min(left, lacking[line.item_id])
     return found
+
+
+async def store_owned(db: AsyncSession, order: Order) -> Store | None:
+    """The store managing an order: the store it came from, once that store is
+    synced. None for an order Hoard manages: one made by hand, or a store's
+    while the store is pending or after its sync is removed."""
+    if order.store_id is None:
+        return None
+    store = await db.get(Store, order.store_id)
+    return store if store is not None and store.imported_at is not None else None
 
 
 async def lines(db: AsyncSession, order_id: int) -> list[OrderLine]:
@@ -199,9 +226,7 @@ async def _variation(db: WriteSession, item_id: int) -> tuple[Product, Variation
     return await db.get_one(Product, variation.product_id), variation
 
 
-def _by_hand(order: Order) -> None:
-    if order.store_id is not None:
-        raise OrderRefused(OrderError.ORDER_FROM_STORE)
+def _not_cancelled(order: Order) -> None:
     if order.status is OrderStatus.CANCELLED:
         raise OrderRefused(OrderError.ORDER_CANCELLED)
 
@@ -239,9 +264,9 @@ async def _split(db: WriteSession, line: OrderLine, product: Product) -> None:
 async def add_line(
     db: WriteSession, order: Order, item_id: int, quantity: Decimal, price: Decimal | None = None
 ) -> OrderLine:
-    """Sell ``quantity`` of a variation on a hand order, at ``price`` each or
+    """Sell ``quantity`` of a variation on an order, at ``price`` each or
     else its own; a bundle is split into its parts."""
-    _by_hand(order)
+    _not_cancelled(order)
     product, variation = await _variation(db, item_id)
     line = OrderLine(
         organization_id=db.organization_id,
@@ -266,9 +291,9 @@ async def change_line(
     quantity: Decimal | None = None,
     price: Decimal | None = None,
 ) -> None:
-    """Change a hand order's line: no less than its shipments hold of it, and
+    """Change an order's line: no less than its shipments hold of it, and
     a bundle's only while none of its parts is in a shipment."""
-    _by_hand(order)
+    _not_cancelled(order)
     if line.bundle_line_id is not None:
         raise OrderRefused(OrderError.ORDER_LINE_PART)
     if price is not None:
@@ -290,9 +315,9 @@ async def change_line(
 
 
 async def remove_line(db: WriteSession, order: Order, line: OrderLine) -> None:
-    """Remove a hand order's line, with a bundle's parts, while no shipment
+    """Remove an order's line, with a bundle's parts, while no shipment
     holds any of them."""
-    _by_hand(order)
+    _not_cancelled(order)
     if line.bundle_line_id is not None:
         raise OrderRefused(OrderError.ORDER_LINE_PART)
     holding = await held(db, order.id)
@@ -312,7 +337,7 @@ async def settle(db: WriteSession, order: Order) -> None:
         return
     shipped = await held(db, order.id, shipped_only=True)
     to_ship = shippable(await lines(db, order.id))
-    done = bool(to_ship) and all(shipped[line.id] >= line.quantity for line in to_ship)
+    done = bool(to_ship) and all(shipped[line.id] >= selling(line) for line in to_ship)
     order.status = OrderStatus.SHIPPED if done else OrderStatus.OPEN
     await db.flush()
 
@@ -345,10 +370,8 @@ async def reopen(db: WriteSession, order: Order) -> None:
 
 
 async def delete(db: WriteSession, order: Order) -> None:
-    """Delete a hand order with its shipments, while none of them has shipped.
+    """Delete an order with its shipments, while none of them has shipped.
     A hold placed from it stays, naming no order."""
-    if order.store_id is not None:
-        raise OrderRefused(OrderError.ORDER_FROM_STORE)
     shipped = await db.exec(
         select(func.count())
         .select_from(Shipment)

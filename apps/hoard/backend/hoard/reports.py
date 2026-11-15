@@ -226,7 +226,7 @@ def _since(call: EndpointCall) -> datetime:
     return datetime.now(UTC) - timedelta(days=back)
 
 
-async def _unit(db: AsyncSession, item_id: int) -> str | None:
+async def unit_name(db: AsyncSession, item_id: int) -> str | None:
     """The unit a material's or a base's stock is counted in; a variation's is
     counted in each, which has none."""
     for kind in (Material, Base):
@@ -256,7 +256,9 @@ async def waste(call: EndpointCall) -> dict[str, Any]:
             Adjustment.dated_on >= since,
             or_(
                 col(AdjustmentReason.key).is_(None),
-                col(AdjustmentReason.key) != DefaultReason.CORRECTION.value,
+                col(AdjustmentReason.key).not_in(
+                    [DefaultReason.CORRECTION.value, DefaultReason.SYNCED_FROM_STORE.value]
+                ),
             ),
         )
         .group_by(col(AdjustmentReason.id), col(Adjustment.item_id))
@@ -267,7 +269,7 @@ async def waste(call: EndpointCall) -> dict[str, Any]:
         for reason, item_id, quantity in (await db.exec(query)).all():
             columns["reason"].append(reason)
             columns["item"].append(await item_name(db, item_id))
-            columns["unit"].append(await _unit(db, item_id))
+            columns["unit"].append(await unit_name(db, item_id))
             columns["quantity"].append(str(quantity))
     return columns
 
@@ -298,7 +300,7 @@ async def planned_against_actual(call: EndpointCall) -> dict[str, Any]:
             columns["code"].append(run.code)
             columns["item"].append(await item_name(db, run.item_id))
             columns["completed_on"].append(run.completed_on and run.completed_on.isoformat())
-            columns["unit"].append(await _unit(db, run.item_id))
+            columns["unit"].append(await unit_name(db, run.item_id))
             columns["planned"].append(None if planned is None else str(planned))
             columns["actual"].append(str(run.actual_quantity))
     return columns

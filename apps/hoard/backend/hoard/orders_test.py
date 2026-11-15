@@ -4,7 +4,7 @@ reopened."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -157,15 +157,17 @@ async def test_a_hand_order_sells_variations_and_splits_bundles(
         large.id,
     ]
 
-    # A store's order changes in the store.
+    # A store's order is the store's once the store is synced.
     store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
     db.add(store)
     await db.flush()
     copied = await sell(store_id=store.id, external_id="gid://1", customer_contact_id=None)
-    assert await _refused(orders.add_line(db, copied, chai.id, Decimal(1))) is (
-        OrderError.ORDER_FROM_STORE
+    assert (await orders.store_owned(db, order), await orders.store_owned(db, copied)) == (
+        None,
+        None,
     )
-    assert await _refused(orders.delete(db, copied)) is OrderError.ORDER_FROM_STORE
+    store.imported_at = datetime(2026, 11, 14, tzinfo=UTC)
+    assert await orders.store_owned(db, copied) is store
 
 
 async def test_an_order_ships_cancels_and_reopens(db: WriteSession, main: Location, lot, sell):

@@ -1,9 +1,11 @@
 """Orders through the API: a hand order for a customer, its lines and what
 they commit, cancelling and reopening it, and a store's order kept as the
-store has it."""
+store has it, with its customer's other orders, managed by the store once it
+is synced."""
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from hoard import orders
@@ -94,20 +96,30 @@ async def test_a_hand_order_is_sold_to_a_customer_and_cancelled(
     assert (await client.get(f"/api/v1/orders/{order['id']}")).status_code == 404
 
 
-async def test_a_stores_order_changes_its_lines_only_in_the_store(
+async def test_a_stores_order_is_read_with_its_customers_other_orders(
     client, sign_in, db: WriteSession, sell
 ):
     _, chai = await add_product(db, Product(name="Chai"))
     store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
     db.add(store)
     await db.flush()
-    order = await sell(
-        (chai.id, "1", "4"),
-        store_id=store.id,
-        external_id="gid://order/1",
-        external_number="#1001",
-        customer_contact_id=None,
-    )
+
+    async def store_order(number: int, customer: str | None):
+        return await sell(
+            (chai.id, "1", "4"),
+            store_id=store.id,
+            external_id=f"gid://order/{number}",
+            external_number=f"#{number}",
+            store_customer=customer,
+            customer_contact_id=None,
+        )
+
+    order = await store_order(1001, "99")
+    again = await store_order(1002, "99")
+    await store_order(1003, "12")
+    alone = await store_order(1004, None)
+    [line] = await orders.lines(db, order.id)
+    line.current_quantity, line.refunded_quantity = Decimal(0), Decimal(1)
     await db.commit()
     await sign_in(client)
 
@@ -117,10 +129,77 @@ async def test_a_stores_order_changes_its_lines_only_in_the_store(
         "#1001",
         None,
     )
-    for refused in (
-        await client.post(
-            f"/api/v1/orders/{order.id}/lines", json={"item_id": chai.id, "quantity": "1"}
-        ),
-        await client.delete(f"/api/v1/orders/{order.id}"),
-    ):
-        assert (refused.status_code, refused.json()["detail"]) == (409, "ORDER_FROM_STORE")
+    assert (read["store_customer"], read["customer_orders"]) == (
+        "99",
+        [{"id": again.id, "code": again.code}],
+    )
+    [sold] = read["lines"]
+    assert (sold["quantity"], sold["current_quantity"], sold["refunded_quantity"]) == (
+        "1.000000",
+        "0.000000",
+        "1.000000",
+    )
+    listed = (await client.get("/api/v1/orders", params={"store_customer": "99"})).json()
+    assert (listed["total"], [one["id"] for one in listed["items"]]) == (2, [again.id, order.id])
+    read = (await client.get(f"/api/v1/orders/{alone.id}")).json()
+    assert (read["store_customer"], read["customer_orders"]) == (None, [])
+
+
+async def test_a_synced_stores_order_changes_only_in_the_store(
+    client, sign_in, db: WriteSession, sell
+):
+    _, chai = await add_product(db, Product(name="Chai"))
+    store = Store(
+        organization_id=db.organization_id,
+        channel=Channel.SHOPIFY,
+        shop_domain="tea.myshopify.com",
+        connected=True,
+        imported_at=datetime(2026, 11, 14, tzinfo=UTC),
+    )
+    db.add(store)
+    await db.flush()
+    order = await sell(
+        (chai.id, "2", "4"),
+        store_id=store.id,
+        external_id="gid://shopify/Order/1001",
+        external_number="#1001",
+        customer_contact_id=None,
+    )
+    await db.commit()
+    [line] = await orders.lines(db, order.id)
+    await sign_in(client)
+    path = f"/api/v1/orders/{order.id}"
+
+    read = (await client.get(path)).json()
+    assert (read["managed_by_store"], read["store_url"]) == (
+        "shopify",
+        "https://tea.myshopify.com/admin/orders/1001",
+    )
+
+    def changes():
+        return (
+            client.patch(path, json={"paid": True}),
+            client.post(f"{path}/lines", json={"item_id": chai.id, "quantity": "1"}),
+            client.patch(f"{path}/lines/{line.id}", json={"quantity": "3"}),
+            client.post(f"{path}/cancel"),
+            client.post(f"{path}/reopen"),
+            client.delete(f"{path}/lines/{line.id}"),
+            client.delete(path),
+        )
+
+    for change in changes():
+        refused = await change
+        assert (refused.status_code, refused.json()) == (409, {"detail": "MANAGED_BY_STORE"})
+    assert await orders.committed(db, chai.id) == 2
+
+    # Pending, as a store is before its sync and after its sync is removed,
+    # its orders are Hoard's to change.
+    store.imported_at = None
+    db.add(store)
+    await db.commit()
+    read = (await client.get(path)).json()
+    assert (read["managed_by_store"], read["store_url"]) == (None, None)
+    for change in changes():
+        answer = await change
+        assert answer.status_code < 300, answer.text
+    assert (await client.get(path)).status_code == 404

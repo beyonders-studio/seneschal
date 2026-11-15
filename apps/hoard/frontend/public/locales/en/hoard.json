@@ -79,6 +79,9 @@
     "NOT_FOUND": "That record isn't in Hoard.",
     "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment.",
     "LOT_ON_HOLD": "That lot is on hold, so nothing can be drawn from it.",
-    "LOT_REQUIRED": "Name the lot of each line: its category records every lot."
+    "LOT_REQUIRED": "Name the lot of each line: its category records every lot.",
+    "JOB_NOT_FOUND": "That job isn't in Hoard any more: finished jobs are removed after a week.",
+    "JOB_RESULT_NOT_FOUND": "That file isn't ready yet, or it was removed after a week.",
+    "JOB_STARTER_ONLY": "Only the member who started this can download its file."
   }
 }

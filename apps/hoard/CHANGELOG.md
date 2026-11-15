@@ -6,9 +6,31 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-15
+
+### Added
+
+- **Sync with Shopify.** A newly connected store waits, untouched, until an admin chooses **Sync with Shopify** in Settings › Stores. A short guide explains what syncing does and lets you choose which Hoard location each store location's stock goes into. The sync then reads the store's products, its last 60 days of orders and its stock and costs into Hoard: matched products take the store's names and SKUs, the others are made in Hoard, and Hoard's counts are set to the store's. Nothing is sent to the store, and the sync carries on if you leave the page, with its progress shown in Settings. **Remove sync** stops it and keeps everything it brought in.
+- **Hoard keeps a copy of each store product,** up to date as it changes in the store, so a product's store details show without asking the store each time. Products made in the store after the sync are made in Hoard too; one deleted in the store keeps its Hoard product.
+- **A Production planning dashboard** in the marketplace, with five new widgets. **What to make next** turns recent sales (and, once Hoard holds a year of orders, the same weeks last year) into whole batches to make, after what's available, curing and already planned, with the hours they take, and lists the bases those runs need more of. **Materials to order** shows what the runs ahead need beyond what's in stock and on order, and the day to order it by from how long the supplier usually takes. **Production hours ahead** shows the hours of work in each of the next four weeks, **Cost to make** each product's unit cost over its last two runs beside the store's price and margin, for members who see costs, and **Expiring soon** the lots expiring within 30 days.
+- **Sales by week,** a widget to add to any dashboard: the units of each product sold each week over the last 12 weeks, without refunds or cancelled orders.
+- **Shopify's fields line up with Hoard's.** The sync guide lists each field your store defines for its products and variants, with how many products use it, and suggests what it fills in Hoard: your allergens or ingredient list, a product property with the same name, or a new property of the right kind (category fields that pick from a list become a choice of the same entries). Change any of them, pair allergen values Hoard doesn't recognise, or leave a field out; change them later under Settings › Stores › Show the fields. Properties stay in step both ways: an edit in Hoard is saved to Shopify first, and a change in Shopify comes back into Hoard. Allergens and ingredient lists come from your recipes, so the sync only compares them: where Hoard's differ, Settings › Stores lists the products, and nothing is sent until you choose **Send Hoard's values to Shopify**. After that, a recipe change that changes them is sent to Shopify. Hoard now asks the store's app for the `read_metaobjects` permission.
+- **Customer numbers on store orders.** Each Shopify order keeps the store's number for its customer, and nothing else about them. An order's page lists the customer's other orders, and the orders list filters by customer number. Hoard now asks the store's app for the `read_customers` permission.
+
 ### Changed
 
+- **A synced store's orders are managed in the store.** Hoard shows them as they stand, with **Open in Shopify** to change them there; you still record which lot each shipment draws and what comes back. Orders you make by hand, and a store's orders while it isn't synced, change in Hoard as before.
+- **Editing a store's product in Hoard writes to the store.** A new name, status, SKU or option on a product a synced store lists is saved to the store first, and archiving it archives it there. If the product changed in the store since you opened it, nothing is saved and Hoard shows the store's newer version. A product the store lists can't be deleted in Hoard: archive it, or delete it in the store first.
+- A store's locations start with no Hoard location: the sync, or an admin, chooses where each one's stock goes.
+- Exports run in the background: Hoard shows each one's progress, then offers its file to download once it's ready. Only the member who started an export can download it, for a week.
 - Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
+
+### Fixed
+
+- Changing a product's auto-manufacture setting no longer clears its cure time and its traceability flags.
+- **Refunds and edits in your store reach Hoard.** A line refunded or removed before it ships stops holding stock, and the store is sent the new count; one refunded after it shipped stays shipped, and stock comes back when you record the return. An order's page shows what was ordered, what it sells now, and what was refunded.
+- **Changes to orders older than 60 days are kept.** Shopify stops answering for an order after 60 days, so Hoard now keeps the change its webhook describes.
+- **An older copy of an order never replaces a newer one,** when the store's webhooks arrive out of order.
 
 ## [0.1.2] - 2026-11-14
 

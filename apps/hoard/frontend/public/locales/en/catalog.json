@@ -61,7 +61,11 @@
     "saveFailed": "Couldn't save the product.",
     "loadFailed": "Couldn't load the product.",
     "traceabilityList": "On the Food Traceability List",
-    "rinseOff": "Rinsed off after use"
+    "rinseOff": "Rinsed off after use",
+    "changedInStore": "This product changed in {{store}} since you opened it, so nothing was saved. Its newest version is shown now: save again to write over it.",
+    "listed": "It's listed in {{store}}. Archive it instead, which archives it in {{store}} too, or delete it in {{store}} first.",
+    "listedArchived": "It's listed in {{store}}. Delete it in {{store}} first, which removes its listing.",
+    "archive": "Archive"
   },
   "settings": {
     "rename": "Rename",
@@ -120,7 +124,8 @@
         "expired": "Expired",
         "lost": "Lost",
         "personal_use": "Personal use",
-        "returned_damaged": "Returned damaged"
+        "returned_damaged": "Returned damaged",
+        "synced_from_store": "Synced from store"
       }
     },
     "holdReasons": {
@@ -138,7 +143,9 @@
     "CATEGORY_UNKNOWN": "Pick one of your categories.",
     "LAST_VARIATION": "A product keeps at least one variation.",
     "IMAGE_TYPE": "Add a GIF, JPEG, PNG or WebP picture.",
-    "IMAGE_TOO_LARGE": "That picture is larger than 5 MB."
+    "IMAGE_TOO_LARGE": "That picture is larger than 5 MB.",
+    "LISTED_IN_STORE": "It's listed in a synced store. Archive the product instead, or delete it in the store first.",
+    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now."
   },
   "items": {
     "stock": "Stock by location",
@@ -154,6 +161,8 @@
     "removeTitle": "Delete {{name}}?",
     "removeBody": "Its stock, lots and adjustments go with it.",
     "removeFailed": "Couldn't delete it.",
+    "keptTitle": "{{name}} can't be deleted here",
+    "keptFailed": "Couldn't change it.",
     "cureDays": "Cure time, in days",
     "cureDaysValue_one": "{{count}} day",
     "cureDaysValue_other": "{{count}} days",

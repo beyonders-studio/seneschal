@@ -5,6 +5,12 @@
     "empty": "No store is connected yet.",
     "connected": "Connected",
     "notConnected": "Not connected",
+    "states": {
+      "pending": "Connected, not synced",
+      "syncing": "Syncing",
+      "synced": "Synced"
+    },
+    "syncedWhen": "First synced",
     "listings_one": "{{linked}} of {{count}} listing sells an item",
     "listings_other": "{{linked}} of {{count}} listings sell an item",
     "pushesQueued_one": "{{count}} push waiting",
@@ -21,7 +27,9 @@
     "mapped": "Location saved.",
     "mapFailed": "The location couldn't be saved.",
     "showLog": "Show the push log",
-    "hideLog": "Hide the push log"
+    "hideLog": "Hide the push log",
+    "showFields": "Show the fields",
+    "hideFields": "Hide the fields"
   },
   "channels": {
     "shopify": "Shopify",
@@ -43,7 +51,7 @@
   "product": {
     "title": "In your stores",
     "empty": "This product isn't listed in a connected store.",
-    "live": "Edited live in the store: Hoard keeps no copy.",
+    "live": "Hoard keeps the store's copy up to date. Saving writes to the store.",
     "addTo": "Add to {{store}}",
     "added": "Added to the store as a draft.",
     "addFailed": "The product couldn't be added to the store.",
@@ -61,7 +69,8 @@
     "removeImage": "Remove image",
     "save": "Save to the store",
     "saved": "Saved to the store.",
-    "saveFailed": "The store didn't take the changes."
+    "saveFailed": "The store didn't take the changes.",
+    "changed": "This product changed in {{store}} since you opened it, so nothing was saved. Its newest version is shown now: save again to write over it."
   },
   "listings": {
     "emptyTitle": "No listings yet",
@@ -101,6 +110,94 @@
     "LISTING_UNLINKED": "The listing no longer sells an item.",
     "LOCATION_UNMAPPED": "The store's location no longer sells stock from Hoard.",
     "STORE_HOLDS_OTHER": "The store held a different amount, so Hoard is waiting for its orders.",
-    "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection."
+    "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection.",
+    "STORE_SYNCED": "The store is synced already.",
+    "STORE_NOT_SYNCED": "The store isn't synced yet.",
+    "STORE_SYNCING": "The store is syncing. Wait until it finishes.",
+    "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved.",
+    "STORE_FIELD_UNKNOWN": "The store no longer has that field.",
+    "STORE_FIELD_TARGET_INVALID": "That field can't fill that in Hoard.",
+    "STORE_FIELD_VALUE_INVALID": "The store's field can't hold that value."
+  },
+  "sync": {
+    "open": "Sync with {{channel}}",
+    "title": "Sync with {{channel}}",
+    "next": "Next",
+    "now": "Sync now",
+    "started": "The sync has started. You can leave this page: it carries on.",
+    "startFailed": "The sync couldn't start.",
+    "about": {
+      "description": "What syncing does",
+      "reads": "Hoard reads the store's products and variants, with their titles, descriptions, images, prices and visibility; its locations; how much of each item it holds and what each cost; and its orders from the last 60 days, each with its customer number. From then on Hoard keeps every order, so its history grows past what the store keeps.",
+      "replaces": "Where a Hoard product already matches one in the store (by SKU, then title), the store's version replaces Hoard's, and Hoard's stock counts are set to the store's.",
+      "sends": "Nothing is sent to the store. A big store can take a while: you can leave this page, and the sync carries on."
+    },
+    "locations": {
+      "description": "Where each store location's stock goes",
+      "goesInto": "Its stock goes into",
+      "new": "A new location: {{name}}",
+      "none": "The store has no locations.",
+      "loadFailed": "The store's locations couldn't be read."
+    },
+    "after": {
+      "description": "After the sync",
+      "keeps": "The store keeps syncing. Its orders and product changes come into Hoard as they happen, and when Hoard's stock changes (a production run, a purchase, a stocktake), Hoard sends the new count to the store.",
+      "remove": "To stop, come back here and choose Remove sync; everything already in Hoard stays."
+    },
+    "remove": "Remove sync",
+    "removeTitle": "Remove the sync with {{store}}?",
+    "removeBody": "Hoard stops hearing from the store and stops sending it stock counts. Everything the sync brought into Hoard stays: products, locations, stock, orders and listings. Syncing again later replaces what conflicts, as the first sync did.",
+    "removed": "The sync was removed.",
+    "removeFailed": "The sync couldn't be removed.",
+    "fields": {
+      "description": "What each of the store's fields fills in Hoard"
+    }
+  },
+  "fields": {
+    "explain": "The store keeps extra data about its products in fields of its own. Pick what each one fills in Hoard. A property is kept in step with the store both ways. Allergens and ingredient lists are worked out from Hoard's recipes: the sync only compares them, and nothing is sent to the store.",
+    "none": "The store defines no fields for its products.",
+    "loadFailed": "The store's fields couldn't be read.",
+    "storeField": "Store field",
+    "fills": "Fills in Hoard",
+    "owners": {
+      "product": "Product",
+      "variant": "Variant"
+    },
+    "count_one": "{{count}} has a value",
+    "count_other": "{{count}} have a value",
+    "allergens": "Allergens, from recipes",
+    "ingredients": "Ingredient list, from recipes",
+    "property": "Property: {{name}}",
+    "newProperty": "A new property: {{name}} ({{type}})",
+    "out": "Leave it out",
+    "pairHint": "These values match none of Hoard's allergens. Pick the one each means.",
+    "pair": "Allergen for {{value}}",
+    "notAllergen": "Not an allergen",
+    "types": {
+      "text": "Text",
+      "number": "Number",
+      "checkbox": "Checkbox",
+      "date": "Date",
+      "datetime": "Date and time",
+      "url": "Link",
+      "select": "Select",
+      "multi_select": "Multi-select",
+      "user_reference": "Person",
+      "currency": "Money",
+      "scale": "Scale",
+      "counter": "Counter",
+      "file": "File",
+      "signature": "Signature"
+    },
+    "saved": "Field saved.",
+    "saveFailed": "The field couldn't be saved.",
+    "differing": "Differing values",
+    "differingHint": "Hoard works these out from recipes, and they differ from what {{channel}} shows. Nothing is sent until you send it.",
+    "product": "Product",
+    "inHoard": "In Hoard",
+    "inStore": "In {{channel}}",
+    "nothing": "Nothing",
+    "send": "Send Hoard's values to {{channel}}",
+    "sendFailed": "Hoard's values couldn't be sent."
   }
 }

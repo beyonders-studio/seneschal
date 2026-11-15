@@ -13,7 +13,9 @@ const STORE: StoreRead = {
   account_label: "Tea House",
   connected: true,
   last_check_error: null,
-  imported_at: null,
+  state: "synced",
+  imported_at: "2026-11-14T09:00:00Z",
+  sync_job_id: null,
   locations: [],
   listings: 1,
   linked: 1,
@@ -47,6 +49,10 @@ const HELD: StoreProductRead = {
   variants: [{ id: "v1", title: "Default Title", sku: "CHAI", price: "12.50", options: {} }],
   images: [{ id: "img-1", url: "https://cdn.test/chai.png", alt: "A tin" }],
   published_on: ["online-store"],
+  product_type: null,
+  vendor: null,
+  tags: [],
+  updated_at: "2026-11-14T09:00:00Z",
   listings: [LISTING],
 };
 
@@ -62,7 +68,7 @@ const opened = (listings: ListingRead[]) => ({
 });
 
 describe("StoreSection", () => {
-  it("edits the store's own product live, with its price for a member who sees costs", async () => {
+  it("edits the store's product from its copy, with its price for a member who sees costs", async () => {
     const asked = await openSignedIn(
       "/stock/products/7",
       signedIn({ permissions: ["use", SEE_COSTS] }),
@@ -80,6 +86,7 @@ describe("StoreSection", () => {
     await waitFor(() => {
       const sent = asked.find((request) => request.method === "put");
       expect(JSON.parse(String(sent?.data))).toEqual({
+        updated_at: "2026-11-14T09:00:00Z",
         title: "Masala chai",
         description: "<p>Spiced</p>",
         status: "active",
@@ -90,7 +97,44 @@ describe("StoreSection", () => {
     });
   });
 
-  it("adds a product listed in no store to a connected one", async () => {
+  it("shows the store's newer version when the product changed there", async () => {
+    const read = { status: 200, data: HELD };
+    await openSignedIn("/stock/products/7", signedIn(), {
+      ...opened([LISTING]),
+      "GET /api/v1/stores/3/products/p1": read,
+      "PUT /api/v1/stores/3/products/p1": {
+        status: 409,
+        data: { detail: "STORE_PRODUCT_CHANGED" },
+      },
+    });
+    const store = await screen.findByRole("region", { name: "Tea House" });
+    fireEvent.change(await within(store).findByLabelText("Title in the store"), {
+      target: { value: "Masala chai" },
+    });
+    // Meanwhile, the product changed in the store.
+    read.data = { ...HELD, title: "Chai tea", updated_at: "2026-11-15T09:00:00Z" };
+
+    fireEvent.click(within(store).getByRole("button", { name: "Save to the store" }));
+
+    await within(store).findByText(/This product changed in Shopify since you opened it/);
+    await waitFor(() =>
+      expect((within(store).getByLabelText("Title in the store") as HTMLInputElement).value).toBe(
+        "Chai tea"
+      )
+    );
+  });
+
+  it("adds a product to no store that isn't synced", async () => {
+    await openSignedIn("/stock/products/7", signedIn(), {
+      ...opened([]),
+      "GET /api/v1/stores": { status: 200, data: [{ ...STORE, state: "pending" }] },
+    });
+
+    await screen.findByText("This product isn't listed in a connected store.");
+    expect(screen.queryByRole("button", { name: "Add to Tea House" })).toBeNull();
+  });
+
+  it("adds a product listed in no store to a synced one", async () => {
     const asked = await openSignedIn("/stock/products/7", signedIn(), opened([]));
 
     fireEvent.click(await screen.findByRole("button", { name: "Add to Tea House" }));

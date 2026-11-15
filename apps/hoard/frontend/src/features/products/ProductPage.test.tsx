@@ -1,7 +1,7 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ProductVariationRead } from "@/api/generated/hoard.schemas";
+import type { ProductDetail, ProductVariationRead } from "@/api/generated/hoard.schemas";
 import { productDetail, SETTINGS } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
@@ -35,6 +35,14 @@ const CHAI = productDetail({
     }),
   ],
 });
+
+/** Chai, listed in a synced Shopify store. */
+const LISTED: ProductDetail = {
+  ...CHAI,
+  store_products: [
+    { store_id: 3, product_id: "p1", updated_at: "2026-11-14T09:00:00Z", channel: "shopify" },
+  ],
+};
 
 const opened = {
   ...SETTINGS,
@@ -76,5 +84,50 @@ describe("ProductPage", () => {
     await screen.findByText("Default price");
     await screen.findByText("$12.00");
     screen.getByText("$15.00");
+  });
+
+  it("says when the product changed in its store since the page read it", async () => {
+    const asked = await openSignedIn("/stock/products/7", signedIn(), {
+      ...opened,
+      "GET /api/v1/products/7": { status: 200, data: LISTED },
+      "PUT /api/v1/products/7": { status: 409, data: { detail: "STORE_PRODUCT_CHANGED" } },
+    });
+
+    await screen.findByRole("heading", { name: "Chai" });
+    const reads = () => asked.filter((request) => request.url === "/api/v1/products/7").length;
+    const before = reads();
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    const dialog = await screen.findByRole("dialog", { name: "Edit product" });
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Masala chai" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await within(dialog).findByText(/This product changed in Shopify since you opened it/);
+    const sent = asked.find((request) => request.method === "put");
+    expect(JSON.parse(String(sent?.data))).toMatchObject({
+      name: "Masala chai",
+      store_versions: [{ store_id: 3, product_id: "p1", updated_at: "2026-11-14T09:00:00Z" }],
+    });
+    // The product is read again, with the store's version.
+    await waitFor(() => expect(reads()).toBeGreaterThan(before));
+  });
+
+  it("offers to archive a product its store lists instead of deleting it", async () => {
+    const asked = await openSignedIn("/stock/products/7", signedIn(), {
+      ...opened,
+      "GET /api/v1/products/7": { status: 200, data: LISTED },
+      "PUT /api/v1/products/7": { status: 200, data: { ...LISTED, status: "archived" } },
+    });
+
+    await screen.findByRole("heading", { name: "Chai" });
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "Chai can't be deleted here" });
+    within(dialog).getByText(/It's listed in Shopify. Archive it instead/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Archive" }));
+
+    await waitFor(() => {
+      const sent = asked.find((request) => request.method === "put");
+      expect(JSON.parse(String(sent?.data))).toMatchObject({ name: "Chai", status: "archived" });
+    });
+    expect(asked.some((request) => request.method === "delete")).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
-"""The core's tests run against a database holding the registry and
-organization tables of their own, ``widgets`` and a ledger of their moves,
-made by the same helpers an app's migrations call."""
+"""The core's tests run against a database holding the registry, the jobs
+table, and organization tables of their own, ``widgets`` and a ledger of their
+moves, made by the same helpers an app's migrations call."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from alembic.operations import Operations
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 
-from seneschal_core import ledger, migrations
+from seneschal_core import jobs, ledger, migrations
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
 from seneschal_core.db import Database
@@ -38,6 +38,7 @@ def _migrate(database: AppDatabase) -> None:
         )
         with Operations.context(context):
             migrations.create_registry()
+            jobs.create_table()
             op.create_table(
                 "widgets",
                 sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
@@ -142,6 +143,7 @@ def app(plugin: Plugin) -> FastAPI:
     app = FastAPI()
     install(app, plugin)
     app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(
         platform_router(
             hooks={**ORGANIZATION_HOOKS, "after_connect": _answer, "webhook": _received},

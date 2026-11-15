@@ -12,7 +12,8 @@ import { ConfirmDialog } from "@/ui/confirm-dialog";
 
 /**
  * The top of an item's page: the way back to its list, its name and marks,
- * and, while Hoard may change, editing and deleting it. Deleting asks first.
+ * and, while Hoard may change, editing and deleting it. Deleting asks first;
+ * an item that is `kept` says why instead, and offers what can be done.
  */
 export function ItemHeader({
   back,
@@ -22,6 +23,7 @@ export function ItemHeader({
   remove,
   onRemoved,
   more,
+  kept,
 }: {
   back: { to: "/stock/materials" | "/stock/bases" | "/stock/products"; label: string };
   title: string;
@@ -31,6 +33,8 @@ export function ItemHeader({
   onRemoved: () => void;
   /** What else can be done with it, before editing it. */
   more?: ReactNode;
+  /** Why it is not deleted, and what is offered instead, if anything. */
+  kept?: { reason: string; offer?: { label: string; run: () => Promise<unknown> } };
 }) {
   const { t } = useTranslation("catalog");
   const { read_only } = useSession();
@@ -39,6 +43,11 @@ export function ItemHeader({
     mutationFn: remove,
     onSuccess: onRemoved,
     onError: (error) => toast.error(errorMessage(error, t, "items.removeFailed")),
+  });
+  const offer = kept?.offer;
+  const instead = useMutation({
+    mutationFn: async () => offer?.run(),
+    onError: (error) => toast.error(errorMessage(error, t, "items.keptFailed")),
   });
   return (
     <div className="flex flex-col gap-2">
@@ -68,16 +77,29 @@ export function ItemHeader({
           </div>
         )}
       </div>
-      <ConfirmDialog
-        open={removing}
-        onOpenChange={setRemoving}
-        title={t("items.removeTitle", { name: title })}
-        description={t("items.removeBody")}
-        confirmLabel={t("hoard:common.delete")}
-        destructive
-        isLoading={removal.isPending}
-        onConfirm={() => removal.mutate()}
-      />
+      {kept ? (
+        <ConfirmDialog
+          open={removing}
+          onOpenChange={setRemoving}
+          title={t("items.keptTitle", { name: title })}
+          description={kept.reason}
+          confirmLabel={offer?.label}
+          cancelLabel={offer ? undefined : t("hoard:common.close")}
+          isLoading={instead.isPending}
+          onConfirm={offer && (() => instead.mutate())}
+        />
+      ) : (
+        <ConfirmDialog
+          open={removing}
+          onOpenChange={setRemoving}
+          title={t("items.removeTitle", { name: title })}
+          description={t("items.removeBody")}
+          confirmLabel={t("hoard:common.delete")}
+          destructive
+          isLoading={removal.isPending}
+          onConfirm={() => removal.mutate()}
+        />
+      )}
     </div>
   );
 }

@@ -44,9 +44,13 @@ mutation HoardWebhookDelete($id: ID!) {
 
 VARIANT_FIELDS = "id title sku price selectedOptions { name value } inventoryItem { id }"
 
+#: What a product is, besides its variants, images and sales channels.
+PRODUCT_OWN_FIELDS = (
+    "id title descriptionHtml status updatedAt productType vendor tags options { name }"
+)
+
 PRODUCT_FIELDS = f"""
-id title descriptionHtml status updatedAt
-options {{ name }}
+{PRODUCT_OWN_FIELDS}
 variants(first: 50) {{ nodes {{ {VARIANT_FIELDS} }} {PAGE_INFO} }}
 media(first: 10) {{ nodes {{ id alt ... on MediaImage {{ image {{ url }} }} }} }}
 resourcePublicationsV2(first: 10, onlyPublished: true) {{ nodes {{ publication {{ id }} }} }}
@@ -146,6 +150,64 @@ mutation HoardUnpublish($id: ID!, $input: [PublicationInput!]!) {
 }
 """
 
+# Fields: metafield definitions, the entries a field picks from, and values.
+
+FIELD_DEFINITIONS = f"""
+query HoardFieldDefinitions($ownerType: MetafieldOwnerType!, $after: String) {{
+  metafieldDefinitions(ownerType: $ownerType, first: 100, after: $after) {{
+    nodes {{ name namespace key type {{ name }} validations {{ name value }} metafieldsCount }}
+    {PAGE_INFO}
+  }}
+}}
+"""
+
+FIELD_ENTRIES = f"""
+query HoardFieldEntries($id: ID!, $after: String) {{
+  metaobjectDefinition(id: $id) {{
+    metaobjects(first: 250, after: $after) {{ nodes {{ id displayName }} {PAGE_INFO} }}
+  }}
+}}
+"""
+
+FIELD_ENTRIES_BY_TYPE = f"""
+query HoardFieldEntriesByType($type: String!, $after: String) {{
+  metaobjects(type: $type, first: 250, after: $after) {{ nodes {{ id displayName }} {PAGE_INFO} }}
+}}
+"""
+
+FIELD_VALUE_FIELDS = "namespace key value"
+
+#: One product's values of the fields named, with its first variants'.
+FIELD_VALUES = f"""
+query HoardFieldValues($id: ID!, $keys: [String!], $count: Int!, $variants: Int!) {{
+  product(id: $id) {{
+    id
+    metafields(first: $count, keys: $keys) {{ nodes {{ {FIELD_VALUE_FIELDS} }} }}
+    variants(first: $variants) {{
+      nodes {{ id metafields(first: $count, keys: $keys) {{ nodes {{ {FIELD_VALUE_FIELDS} }} }} }}
+    }}
+  }}
+}}
+"""
+
+FIELDS_SET = """
+mutation HoardFieldsSet($metafields: [MetafieldsSetInput!]!) {
+  metafieldsSet(metafields: $metafields) {
+    metafields { namespace key type value owner { ... on Product { id } ... on ProductVariant { id } } }
+    userErrors { field message code }
+  }
+}
+"""
+
+FIELDS_DELETE = """
+mutation HoardFieldsDelete($metafields: [MetafieldIdentifierInput!]!) {
+  metafieldsDelete(metafields: $metafields) {
+    deletedMetafields { ownerId namespace key }
+    userErrors { field message }
+  }
+}
+"""
+
 # Locations and stock.
 
 LOCATIONS = f"""
@@ -172,15 +234,18 @@ query HoardAvailable($item: ID!, $location: ID!) {
 
 # Orders.
 
+# Of the customer, only their id.
 ORDER_FIELDS = """
 id name processedAt updatedAt cancelledAt fullyPaid displayFulfillmentStatus currencyCode
 totalShippingPriceSet { shopMoney { amount } }
 totalTaxSet { shopMoney { amount } }
 totalDiscountsSet { shopMoney { amount } }
+totalRefundedSet { shopMoney { amount } }
+customer { id }
 """
 
 LINE_FIELDS = """
-id name sku currentQuantity
+id name sku quantity currentQuantity
 originalUnitPriceSet { shopMoney { amount } }
 product { id }
 variant { id }
@@ -210,6 +275,27 @@ LINES_PAGE = f"""
 query HoardLinesPage($id: ID!, $after: String) {{
   order(id: $id) {{
     lineItems(first: 100, after: $after) {{ nodes {{ {LINE_FIELDS} }} {PAGE_INFO} }}
+  }}
+}}
+"""
+
+REFUND_LINE_FIELDS = "quantity lineItem { id }"
+
+REFUNDS = f"""
+query HoardRefunds($id: ID!) {{
+  order(id: $id) {{
+    refunds(first: 50) {{
+      id
+      refundLineItems(first: 50) {{ nodes {{ {REFUND_LINE_FIELDS} }} {PAGE_INFO} }}
+    }}
+  }}
+}}
+"""
+
+REFUND_LINES_PAGE = f"""
+query HoardRefundLinesPage($id: ID!, $after: String) {{
+  refund(id: $id) {{
+    refundLineItems(first: 100, after: $after) {{ nodes {{ {REFUND_LINE_FIELDS} }} {PAGE_INFO} }}
   }}
 }}
 """
@@ -307,4 +393,67 @@ def bulk_orders(search: str) -> str:
     }}
   }}
 }}
+"""
+
+
+def bulk_products() -> str:
+    """A bulk query for every product, with its variants, images and the sales
+    channels showing it, each nested row naming its type."""
+    return f"""
+{{
+  products {{
+    edges {{
+      node {{
+        {PRODUCT_OWN_FIELDS}
+        variants {{ edges {{ node {{ __typename {VARIANT_FIELDS} }} }} }}
+        media {{ edges {{ node {{ __typename id alt ... on MediaImage {{ image {{ url }} }} }} }} }}
+        resourcePublicationsV2(onlyPublished: true) {{
+          edges {{ node {{ __typename publication {{ id }} }} }}
+        }}
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def bulk_field_values(variants: bool) -> str:
+    """A bulk query for every product's fields' values, and, with
+    ``variants``, its variants'."""
+    metafields = f"metafields {{ edges {{ node {{ __typename {FIELD_VALUE_FIELDS} }} }} }}"
+    of_variants = (
+        f"variants {{ edges {{ node {{ __typename id {metafields} }} }} }}" if variants else ""
+    )
+    return f"""
+{{
+  products {{
+    edges {{
+      node {{
+        id
+        {metafields}
+        {of_variants}
+      }}
+    }}
+  }}
+}}
+"""
+
+
+def bulk_stock() -> str:
+    """A bulk query for every inventory item's cost, and what is available of
+    it at each location."""
+    return """
+{
+  inventoryItems {
+    edges {
+      node {
+        id
+        unitCost { amount }
+        inventoryLevels {
+          edges { node { location { id } quantities(names: ["available"]) { name quantity } } }
+        }
+      }
+    }
+  }
+}
 """

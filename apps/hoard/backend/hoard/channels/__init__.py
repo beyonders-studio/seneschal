@@ -11,16 +11,26 @@ A connector:
 
 * checks the connection (:meth:`Connector.check`) and keeps the store's
   webhook subscriptions, aimed at Initiative's address for Hoard;
-* reads and edits the store's products live, and creates one, keeping no
-  copy: the store's titles, descriptions, images, options, prices and
-  visibility stay the store's;
+* reads and edits the store's products, and creates one: the store's titles,
+  descriptions, images, options, prices and visibility stay the store's,
+  and Hoard keeps a copy of what it last read (``hoard.listings``);
+* reads every product in bulk (:meth:`Connector.import_products`), for a
+  store's sync;
 * lists the store's locations, and sets what is available at each;
+* reads, in bulk, what each inventory item cost and what is available of it
+  at each location (:meth:`Connector.stock_levels`), for a store's sync;
 * reads the store's orders, with their fulfillments, and pushes a shipment
   back as a fulfillment;
 * reads a webhook delivery Initiative checked and forwarded as a
-  :class:`Nudge`: which record changed, which Hoard refetches; it reads none
-  of the connection's values, so a connector built with none parses it;
-* imports the orders of the window the store keeps (``history_days``).
+  :class:`Nudge`: which record changed, which Hoard refetches, with the body
+  of an order's delivery, and reads that body as the order it describes, for
+  an order the store no longer returns; it reads none of the connection's
+  values, so a connector built with none parses both;
+* imports the orders of the window the store keeps (``history_days``);
+* lists the fields the store defines for its products and variants
+  (:meth:`Connector.fields`), with the entries a field picks from, reads
+  their values (:meth:`Connector.field_values`), in bulk for every product,
+  and writes them (:meth:`Connector.set_field_values`).
 
 A store refusing what Hoard asks raises :class:`ConnectRefused`, with a code
 pages translate.
@@ -35,7 +45,7 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Protocol
 
-from hoard.records import Channel
+from hoard.records import Channel, FieldOwner
 from seneschal_core.api import Plugin
 
 
@@ -156,6 +166,20 @@ class StoreProduct:
     #: The store's sales channels showing it, by the store's ids.
     published_on: Sequence[str] = ()
     updated_at: datetime | None = None
+    product_type: str | None = None
+    vendor: str | None = None
+    tags: Sequence[str] = ()
+
+
+@dataclass(frozen=True)
+class StoreStock:
+    """What the store holds of one inventory item: what one cost, where the
+    store keeps that, and what is available at each of its locations, by the
+    store's location id."""
+
+    inventory_item_id: str
+    unit_cost: Decimal | None
+    available: Mapping[str, int]
 
 
 @dataclass(frozen=True)
@@ -164,6 +188,7 @@ class StoreLine:
 
     id: str
     title: str
+    #: How many were ordered, with any since refunded or removed.
     quantity: Decimal
     #: What one sold for.
     price: Decimal
@@ -174,6 +199,11 @@ class StoreLine:
     bundle_id: str | None = None
     #: The selling plan of a subscription's line.
     selling_plan: str | None = None
+    #: How many it sells now, after the store's edits and refunds; None when
+    #: that is all of ``quantity``.
+    current_quantity: Decimal | None = None
+    #: How many the store refunded.
+    refunded_quantity: Decimal = Decimal(0)
 
 
 @dataclass(frozen=True)
@@ -197,7 +227,8 @@ class StoreFulfillment:
 
 @dataclass(frozen=True)
 class StoreOrder:
-    """A store's order. Its customer stays in the store: Hoard keeps its number."""
+    """A store's order. Its customer stays in the store: Hoard keeps the
+    store's number for them and nothing else."""
 
     id: str
     number: str
@@ -211,8 +242,56 @@ class StoreOrder:
     shipping: Decimal = Decimal(0)
     tax: Decimal = Decimal(0)
     discount: Decimal = Decimal(0)
+    #: What the store has refunded of it.
+    refunded: Decimal = Decimal(0)
+    #: The store's number for its customer; None for an order with none.
+    customer: str | None = None
     fulfillments: Sequence[StoreFulfillment] = ()
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class StoreField:
+    """A field a store defines for its products or its variants."""
+
+    owner: FieldOwner
+    namespace: str
+    key: str
+    #: What the store calls it.
+    name: str
+    #: The store's name for its type, such as ``single_line_text_field`` or
+    #: ``list.metaobject_reference``.
+    type: str
+    #: For a field that picks from a fixed list: each entry's name, by the
+    #: value the store keeps for it.
+    choices: Mapping[str, str] = field(default_factory=dict)
+    #: How many products or variants hold a value of it.
+    count: int = 0
+
+    @property
+    def handle(self) -> str:
+        """``namespace.key``, as the store names it."""
+        return f"{self.namespace}.{self.key}"
+
+
+@dataclass(frozen=True)
+class FieldValue:
+    """A field's value on a store's product or variant, as the store keeps it:
+    text, a list as JSON. None for no value."""
+
+    #: The store's id for the product or variant.
+    owner_id: str
+    #: The field's ``namespace.key``.
+    handle: str
+    #: The field's type, as :attr:`StoreField.type`.
+    type: str
+    value: str | None
+
+
+#: Fields' values on what was read: each product's and variant's, by the
+#: store's id, each field's value by its ``namespace.key``. One read and
+#: holding none of the fields asked for maps to an empty dict.
+FieldValues = dict[str, dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -251,6 +330,9 @@ class Nudge:
     topic: NudgeTopic
     #: The store's id for the record.
     external_id: str
+    #: The delivery's body, kept for one that describes an order whole
+    #: (:meth:`Connector.webhook_order` reads it); None otherwise.
+    body: Mapping[str, Any] | None = None
 
 
 class Connector(Protocol):
@@ -293,6 +375,11 @@ class Connector(Protocol):
         """The store's locations: each one's name, by the store's id."""
         ...
 
+    async def stock_levels(self) -> list[StoreStock]:
+        """Every inventory item's cost and what is available of it at each
+        location, read in bulk."""
+        ...
+
     async def push_available(self, sets: Sequence[StockSet]) -> list[PushResult]:
         """Set what is available, at most ``capabilities.batch_size`` at a time."""
         ...
@@ -315,8 +402,34 @@ class Connector(Protocol):
         Hoard does not act on."""
         ...
 
+    def webhook_order(self, body: Mapping[str, Any]) -> StoreOrder | None:
+        """The order a body kept on a :class:`Nudge` describes, or None for
+        one that describes none."""
+        ...
+
     def import_history(self) -> AsyncIterator[StoreOrder]:
         """The orders of the window the store keeps, read in bulk."""
+        ...
+
+    def import_products(self) -> AsyncIterator[StoreProduct]:
+        """Every product, read in bulk."""
+        ...
+
+    async def fields(self) -> list[StoreField]:
+        """The fields the store defines for its products and its variants."""
+        ...
+
+    async def field_values(
+        self, handles: Mapping[FieldOwner, Sequence[str]], product_ids: Sequence[str] | None
+    ) -> FieldValues:
+        """The values of the fields ``handles`` names, on the products of
+        ``product_ids`` and their variants, or, for None, on every product,
+        read in bulk."""
+        ...
+
+    async def set_field_values(self, values: Sequence[FieldValue]) -> list[FieldValue]:
+        """Write each of ``values``, a None one taking the value off, and
+        answer them as the store keeps them now."""
         ...
 
 
@@ -330,6 +443,14 @@ def _shopify(values: Mapping[str, Any]) -> Connector:
 CONNECTORS: dict[Channel, Callable[[Mapping[str, Any]], Connector]] = {
     Channel.SHOPIFY: _shopify,
 }
+
+
+def order_page(channel: Channel, shop_domain: str, order_id: str) -> str | None:
+    """Where the store's admin shows one of its orders, by the store's id for
+    it; None for a channel Hoard knows no such address of."""
+    if channel is Channel.SHOPIFY:
+        return f"https://{shop_domain}/admin/orders/{order_id.rsplit('/', 1)[-1]}"
+    return None
 
 
 def connector_for(channel: Channel, values: Mapping[str, Any]) -> Connector:
