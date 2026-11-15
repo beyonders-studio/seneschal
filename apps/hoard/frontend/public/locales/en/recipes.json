@@ -26,14 +26,20 @@
     "makes": "One batch makes {{quantity}}",
     "minutes_one": "{{count}} minute",
     "minutes_other": "{{count}} minutes",
-    "scaleTo": "Scale to make",
+    "scaleTo": "Scale to",
     "item": "Item",
     "share": "By weight",
     "noLines": "Nothing in it yet.",
     "removeTitle": "Delete the recipe for {{name}}?",
     "removeBundleTitle": "Stop selling {{name}} as a bundle?",
     "removeBody": "Its lines go with it. Production runs made from it keep what they used.",
-    "removeFailed": "Couldn't delete the recipe."
+    "removeFailed": "Couldn't delete the recipe.",
+    "total": "ingredients total {{quantity}}",
+    "scaleBy": "Scale by",
+    "scaleByOutput": "What it makes",
+    "ratio": "Ratio",
+    "amount": "Amount",
+    "notWeighed": "Not measured by weight, so it has no share."
   },
   "dialog": {
     "addTitle": "Recipe for {{name}}",
@@ -48,13 +54,24 @@
     "quantity": "Quantity",
     "addLine": "Add line",
     "removeLine": "Remove item {{number}}",
-    "saveFailed": "Couldn't save the recipe."
+    "saveFailed": "Couldn't save the recipe.",
+    "byRatio": "Written by ratio",
+    "byRatioHint": "Give each ingredient's parts and the batch's ingredients total, in place of each amount.",
+    "total": "Ingredients total",
+    "totalHint": "What the parts add up to: lines measured differently, such as a flavoring in mL, scale along.",
+    "totalUnit": "Unit of the ingredients total",
+    "makes": "One batch makes",
+    "makesHint": "In the unit it's counted in; lower it for what's lost in making.",
+    "parts": "Parts",
+    "unit": "Unit",
+    "previewFailed": "Hoard couldn't work this recipe out yet."
   },
   "errors": {
     "RECIPE_LINE_KIND": "A recipe holds materials that keep stock and bases; a bundle holds products.",
     "RECIPE_LINE_REPEATED": "Each item goes in once.",
     "RECIPE_CYCLE": "That would make it from itself.",
     "RECIPE_BUNDLE": "A bundle's products take no recipe of their own.",
-    "RECIPE_EXISTS": "It already has a recipe."
+    "RECIPE_EXISTS": "It already has a recipe.",
+    "RECIPE_RATIO_TOTAL": "The ingredients total adds up the lines measured like it, and none is: give it a unit one of them is in."
   }
 }

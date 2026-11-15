@@ -18,3 +18,20 @@ export const isLow = (onHand: string, limit: string | null): boolean =>
 
 /** What was typed in a field that may be left blank, for the API: null when it was. */
 export const orNull = (text: string): string | null => text.trim() || null;
+
+/** Formats a ratio, or anything read beside one, to two places at most. */
+export function useRatio(): (amount: string) => string {
+  const { i18n } = useTranslation();
+  const format = numberFormat(i18n.resolvedLanguage, { maximumFractionDigits: 2 });
+  return (amount) => format.format(amount as Intl.StringNumericLiteral);
+}
+
+/** Formats a share the API sends as a percentage, such as "60.00", as one. */
+export function useShare(): (percent: string) => string {
+  const { i18n } = useTranslation();
+  const format = numberFormat(i18n.resolvedLanguage, {
+    style: "percent",
+    maximumFractionDigits: 2,
+  });
+  return (percent) => format.format(Number(percent) / 100);
+}
