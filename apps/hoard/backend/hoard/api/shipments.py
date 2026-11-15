@@ -6,6 +6,11 @@ has left, and the lot each draws, recorded or left for Hoard to assume when it
 ships. Only shipping it moves stock. What comes back of a shipped line is
 restocked, or written off when damaged. Every route answers the shipment's
 order as :func:`hoard.api.orders.describe_order` reads it.
+
+A synced store's order ships as the store's fulfillments say
+(:func:`hoard.orders.store_owned`): its shipments are neither made, changed,
+shipped, unshipped nor deleted here, and only the lot each line draws and
+what comes back of it are recorded.
 """
 
 from __future__ import annotations
@@ -18,7 +23,7 @@ from pydantic import BaseModel, Field
 from hoard import shipments
 from hoard.api.adjustments import NOT_FOUND, Responses, changes, known, location_or_main
 from hoard.api.deps import HoardError
-from hoard.api.orders import OrderRead, Positive, Text, describe_order
+from hoard.api.orders import OrderRead, Positive, Text, describe_order, refuse_store_owned
 from hoard.records import Order, ReturnLine, Shipment, ShipmentLine
 from hoard.shipments import Pick, ShipmentError, ShipmentRefused
 from seneschal_core.api import WriteSessionDep, refuse
@@ -29,7 +34,8 @@ router = APIRouter(prefix="/shipments", tags=["shipments"])
 REFUSED: Responses = {
     409: {
         "description": "SHIPMENT_SHIPPED, SHIPMENT_NOT_SHIPPED, SHIPMENT_RETURNED, "
-        "SHIPMENT_CANCELLED, SHIPMENT_EMPTY, SHIPMENT_FROM_HISTORY, ORDER_CANCELLED"
+        "SHIPMENT_CANCELLED, SHIPMENT_EMPTY, SHIPMENT_FROM_HISTORY, ORDER_CANCELLED, "
+        "MANAGED_BY_STORE"
     },
     422: {
         "description": "SHIPMENT_LINE_NOT_SHIPPABLE, SHIPMENT_OVER_ORDER, "
@@ -58,6 +64,17 @@ async def _order_of(db: WriteSession, shipment: Shipment) -> OrderRead:
     return await describe_order(db, await db.get_one(Order, shipment.order_id))
 
 
+async def _changeable(db: WriteSession, shipment_id: int) -> Shipment:
+    """The shipment, refused while its order's store manages it."""
+    shipment = await known(db, Shipment, shipment_id)
+    await _refuse_store_owned(db, shipment)
+    return shipment
+
+
+async def _refuse_store_owned(db: WriteSession, shipment: Shipment) -> None:
+    await refuse_store_owned(db, await db.get_one(Order, shipment.order_id))
+
+
 class ShipmentLineCreate(BaseModel):
     order_line_id: int
     #: All it has left when not given.
@@ -84,6 +101,7 @@ class ShipmentCreate(BaseModel):
 async def create_shipment(db: WriteSessionDep, body: ShipmentCreate) -> OrderRead:
     """Plan a shipment of an order, pending."""
     order = await known(db, Order, body.order_id)
+    await refuse_store_owned(db, order)
     location_id = (
         order.location_id
         if body.location_id is None
@@ -120,7 +138,7 @@ async def update_shipment(db: WriteSessionDep, shipment_id: int, body: ShipmentU
     sent = changes(
         body, nullable={"carrier_contact_id", "tracking", "delivery_address", "reference"}
     )
-    shipment = await known(db, Shipment, shipment_id)
+    shipment = await _changeable(db, shipment_id)
     if "location_id" in sent:
         try:
             await shipments.move(db, shipment, await location_or_main(db, sent.pop("location_id")))
@@ -135,7 +153,7 @@ async def update_shipment(db: WriteSessionDep, shipment_id: int, body: ShipmentU
 @router.delete("/{shipment_id}", responses={**NOT_FOUND, **REFUSED})
 async def delete_shipment(db: WriteSessionDep, shipment_id: int) -> OrderRead:
     """Delete a shipment that has not shipped."""
-    shipment = await known(db, Shipment, shipment_id)
+    shipment = await _changeable(db, shipment_id)
     order = await db.get_one(Order, shipment.order_id)
     try:
         await shipments.remove(db, shipment)
@@ -154,7 +172,7 @@ class ShipmentShip(BaseModel):
 async def ship_shipment(db: WriteSessionDep, shipment_id: int, body: ShipmentShip) -> OrderRead:
     """Ship a pending shipment: each line out of its lot, a lot assumed for
     each that names none."""
-    shipment = await known(db, Shipment, shipment_id)
+    shipment = await _changeable(db, shipment_id)
     try:
         await shipments.ship(db, shipment, body.shipped_on or date.today())
     except ShipmentRefused as refused:
@@ -166,7 +184,7 @@ async def ship_shipment(db: WriteSessionDep, shipment_id: int, body: ShipmentShi
 @router.post("/{shipment_id}/unship", responses={**NOT_FOUND, **REFUSED})
 async def unship_shipment(db: WriteSessionDep, shipment_id: int) -> OrderRead:
     """Take back what a shipment moved, while nothing has come back of it."""
-    shipment = await known(db, Shipment, shipment_id)
+    shipment = await _changeable(db, shipment_id)
     try:
         await shipments.unship(db, shipment)
     except ShipmentRefused as refused:
@@ -195,9 +213,12 @@ class ShipmentLineUpdate(BaseModel):
 async def update_shipment_line(
     db: WriteSessionDep, shipment_id: int, line_id: int, body: ShipmentLineUpdate
 ) -> OrderRead:
-    """Change how much a pending shipment's line sends, or the lot it draws."""
+    """Change how much a pending shipment's line sends, or the lot it draws.
+    Only its lot changes while the order's store manages the order."""
     sent = changes(body, nullable={"lot_id"})
     shipment, line = await _line(db, shipment_id, line_id)
+    if "quantity" in sent:
+        await _refuse_store_owned(db, shipment)
     try:
         if "quantity" in sent:
             await shipments.set_quantity(db, shipment, line, sent["quantity"])
@@ -213,6 +234,7 @@ async def update_shipment_line(
 async def delete_shipment_line(db: WriteSessionDep, shipment_id: int, line_id: int) -> OrderRead:
     """Take a line off a pending shipment."""
     shipment, line = await _line(db, shipment_id, line_id)
+    await _refuse_store_owned(db, shipment)
     try:
         await shipments.remove_line(db, shipment, line)
     except ShipmentRefused as refused:
