@@ -1,5 +1,7 @@
 """Alembic's environment for Hoard: migrations run as the owner login, and
-grant to the serving login (``seneschal_core.migrations``)."""
+grant to the serving login (``seneschal_core.migrations``). Once the database
+is at the newest revision, the search triggers are brought to Hoard's sources
+in the same transaction (``seneschal_core.search``)."""
 
 from __future__ import annotations
 
@@ -11,6 +13,8 @@ from sqlalchemy.engine import make_url
 
 from hoard.core.config import DatabaseSettings
 from hoard.models import metadata
+from hoard.search_sources import SOURCES
+from seneschal_core import search
 
 config = context.config
 if config.config_file_name is not None:
@@ -41,6 +45,9 @@ def run_migrations() -> None:
         )
         with context.begin_transaction():
             context.run_migrations()
+            migrated = context.get_context().get_current_heads()
+            if set(migrated) == set(context.script.get_heads()):
+                search.apply_sources(connection, SOURCES)
     engine.dispose()
 
 

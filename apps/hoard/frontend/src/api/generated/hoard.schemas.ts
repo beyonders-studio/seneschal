@@ -2196,6 +2196,46 @@ export interface RunUpdate {
   started_on?: string | null;
 }
 
+/**
+ * A stretch of a snippet, and whether it is a word the query matched.
+ */
+export interface SnippetPart {
+  text: string;
+  marked: boolean;
+}
+
+/**
+ * A record found: what it is, the page that opens it, and how it matched.
+ * ``exact`` says one of its codes is exactly what was asked.
+ */
+export interface SearchHit {
+  kind: string;
+  record_id: number;
+  title: string;
+  subtitle: string | null;
+  path: string;
+  codes: string[];
+  archived: boolean;
+  exact: boolean;
+  snippet: SnippetPart[];
+}
+
+export type SearchResultsCounts = { [key: string]: number };
+
+/**
+ * A page of results, how many there are of the kind asked (every kind,
+ * when none was), how many of each kind, and, when nothing matched, the
+ * titles close to the query.
+ */
+export interface SearchResults {
+  items: SearchHit[];
+  total: number;
+  page: number;
+  page_size: number;
+  counts: SearchResultsCounts;
+  close_matches: SearchHit[];
+}
+
 export interface SettingsCategoryCreate {
   kind: CategoryKind;
   /**
@@ -2632,6 +2672,15 @@ export interface StoreSyncWrite {
 }
 
 /**
+ * Records to jump to as the query is typed, exact codes first.
+ * ``exact_match`` says the query is exactly one record's code, the first.
+ */
+export interface Suggestions {
+  items: SearchHit[];
+  exact_match: boolean;
+}
+
+/**
  * A lot a step names.
  */
 export interface TraceLotRef {
@@ -2719,6 +2768,20 @@ export type Readyz200 = { [key: string]: string };
 
 export type ListJobsParams = {
   kind?: string | null;
+};
+
+export type SearchRecordsParams = {
+  /** @maxLength 200 */
+  q: string;
+  kind?: string | null;
+  archived?: boolean;
+  /** @minimum 1 */
+  page?: number;
+};
+
+export type SuggestRecordsParams = {
+  /** @maxLength 200 */
+  q: string;
 };
 
 export type ListSettingsCategoriesParams = {
