@@ -7,9 +7,11 @@ only the community's admins open. Each page opens on Hoard's implicit ``use``
 permission; seeing costs and prices takes :data:`SEE_COSTS` as well.
 
 For dashboards it declares reads (``hoard.endpoints`` answers them), among
-them the lots on hold ready to check, a widget drawing each (the plain scripts in ``widgets/``, which Initiative runs in its
-widget sandbox), and one dashboard arranging the first two, which publishing
-Hoard lists on its own.
+them the lots on hold ready to check and the production planning reads
+(``hoard.planning``), a widget drawing each (the plain scripts in
+``widgets/``, which Initiative runs in its widget sandbox), and two
+dashboards, the stock overview and production planning, each of which
+publishing Hoard lists on its own.
 
 For sales channels it declares a connection per store it connects to, which
 Hoard checks at the store when an admin saves it (``hoard.channels.hooks``),
@@ -82,6 +84,19 @@ YIELD = f"plugin.{PUBLIC_ID}.yield"
 ALLERGEN_MATRIX = f"plugin.{PUBLIC_ID}.allergen-matrix"
 #: The lots on hold whose ready date has come, to check.
 HOLDS_READY = f"plugin.{PUBLIC_ID}.holds-ready"
+#: What to make next: each product and base to make, in whole batches.
+MAKE_NEXT = f"plugin.{PUBLIC_ID}.make-next"
+#: The materials the runs ahead take more of than there is, and when to order them.
+MATERIALS_TO_ORDER = f"plugin.{PUBLIC_ID}.materials-to-order"
+#: The hours of work in each of the next weeks.
+HOURS_AHEAD = f"plugin.{PUBLIC_ID}.hours-ahead"
+#: What one unit cost to make over the last two runs, against the store's
+#: price. Only a member who sees costs reads it.
+COST_TO_MAKE = f"plugin.{PUBLIC_ID}.cost-to-make"
+#: The lots expiring soon, with what is left of each.
+EXPIRING_SOON = f"plugin.{PUBLIC_ID}.expiring-soon"
+#: What each product sold in each of the last weeks.
+SALES_BY_WEEK = f"plugin.{PUBLIC_ID}.sales-by-week"
 #: Link a task to the production run or purchase it tracks. Public: a
 #: community's automations call it.
 LINK_TASK = f"plugin.{PUBLIC_ID}.link-task"
@@ -199,6 +214,116 @@ ENDPOINTS: list[dict[str, Any]] = [
             ("item", "string", "Item"),
             ("reason", "string", "Reason"),
             ("ready_on", "string", "Ready on"),
+            list_=True,
+        ),
+    },
+    {
+        "id": MAKE_NEXT,
+        "direction": "read",
+        "label": {"en": "What to make next"},
+        "description": {
+            "en": "Products and bases to make, in whole batches, and the hours they take"
+        },
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("kind", "string", "Product or base"),
+            ("item", "string", "What to make"),
+            ("unit", "string", "Unit"),
+            ("needed", "string", "Needed"),
+            ("available", "string", "Available"),
+            ("curing", "string", "Curing"),
+            ("planned", "string", "In planned runs"),
+            ("short", "string", "Short"),
+            ("batches", "int", "Batches"),
+            ("hours", "string", "Hours"),
+            list_=True,
+        ),
+    },
+    {
+        "id": MATERIALS_TO_ORDER,
+        "direction": "read",
+        "label": {"en": "Materials to order"},
+        "description": {
+            "en": "Materials the runs ahead need more of, and the day to order them by"
+        },
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("material", "string", "Material"),
+            ("unit", "string", "Unit"),
+            ("supplier", "string", "Supplier"),
+            ("short", "string", "Short"),
+            ("needed_on", "string", "Needed on"),
+            ("order_by", "string", "Order by"),
+            list_=True,
+        ),
+    },
+    {
+        "id": HOURS_AHEAD,
+        "direction": "read",
+        "label": {"en": "Production hours ahead"},
+        "description": {"en": "Hours of production in each of the next four weeks"},
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("week", "string", "Week of"),
+            ("planned", "string", "Planned and started runs"),
+            ("suggested", "string", "Suggested runs"),
+            list_=True,
+        ),
+    },
+    {
+        "id": COST_TO_MAKE,
+        "direction": "read",
+        "label": {"en": "Cost to make"},
+        "description": {
+            "en": "What one unit cost over the last two runs, against the store's price"
+        },
+        "actors": ["installation"],
+        "permission": SEE_COSTS,
+        "returns": [
+            *_returns(
+                ("product", "string", "Product"),
+                ("last", "string", "Last run"),
+                ("previous", "string", "Run before"),
+                ("change", "string", "Change"),
+                ("price", "string", "Store price"),
+                ("margin", "string", "Margin"),
+                list_=True,
+            ),
+            *_returns(("currency", "string", "Currency")),
+        ],
+    },
+    {
+        "id": EXPIRING_SOON,
+        "direction": "read",
+        "label": {"en": "Expiring soon"},
+        "description": {"en": "Lots that expire within 30 days, with what is left of each"},
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("lot", "string", "Lot"),
+            ("item", "string", "Item"),
+            ("unit", "string", "Unit"),
+            ("expires_on", "string", "Expires on"),
+            ("days_left", "int", "Days left"),
+            ("left", "string", "Left"),
+            ("on_hold", "bool", "On hold"),
+            list_=True,
+        ),
+    },
+    {
+        "id": SALES_BY_WEEK,
+        "direction": "read",
+        "label": {"en": "Sales by week"},
+        "description": {"en": "Units of each product sold each week, over the last 12 weeks"},
+        "actors": ["installation"],
+        "permission": "use",
+        "returns": _returns(
+            ("product", "string", "Product"),
+            ("week", "string", "Week of"),
+            ("units", "string", "Units sold"),
             list_=True,
         ),
     },
@@ -476,12 +601,109 @@ WIDGETS: list[tuple[str, str, str, str, dict[str, Any]]] = [
             "ready_on": ["2026-12-10"],
         },
     ),
+    (
+        "make-next",
+        "What to make next",
+        "Products and bases to make, in whole batches, and the hours they take",
+        MAKE_NEXT,
+        {
+            "kind": ["product", "base"],
+            "item": ["Lavender soap", "Soap base"],
+            "unit": [None, "g"],
+            "needed": ["64.000000", "4800.000000"],
+            "available": ["12.000000", "1500.000000"],
+            "curing": ["20.000000", "0"],
+            "planned": ["0", "0"],
+            "short": ["32.000000", "3300.000000"],
+            "batches": [2, 2],
+            "hours": ["3.00", "1.50"],
+        },
+    ),
+    (
+        "materials-to-order",
+        "Materials to order",
+        "Materials the runs ahead need more of, and the day to order them by",
+        MATERIALS_TO_ORDER,
+        {
+            "material": ["Olive oil", "Lavender oil"],
+            "unit": ["g", "ml"],
+            "supplier": ["Mill & Co", None],
+            "short": ["2400.000000", "35.000000"],
+            "needed_on": ["2026-11-20", "2026-11-15"],
+            "order_by": ["2026-11-13", None],
+        },
+    ),
+    (
+        "hours-ahead",
+        "Production hours ahead",
+        "Hours of production in each of the next four weeks",
+        HOURS_AHEAD,
+        {
+            "week": ["2026-11-15", "2026-11-22", "2026-11-29", "2026-12-06"],
+            "planned": ["6.00", "4.50", "0.00", "2.00"],
+            "suggested": ["4.50", "0.00", "0.00", "0.00"],
+        },
+    ),
+    (
+        "cost-to-make",
+        "Cost to make",
+        "What one unit cost over the last two runs, against the store's price",
+        COST_TO_MAKE,
+        {
+            "product": ["Cold brew", "Lavender soap"],
+            "last": ["1.850000", "2.400000"],
+            "previous": ["1.700000", None],
+            "change": ["0.150000", None],
+            "price": ["4.500000", "8.000000"],
+            "margin": ["0.588889", "0.700000"],
+            "currency": "USD",
+        },
+    ),
+    (
+        "expiring-soon",
+        "Expiring soon",
+        "Lots that expire within 30 days, with what is left of each",
+        EXPIRING_SOON,
+        {
+            "lot": ["P-0042-3", "R-0031"],
+            "item": ["Oat milk", "Cold brew"],
+            "unit": ["l", None],
+            "expires_on": ["2026-11-18", "2026-12-02"],
+            "days_left": [3, 17],
+            "left": ["6.000000", "24.000000"],
+            "on_hold": [False, True],
+        },
+    ),
+    (
+        "sales-by-week",
+        "Sales by week",
+        "Units of each product sold each week, over the last 12 weeks",
+        SALES_BY_WEEK,
+        {
+            "product": ["Cold brew"] * 3 + ["Lavender soap"] * 3,
+            "week": ["2026-10-26", "2026-11-02", "2026-11-09"] * 2,
+            "units": ["14.000000", "18.000000", "11.000000", "6.000000", "9.000000", "4.000000"],
+        },
+    ),
 ]
 
 #: The overview dashboard Hoard ships with, a catalog listing of its own: its
 #: uid is minted once and never reused, like Hoard's.
 OVERVIEW_UID = "EBFZPFVWHKT9H4"
 OVERVIEW_PUBLIC_ID = "beyonders-studio.hoard-overview"
+#: The production planning dashboard, a catalog listing of its own like the
+#: overview: its uid is minted once and never reused.
+PLANNING_UID = "1K0FQNF693SZMW"
+PLANNING_PUBLIC_ID = "beyonders-studio.hoard-planning"
+
+
+def _tile(widget: str, endpoint: str, x: int, y: int, w: int, h: int) -> dict[str, Any]:
+    return {
+        "type": widget,
+        "binding": {"endpoint_id": endpoint},
+        "grid": {"x": x, "y": y, "w": w, "h": h},
+    }
+
 
 DASHBOARDS: list[dict[str, Any]] = [
     {
@@ -491,18 +713,28 @@ DASHBOARDS: list[dict[str, Any]] = [
         "description": "What your stock is worth, and what to reorder.",
         "layout": {"columns": 12},
         "widgets": [
-            {
-                "type": "stock-value",
-                "binding": {"endpoint_id": VALUATION},
-                "grid": {"x": 0, "y": 0, "w": 4, "h": 3},
-            },
-            {
-                "type": "stock-to-reorder",
-                "binding": {"endpoint_id": REORDER},
-                "grid": {"x": 4, "y": 0, "w": 8, "h": 6},
-            },
+            _tile("stock-value", VALUATION, 0, 0, 4, 3),
+            _tile("stock-to-reorder", REORDER, 4, 0, 8, 6),
         ],
-    }
+    },
+    {
+        "uid": PLANNING_UID,
+        "public_id": PLANNING_PUBLIC_ID,
+        "name": "Production planning",
+        "description": (
+            "What to make next, the materials and hours it takes, what making costs, "
+            "and what is about to expire."
+        ),
+        "layout": {"columns": 12},
+        "widgets": [
+            _tile("make-next", MAKE_NEXT, 0, 0, 8, 6),
+            _tile("hours-ahead", HOURS_AHEAD, 8, 0, 4, 6),
+            _tile("materials-to-order", MATERIALS_TO_ORDER, 0, 6, 8, 6),
+            _tile("expiring-soon", EXPIRING_SOON, 8, 6, 4, 6),
+            _tile("cost-to-make", COST_TO_MAKE, 0, 12, 8, 6),
+            _tile("planned-against-actual", YIELD, 8, 12, 4, 6),
+        ],
+    },
 ]
 
 

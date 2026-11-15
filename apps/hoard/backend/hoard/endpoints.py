@@ -5,17 +5,18 @@ widget or another plug-in. Each answers with the returns its declaration in
 token names.
 
 Initiative holds a reader to the permission an endpoint declares before it
-calls: what stock is worth is read only by a member who sees costs. Another
-plug-in calls only ``link-task``, which is public.
+calls: what stock is worth, and what making costs, are read only by a member
+who sees costs. Another plug-in calls only ``link-task``, which is public.
 
 The reports are ``hoard.reports``'s, the holds ready to check
-``hoard.holds``'s, and the tracking writes ``hoard.tracking``'s."""
+``hoard.holds``'s, the production planning reads ``hoard.planning``'s, and the
+tracking writes ``hoard.tracking``'s."""
 
 from __future__ import annotations
 
 from typing import Any
 
-from hoard import holds, plugin_manifest, reports, tracking
+from hoard import holds, planning, plugin_manifest, reports, tracking
 from seneschal_core.platform import EndpointCall, EndpointHandler, organization_session
 
 
@@ -44,6 +45,12 @@ ENDPOINTS: dict[str, EndpointHandler] = {
     plugin_manifest.YIELD: reports.planned_against_actual,
     plugin_manifest.ALLERGEN_MATRIX: reports.allergen_matrix,
     plugin_manifest.HOLDS_READY: holds.ready,
+    plugin_manifest.MAKE_NEXT: planning.make_next,
+    plugin_manifest.MATERIALS_TO_ORDER: planning.materials_to_order,
+    plugin_manifest.HOURS_AHEAD: planning.hours_ahead,
+    plugin_manifest.COST_TO_MAKE: planning.cost_to_make,
+    plugin_manifest.EXPIRING_SOON: planning.expiring_soon,
+    plugin_manifest.SALES_BY_WEEK: planning.sales_by_week,
     plugin_manifest.LINK_TASK: tracking.link_task,
     plugin_manifest.COMPLETE_RUN: tracking.complete_run,
     plugin_manifest.RECEIVE_PURCHASE: tracking.receive_purchase,
