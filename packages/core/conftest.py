@@ -38,6 +38,7 @@ def _migrate(database: AppDatabase) -> None:
         )
         with Operations.context(context):
             migrations.create_registry()
+            migrations.add_plugin_status()
             jobs.create_table()
             op.create_table(
                 "widgets",

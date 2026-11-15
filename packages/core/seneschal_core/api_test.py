@@ -68,6 +68,9 @@ async def test_an_active_organization_writes_and_reads_its_own(
     [
         ("community_status", {"status": "read_only"}),
         ("community_status", {"status": "on_hold"}),
+        ("plugin_status", {"status": "read_only"}),
+        ("plugin_status", {"status": "on_hold"}),
+        ("plugin_status", {"status": "deleted"}),
         ("entitlement", "inactive"),
     ],
 )

@@ -76,6 +76,7 @@ async def test_initiative_reaches_hoards_hooks(client, initiative_stand_in, comm
     for hook, body in (
         ("installed", {}),
         ("community_status", {"status": "active"}),
+        ("plugin_status", {"status": "active"}),
         ("entitlement", {"statement": statement}),
         ("uninstalled", {}),
         ("erase", {}),

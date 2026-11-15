@@ -6,6 +6,10 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **Hoard follows its own state in your community.** When Initiative sets Hoard read-only, on hold or deleted in a community, Hoard stops its own work there (pushing stock to stores, updating linked tasks and running background jobs) and changes nothing, while everything it holds is kept and stays readable. It picks up where it left off once Hoard is active again. Hoard deletes nothing in any state.
+
 ## [0.2.0] - 2026-11-15
 
 ### Added

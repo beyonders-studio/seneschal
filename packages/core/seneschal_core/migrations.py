@@ -219,6 +219,40 @@ def create_registry() -> None:
     isolate("handoff_redemptions")
 
 
+def add_plugin_status() -> None:
+    """The install's own state in the registry, beside where its community
+    stands, and ``set_organization_plugin_status(organization_id,
+    plugin_status)``, the function the serving login changes it through."""
+    op.add_column(
+        REGISTRY_TABLE,
+        sa.Column("plugin_status", sa.Text(), nullable=False, server_default=sa.text("'active'")),
+    )
+    op.create_check_constraint(
+        "ck_organizations_plugin_status",
+        REGISTRY_TABLE,
+        "plugin_status IN ('active', 'read_only', 'on_hold', 'deleted')",
+    )
+    op.execute(f"""
+        CREATE FUNCTION set_organization_plugin_status(
+            p_organization_id bigint, p_plugin_status text
+        )
+        RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = {_DEFINER_SEARCH_PATH} AS $$
+            UPDATE public.{REGISTRY_TABLE}
+               SET plugin_status = p_plugin_status
+             WHERE id = p_organization_id AND plugin_status <> p_plugin_status
+        $$
+    """)
+    signature = "set_organization_plugin_status(bigint, text)"
+    op.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
+    op.execute(f"GRANT EXECUTE ON FUNCTION {signature} TO {quote(serving_login())}")
+
+
+def drop_plugin_status() -> None:
+    """Undo :func:`add_plugin_status`."""
+    op.execute("DROP FUNCTION set_organization_plugin_status(bigint, text)")
+    op.drop_column(REGISTRY_TABLE, "plugin_status")
+
+
 def drop_registry() -> None:
     """Undo :func:`create_registry`."""
     op.drop_table("handoff_redemptions")
