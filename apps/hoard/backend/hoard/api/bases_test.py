@@ -85,7 +85,7 @@ async def test_a_base_is_added_edited_and_removed_and_holds_its_properties(
 
 
 async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
-    client, sign_in, db: WriteSession, main: Location, base
+    client, sign_in, db: WriteSession, main: Location, base, export
 ):
     spice = await base("Chai spice", low_stock_limit=Decimal(100))
     await adjust(
@@ -111,7 +111,7 @@ async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
     )
     reorder = (await client.get("/api/v1/reports/reorder")).json()
     valuation = (await client.get("/api/v1/reports/valuation")).json()
-    exported = await client.get("/api/v1/export/bases", params={"format": "json"})
+    exported = await export("bases", format="json")
 
     assert moved["item"] == {"id": spice.id, "kind": "base", "name": "Chai spice", "attributes": {}}
     assert (page["on_hand"], page["average_cost"]) == ("40.000000", "2.000000")
