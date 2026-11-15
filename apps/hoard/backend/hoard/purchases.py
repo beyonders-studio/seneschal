@@ -5,8 +5,13 @@ A purchase's discount and shipping are spread over its lines by value
 cost is its value and its share, per tracking unit.
 
 Receiving a line of an inventoriable material makes its lot, at the purchase's
-location, and its purchase adjustment, at the landed cost. After a purchase or
-its lines are edited, :func:`rederive_purchase` carries the edit into their
+location, and its purchase adjustment, at the landed cost, both dated the day
+it arrived. Receiving part of a line splits that part off as a line of its own
+at the same unit cost, the rest staying on order: their quantities split in
+proportion (``hoard.units.split``), so their values add up to the line's and
+the discount and shipping spread as before. Taking the part back puts it back
+into the rest while that is still on order as it was. After a purchase or its
+lines are edited, :func:`rederive_purchase` carries the edit into their
 adjustments and lots and re-derives each material's cost.
 """
 
@@ -14,11 +19,12 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 
 from sqlalchemy import delete, func
 from sqlmodel import col, select
 
-from hoard import costing, events
+from hoard import costing, events, units
 from hoard.records import (
     PLACES,
     Adjustment,
@@ -30,6 +36,29 @@ from hoard.records import (
 )
 from hoard.stock import StockError, StockRefused
 from seneschal_core.db import WriteSession
+
+
+class PurchaseError(StrEnum):
+    """Why a purchase was refused: codes pages translate."""
+
+    #: A cost was sent by a member who does not see costs.
+    COSTS_HIDDEN = "COSTS_HIDDEN"
+    #: Another purchase has the code.
+    PURCHASE_CODE_TAKEN = "PURCHASE_CODE_TAKEN"
+    #: The line is received: it can't be received again or bought as another material.
+    PURCHASE_LINE_RECEIVED = "PURCHASE_LINE_RECEIVED"
+    #: The line has not been received.
+    PURCHASE_LINE_NOT_RECEIVED = "PURCHASE_LINE_NOT_RECEIVED"
+    #: A line would be received before its purchase's date.
+    RECEIVED_BEFORE_PURCHASE = "RECEIVED_BEFORE_PURCHASE"
+    #: More was received than the line is for.
+    RECEIVED_MORE_THAN_LINE = "RECEIVED_MORE_THAN_LINE"
+
+
+class PurchaseRefused(Exception):
+    def __init__(self, code: PurchaseError | units.UnitError) -> None:
+        super().__init__(code.value)
+        self.code = code
 
 
 def _spread(amount: Decimal, weights: list[Decimal]) -> list[Decimal]:
@@ -65,45 +94,84 @@ async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
 
 
 async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
-    """Carry a purchase's date, location and lines into its received lines'
-    adjustments and lots, at their landed costs, and re-derive the cost of
-    every material it buys."""
+    """Carry a purchase's location and lines into its received lines'
+    adjustments and lots, at their landed costs and on the days they arrived,
+    and re-derive the cost of every material it buys. Refused when a line
+    arrived before the purchase's date."""
     await db.flush()
     lines = await _lines(db, purchase.id)
     costs = landed_costs(purchase, lines)
     for line in lines:
+        if line.received_on is None:
+            continue
+        if line.received_on < purchase.dated_on:
+            raise PurchaseRefused(PurchaseError.RECEIVED_BEFORE_PURCHASE)
         adjustment = (
             await db.exec(select(Adjustment).where(Adjustment.purchase_line_id == line.id))
         ).first()
         if adjustment is not None:
-            adjustment.dated_on = purchase.dated_on
+            adjustment.dated_on = line.received_on
             adjustment.location_id = purchase.location_id
             adjustment.change = line.tracking_quantity
             adjustment.unit_cost = costs[line.id]
         lot = (await db.exec(select(Lot).where(Lot.purchase_line_id == line.id))).first()
         if lot is not None:
-            lot.dated_on = purchase.dated_on
+            lot.dated_on = line.received_on
             lot.location_id = purchase.location_id
     for material_id in sorted({line.material_id for line in lines}):
         await costing.rederive(db, material_id)
+
+
+async def _split(db: WriteSession, line: PurchaseLine, quantity: Decimal) -> PurchaseLine:
+    """``quantity`` tracking units of ``line`` as a line of their own, split
+    from it at its unit cost; ``line`` keeps the rest."""
+    if quantity > line.tracking_quantity:
+        raise PurchaseRefused(PurchaseError.RECEIVED_MORE_THAN_LINE)
+    whole = line.tracking_quantity
+    try:
+        bought, bought_left = units.split(line.purchase_quantity, quantity, whole)
+        tracked, tracked_left = units.split(whole, quantity, whole)
+    except units.UnitRefused as refused:
+        raise PurchaseRefused(refused.code) from None
+    line.purchase_quantity, line.tracking_quantity = bought_left, tracked_left
+    part = PurchaseLine(
+        organization_id=db.organization_id,
+        purchase_id=line.purchase_id,
+        material_id=line.material_id,
+        purchase_quantity=bought,
+        tracking_quantity=tracked,
+        unit_cost=line.unit_cost,
+        split_from_id=line.id,
+    )
+    db.add(part)
+    await db.flush()
+    return part
 
 
 async def receive_line(
     db: WriteSession,
     line: PurchaseLine,
     *,
+    received_on: date | None = None,
+    quantity: Decimal | None = None,
     number: str | None = None,
     expires_on: date | None = None,
     notes: str | None = None,
-) -> Lot | None:
-    """Receive ``line``: for an inventoriable material, its lot (numbered from
-    the purchase's code when no number is given) and its purchase adjustment.
-    Records the line received, and the purchase received once every line is.
-    Answers the lot."""
+) -> PurchaseLine:
+    """Receive ``line`` on ``received_on``, today when not given: for an
+    inventoriable material, its lot (numbered from the purchase's code and
+    the line when no number is given) and its purchase adjustment. A
+    ``quantity`` less than the line's tracking quantity receives only that
+    much, split off as a line of its own. Records the purchase received once
+    every line is. Answers the line received."""
     purchase = await db.get_one(Purchase, line.purchase_id)
     material = await db.get_one(Material, line.material_id)
-    line.received = True
-    lot = None
+    received_on = received_on or date.today()
+    if received_on < purchase.dated_on:
+        raise PurchaseRefused(PurchaseError.RECEIVED_BEFORE_PURCHASE)
+    if quantity is not None and quantity != line.tracking_quantity:
+        line = await _split(db, line, quantity)
+    line.received_on = received_on
     if material.inventoriable:
         lot = Lot(
             organization_id=db.organization_id,
@@ -111,7 +179,7 @@ async def receive_line(
             location_id=purchase.location_id,
             purchase_line_id=line.id,
             number=number or f"{purchase.code}-{line.id}",
-            dated_on=purchase.dated_on,
+            dated_on=received_on,
             expires_on=expires_on,
             notes=notes,
         )
@@ -124,7 +192,7 @@ async def receive_line(
                 location_id=purchase.location_id,
                 lot_id=lot.id,
                 kind=AdjustmentKind.PURCHASE,
-                dated_on=purchase.dated_on,
+                dated_on=received_on,
                 change=line.tracking_quantity,
                 purchase_line_id=line.id,
             )
@@ -138,10 +206,10 @@ async def receive_line(
         await events.record(
             db, await events.purchase_event(db, events.EventName.PURCHASE_RECEIVED, purchase)
         )
-    return lot
+    return line
 
 
-async def unreceive_line(db: WriteSession, line: PurchaseLine) -> None:
+async def _unreceive(db: WriteSession, line: PurchaseLine) -> None:
     """Undo receiving ``line``: its purchase adjustment and its lot go. Refused
     while any other adjustment draws on the lot."""
     await db.flush()
@@ -159,15 +227,34 @@ async def unreceive_line(db: WriteSession, line: PurchaseLine) -> None:
             raise StockRefused(StockError.LOT_IN_USE)
     await db.execute(delete(Adjustment).where(col(Adjustment.purchase_line_id) == line.id))
     await db.execute(delete(Lot).where(col(Lot.purchase_line_id) == line.id))
-    line.received = False
+    line.received_on = None
     await costing.rederive(db, line.material_id)
+
+
+async def unreceive_line(db: WriteSession, line: PurchaseLine) -> None:
+    """Take back what ``line`` received (refused while anything draws on its
+    lot). A part received from another line goes back into it while that is
+    still on order for the same material at the same unit cost; otherwise it
+    stays a line of its own, on order."""
+    await _unreceive(db, line)
+    rest = None if line.split_from_id is None else await db.get(PurchaseLine, line.split_from_id)
+    if (
+        rest is None
+        or rest.received_on is not None
+        or (rest.material_id, rest.unit_cost) != (line.material_id, line.unit_cost)
+    ):
+        return
+    rest.purchase_quantity += line.purchase_quantity
+    rest.tracking_quantity += line.tracking_quantity
+    await db.delete(line)
+    await rederive_purchase(db, await db.get_one(Purchase, rest.purchase_id))
 
 
 async def delete_line(db: WriteSession, line: PurchaseLine) -> None:
     """Delete ``line``, unreceiving it first, and re-derive what the rest of
     its purchase cost."""
-    if line.received:
-        await unreceive_line(db, line)
+    if line.received_on is not None:
+        await _unreceive(db, line)
     purchase = await db.get_one(Purchase, line.purchase_id)
     await db.delete(line)
     await rederive_purchase(db, purchase)
@@ -176,7 +263,13 @@ async def delete_line(db: WriteSession, line: PurchaseLine) -> None:
 async def delete_purchase(db: WriteSession, purchase: Purchase) -> None:
     """Delete ``purchase``, unreceiving its lines first."""
     for line in await _lines(db, purchase.id):
-        if line.received:
-            await unreceive_line(db, line)
+        if line.received_on is not None:
+            await _unreceive(db, line)
     await db.delete(purchase)
     await db.flush()
+
+
+def overdue(purchase: Purchase, on_order: bool) -> bool:
+    """Whether ``purchase`` is past the day it was expected with lines still
+    ``on_order``."""
+    return on_order and purchase.expected_on is not None and purchase.expected_on < date.today()

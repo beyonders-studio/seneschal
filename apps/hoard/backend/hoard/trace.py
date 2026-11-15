@@ -247,7 +247,7 @@ async def _gone_into(db: AsyncSession, lot: Lot) -> Moves:
             made_lot_id=None,
             item_id=lot.item_id,
             quantity=line.tracking_quantity,
-            dated_on=purchase.dated_on,
+            dated_on=lot.dated_on,
             contact_id=purchase.supplier_contact_id,
             assumed=False,
         )

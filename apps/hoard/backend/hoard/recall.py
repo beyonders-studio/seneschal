@@ -389,7 +389,7 @@ def canada_text(recall: Recall, contacts: dict[int, Party]) -> str:
                 made_by.address,
                 supplier.name,
                 supplier.address,
-                purchase.dated_on.isoformat() if purchase else "",
+                lot.dated_on.isoformat() if purchase else "",
                 "",
                 "",
                 "",

@@ -437,6 +437,14 @@ def create_table() -> None:
     # entries by the key and filters them.
 
 
+def drop_source(kind: str) -> None:
+    """Remove the triggers :func:`apply_sources` made for ``kind``, from a
+    migration that drops a column they read; the next apply makes them again."""
+    held = _marked(op.get_bind()).get(kind)
+    if held is not None:
+        _drop(op.get_bind(), held[1])
+
+
 def drop_table() -> None:
     """Undo :func:`create_table`, and remove every trigger :func:`apply_sources` made."""
     for _, functions in _marked(op.get_bind()).values():
