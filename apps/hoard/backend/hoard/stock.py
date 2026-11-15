@@ -15,7 +15,7 @@ from collections.abc import MutableMapping
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import delete, func, text
+from sqlalchemy import delete, func, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -32,6 +32,7 @@ from hoard.records import (
     HoldReason,
     Item,
     ItemKind,
+    Listing,
     Location,
     Lot,
     Material,
@@ -128,17 +129,29 @@ async def add_product(db: WriteSession, product: Product) -> tuple[Product, Vari
 
 
 async def remove_item(db: WriteSession, item_id: int) -> None:
-    """Remove a material, base or variation with its lots, stock and adjustments.
-    One a purchase bought is kept: removing it raises the database's
-    ``IntegrityError``."""
+    """Remove a material, base or variation with its lots, stock and adjustments;
+    the listings selling it sell nothing. One a purchase bought is kept:
+    removing it raises the database's ``IntegrityError``."""
+    await _unlist(db, [item_id])
     await db.execute(delete(Item).where(col(Item.id) == item_id))
 
 
 async def remove_product(db: WriteSession, product: Product) -> None:
     """Remove ``product`` with its variations, as :func:`remove_item` does each."""
-    variations = select(Variation.id).where(Variation.product_id == product.id)
+    variations = list(
+        (await db.exec(select(Variation.id).where(Variation.product_id == product.id))).all()
+    )
+    await _unlist(db, variations)
     await db.execute(delete(Item).where(col(Item.id).in_(variations)))
     await db.delete(product)
+
+
+async def _unlist(db: WriteSession, item_ids: list[int]) -> None:
+    await db.execute(
+        update(Listing)
+        .where(col(Listing.item_id).in_(item_ids))
+        .values(item_id=None, matched_by=None)
+    )
 
 
 async def adjust(db: WriteSession, adjustment: Adjustment) -> Adjustment:

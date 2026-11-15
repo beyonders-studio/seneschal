@@ -3,6 +3,7 @@ against a store kept in memory."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -249,7 +250,9 @@ async def test_a_pending_store_is_neither_read_again_nor_written_to(
 
     for refused in (
         await client.post(f"/api/v1/stores/{pending.id}/refresh"),
-        await client.put(f"/api/v1/stores/{pending.id}/products/p1", json={"title": "Chai"}),
+        await client.put(
+            f"/api/v1/stores/{pending.id}/products/p1", json={"title": "Chai", "updated_at": None}
+        ),
         await client.post(f"/api/v1/stores/{pending.id}/products", json={"product_id": product.id}),
     ):
         assert (refused.status_code, refused.json()) == (409, {"detail": "STORE_NOT_SYNCED"})
@@ -292,6 +295,7 @@ async def test_a_store_product_is_edited_live_and_its_answer_kept(
     _, large, _ = chai
     await sign_in(client)
     body = {
+        "updated_at": None,
         "title": "Masala chai",
         "description": "<p>Warm</p>",
         "status": "draft",
@@ -319,9 +323,40 @@ async def test_a_store_product_is_edited_live_and_its_answer_kept(
     read = (await client.get(f"/api/v1/stores/{store.id}/products/p1")).json()
     assert (read["title"], read["status"]) == ("Masala chai", "draft")
 
+    assert read["updated_at"] == saved["updated_at"] is not None
+
     await sign_in(client, COSTS)
-    await client.put(f"/api/v1/stores/{store.id}/products/p1", json=body)
+    await client.put(
+        f"/api/v1/stores/{store.id}/products/p1", json={**body, "updated_at": read["updated_at"]}
+    )
     assert shop.shop_products["p1"].variants[0].price == Decimal("99")
+
+
+async def test_a_store_product_changed_in_the_store_is_not_written_over(
+    client, sign_in, db: WriteSession, store: Store, shop: FakeConnector
+):
+    await listings.match(db, store, [shop.shop_products["p1"]])
+    await db.commit()
+    await sign_in(client)
+    opened = (await client.get(f"/api/v1/stores/{store.id}/products/p1")).json()
+    changed = datetime(2026, 11, 15, 9, tzinfo=UTC)
+    shop.shop_products["p1"] = replace(
+        shop.shop_products["p1"], title="Chai, renamed in the store", updated_at=changed
+    )
+
+    refused = await client.put(
+        f"/api/v1/stores/{store.id}/products/p1",
+        json={"updated_at": opened["updated_at"], "title": "Masala chai"},
+    )
+
+    assert (refused.status_code, refused.json()) == (409, {"detail": "STORE_PRODUCT_CHANGED"})
+    assert shop.shop_products["p1"].title == "Chai, renamed in the store"
+    # Hoard's copy now holds the store's version, for the page to show.
+    read = (await client.get(f"/api/v1/stores/{store.id}/products/p1")).json()
+    assert (read["title"], read["updated_at"]) == (
+        "Chai, renamed in the store",
+        "2026-11-15T09:00:00Z",
+    )
 
 
 async def test_a_hoard_product_is_made_in_the_store_with_its_listings(
@@ -350,7 +385,7 @@ async def test_a_store_that_is_not_connected_or_refuses_is_refused(
 ):
     await sign_in(client, admin=True)
     shop.refuse = ConnectError.STORE_UNREACHABLE
-    edit = {"title": "Chai"}
+    edit = {"title": "Chai", "updated_at": None}
 
     refused = await client.put(f"/api/v1/stores/{store.id}/products/p1", json=edit)
     assert (refused.status_code, refused.json()) == (502, {"detail": "STORE_UNREACHABLE"})
