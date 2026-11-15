@@ -19,6 +19,9 @@ own hooks, which keep the organization registry, are :data:`ORGANIZATION_HOOKS`:
 * ``uninstalled``: nothing changes, and the community may come back to it all;
 * ``erase``: the organization is deleted, and every row naming it with it;
 * ``community_status``: where the community stands;
+* ``plugin_status``: the install's own state, which holds back the app's
+  work (:attr:`~seneschal_core.organizations.Organization.working`) and
+  deletes nothing;
 * ``entitlement``: billing's statement of the plan the community holds,
   ``{"statement": "<jws>"}``, kept once billing's signature verifies.
 """
@@ -38,7 +41,7 @@ from seneschal_core import organizations
 from seneschal_core.api import ErrorCode, Plugin, PluginDep, refuse
 from seneschal_core.db import OrganizationSession, WriteSession
 from seneschal_core.initiative import ContextClaims, StatementRefused, TokenRefused
-from seneschal_core.organizations import CommunityStatus
+from seneschal_core.organizations import CommunityStatus, PluginStatus
 
 #: The most a call's body may hold. It is read before its token is checked.
 MAX_BODY_BYTES = 64 * 1024
@@ -218,6 +221,21 @@ async def _community_status(call: HookCall) -> None:
         await db.commit()
 
 
+async def _plugin_status(call: HookCall) -> None:
+    try:
+        plugin_status = PluginStatus(call.body.get("status"))
+    except ValueError:
+        raise HookBodyInvalid("status is not one of Initiative's") from None
+    async with call.plugin.database.session() as db:
+        organization_id = await organizations.organization_for(
+            db,
+            community_ref=call.claims.community_ref,
+            plugin_install_id=call.claims.plugin_install_id,
+        )
+        await organizations.set_plugin_status(db, organization_id, plugin_status)
+        await db.commit()
+
+
 async def _entitlement(call: HookCall) -> None:
     # Only the signed statement: nothing else in the body is read.
     statement = call.plugin.initiative.verify_statement(call.body.get("statement"))
@@ -236,5 +254,6 @@ ORGANIZATION_HOOKS: Mapping[str, HookHandler] = {
     "uninstalled": _uninstalled,
     "erase": _erase,
     "community_status": _community_status,
+    "plugin_status": _plugin_status,
     "entitlement": _entitlement,
 }

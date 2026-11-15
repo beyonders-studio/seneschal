@@ -37,7 +37,11 @@ async def test_installed_registers_the_organization(
     assert answer.status_code == 204
     organization = await _registered(serving_database, community_ref)
     assert organization is not None
-    assert (organization.plugin_install_id, organization.community_status) == (7, "active")
+    assert (
+        organization.plugin_install_id,
+        organization.community_status,
+        organization.plugin_status,
+    ) == (7, "active", "active")
 
 
 async def test_installed_again_keeps_the_organization_and_records_the_new_install(
@@ -103,24 +107,37 @@ async def test_erase_deletes_the_organization_and_its_rows(
     assert await _registered(serving_database, community_ref) is None
 
 
-async def test_community_status_says_where_the_community_stands(
-    client, initiative_stand_in, community_ref, serving_database
+# A read-only community still runs the app's work; an install that is not
+# active runs none of it.
+@pytest.mark.parametrize(
+    ("hook", "working"), [("community_status", True), ("plugin_status", False)]
+)
+async def test_a_status_hook_says_where_the_install_stands(
+    client, initiative_stand_in, community_ref, serving_database, hook, working
 ):
-    answer = await _call(
-        client, initiative_stand_in, "community_status", community_ref, {"status": "read_only"}
-    )
+    answer = await _call(client, initiative_stand_in, hook, community_ref, {"status": "read_only"})
 
     assert answer.status_code == 204
     organization = await _registered(serving_database, community_ref)
     assert organization is not None and organization.read_only
+    assert getattr(organization, hook) == "read_only"
+    async with serving_database.session() as db:
+        assert (organization.id in await organizations.working(db)) is working
 
 
-async def test_a_community_status_call_without_a_status_is_refused(
-    client, initiative_stand_in, community_ref
+@pytest.mark.parametrize(
+    ("hook", "status"),
+    [
+        ("community_status", "paused"),
+        ("plugin_status", "paused"),
+        # Initiative sends a suspended install nothing at all.
+        ("plugin_status", "suspended"),
+    ],
+)
+async def test_a_status_call_without_a_status_is_refused(
+    client, initiative_stand_in, community_ref, hook, status
 ):
-    answer = await _call(
-        client, initiative_stand_in, "community_status", community_ref, {"status": "paused"}
-    )
+    answer = await _call(client, initiative_stand_in, hook, community_ref, {"status": status})
 
     assert (answer.status_code, answer.json()) == (400, {"detail": "REQUEST_INVALID"})
 

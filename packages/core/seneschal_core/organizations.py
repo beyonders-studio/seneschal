@@ -8,10 +8,14 @@ changes it only through the registry's functions (``migrations.create_registry``
 Where an organization stands decides what may happen in it:
 
 * a suspended or deleted community reaches nothing (:attr:`Organization.available`);
-* a community that is read-only or on hold, or whose subscription billing
-  says is inactive, reads but changes nothing (:attr:`Organization.read_only`).
-  A community holding no statement yet is not held back: billing gates the
-  install itself.
+* the app's own work runs only in an available community whose install is
+  active (:attr:`Organization.working`): the install's state is kept as
+  Initiative's ``plugin_status`` hook states it, and nothing is deleted in
+  any state;
+* a community that is read-only or on hold, whose install is not active, or
+  whose subscription billing says is inactive, reads but changes nothing
+  (:attr:`Organization.read_only`). A community holding no statement yet is
+  not held back: billing gates the install itself.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import BigInteger, Column, DateTime, Identity, text
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from seneschal_core.db import REGISTRY_TABLE
@@ -33,6 +37,15 @@ class CommunityStatus(StrEnum):
     ACTIVE = "active"
     READ_ONLY = "read_only"
     SUSPENDED = "suspended"
+    ON_HOLD = "on_hold"
+    DELETED = "deleted"
+
+
+class PluginStatus(StrEnum):
+    """The install's own state, as Initiative's ``plugin_status`` hook states it."""
+
+    ACTIVE = "active"
+    READ_ONLY = "read_only"
     ON_HOLD = "on_hold"
     DELETED = "deleted"
 
@@ -54,6 +67,9 @@ class Organization(SQLModel, table=True):
     community_status: str = Field(
         default=CommunityStatus.ACTIVE, sa_column_kwargs={"server_default": text("'active'")}
     )
+    plugin_status: str = Field(
+        default=PluginStatus.ACTIVE, sa_column_kwargs={"server_default": text("'active'")}
+    )
     statement_version: int | None = None
     plan: str | None = None
     active: bool | None = None
@@ -67,8 +83,12 @@ class Organization(SQLModel, table=True):
         return self.community_status not in UNAVAILABLE
 
     @property
+    def working(self) -> bool:
+        return self.available and self.plugin_status == PluginStatus.ACTIVE
+
+    @property
     def read_only(self) -> bool:
-        return not self.available or self.community_status in READ_ONLY or self.active is False
+        return not self.working or self.community_status in READ_ONLY or self.active is False
 
 
 @dataclass(frozen=True)
@@ -101,6 +121,26 @@ async def set_status(session: AsyncSession, organization_id: int, status: Commun
         text("SELECT set_organization_status(:id, :status)"),
         {"id": organization_id, "status": status.value},
     )
+
+
+async def set_plugin_status(
+    session: AsyncSession, organization_id: int, status: PluginStatus
+) -> None:
+    await session.execute(
+        text("SELECT set_organization_plugin_status(:id, :status)"),
+        {"id": organization_id, "status": status.value},
+    )
+
+
+async def working(session: AsyncSession) -> set[int]:
+    """The organizations whose app's own work runs (:attr:`Organization.working`)."""
+    found = await session.exec(
+        select(Organization.id).where(
+            col(Organization.community_status).not_in([status.value for status in UNAVAILABLE]),
+            col(Organization.plugin_status) == PluginStatus.ACTIVE,
+        )
+    )
+    return set(found.all())
 
 
 async def apply_statement(

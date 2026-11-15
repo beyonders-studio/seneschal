@@ -27,9 +27,11 @@ from hoard.records import (
     RunStatus,
     TaskLink,
 )
+from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
 from seneschal_core.initiative_api import INSTALLATION_PREFIX
+from seneschal_core.organizations import PluginStatus
 from seneschal_core.testing import InitiativeStandIn
 
 #: The automations plug-in, as Initiative names the caller of a public endpoint.
@@ -321,6 +323,16 @@ async def test_events_are_sent_after_the_commit_and_retried_in_order(
         update(OutboxEvent).values(next_attempt_at=datetime.now(UTC) - timedelta(seconds=1))
     )
     await db.commit()
+    # Held, and kept, while the install is read-only.
+    async with serving_database.session() as registry:
+        await organizations.set_plugin_status(registry, db.organization_id, PluginStatus.READ_ONLY)
+        await registry.commit()
+    await tracking.deliver(plugin, db.organization_id)
+    assert len(await _outbox(serving_database, db.organization_id)) == 2
+
+    async with serving_database.session() as registry:
+        await organizations.set_plugin_status(registry, db.organization_id, PluginStatus.ACTIVE)
+        await registry.commit()
     await tracking.deliver(plugin, db.organization_id)
 
     assert await _outbox(serving_database, db.organization_id) == []

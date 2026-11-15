@@ -506,17 +506,6 @@ def _forget(session: Session, _transaction: Any) -> None:
     session.info.pop(_QUEUED, None)
 
 
-async def _available(plugin: Plugin) -> set[int]:
-    unavailable = [community_status.value for community_status in organizations.UNAVAILABLE]
-    async with plugin.database.session() as db:
-        found = await db.exec(
-            select(organizations.Organization.id).where(
-                col(organizations.Organization.community_status).not_in(unavailable)
-            )
-        )
-        return set(found.all())
-
-
 async def work_forever(
     plugin: Plugin,
     handlers: Mapping[str, Handler],
@@ -544,7 +533,8 @@ async def work_forever(
             if swept is None or time.monotonic() - swept >= sweep_seconds:
                 swept = time.monotonic()
                 try:
-                    due |= await _available(plugin)
+                    async with plugin.database.session() as db:
+                        due |= await organizations.working(db)
                 except Exception:
                     logger.exception("could not list the organizations to run jobs for")
             for organization_id in sorted(due):

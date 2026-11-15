@@ -336,11 +336,11 @@ async def send(
 ) -> None:
     """Send the organization's due pushes, each store's in batches as large as
     it takes, through ``connectors``' connector for a store where it holds one,
-    else the one its connection holds now. A community that reaches nothing
-    is sent nothing."""
+    else the one its connection holds now. Nothing is sent while the
+    organization is not working (:attr:`~seneschal_core.organizations.Organization.working`)."""
     async with plugin.database.session() as db:
         organization = await organizations.get(db, organization_id)
-    if organization is None or not organization.available:
+    if organization is None or not organization.working:
         return
     async with plugin.database.write_session(organization_id, actor=None) as db:
         locked = await db.execute(text(_PUSH_LOCK), {"organization": organization_id})
@@ -517,17 +517,6 @@ def _forget(session: Session, _transaction: Any) -> None:
     session.info.pop(_NOTED, None)
 
 
-async def _available(plugin: Plugin) -> set[int]:
-    unavailable = [community_status.value for community_status in organizations.UNAVAILABLE]
-    async with plugin.database.session() as db:
-        found = await db.exec(
-            select(organizations.Organization.id).where(
-                col(organizations.Organization.community_status).not_in(unavailable)
-            )
-        )
-        return set(found.all())
-
-
 async def push_forever(plugin: Plugin, *, sweep_seconds: float = SWEEP_SECONDS) -> None:
     """Send every organization's queued pushes, again and again, until
     cancelled: an organization's as soon as a commit changes stock there,
@@ -543,7 +532,8 @@ async def push_forever(plugin: Plugin, *, sweep_seconds: float = SWEEP_SECONDS) 
             if swept is None or time.monotonic() - swept >= sweep_seconds:
                 swept = time.monotonic()
                 try:
-                    due |= await _available(plugin)
+                    async with plugin.database.session() as db:
+                        due |= await organizations.working(db)
                 except Exception:
                     logger.exception("could not list the organizations to push stock for")
             for organization_id in sorted(due):

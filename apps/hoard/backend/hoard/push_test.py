@@ -27,8 +27,10 @@ from hoard.records import (
     Variation,
 )
 from hoard.stock import add_product
+from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
+from seneschal_core.organizations import PluginStatus
 from seneschal_core.testing import InitiativeStandIn
 
 
@@ -284,6 +286,17 @@ async def test_a_push_sends_what_is_available_when_it_is_sent(
     await sell((chai.id, "4", "1"))
     await db.commit()
 
+    # Held, and kept, while the install is on hold.
+    async with serving_database.session() as registry:
+        await organizations.set_plugin_status(registry, db.organization_id, PluginStatus.ON_HOLD)
+        await registry.commit()
+    await push.send(plugin, db.organization_id)
+    [held] = await _pushes(serving_database, db.organization_id)
+    assert (held.status, shop.stock) == (PushStatus.QUEUED, {})
+
+    async with serving_database.session() as registry:
+        await organizations.set_plugin_status(registry, db.organization_id, PluginStatus.ACTIVE)
+        await registry.commit()
     await push.send(plugin, db.organization_id)
 
     [sent] = await _pushes(serving_database, db.organization_id)
