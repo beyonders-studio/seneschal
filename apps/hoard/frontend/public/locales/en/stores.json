@@ -5,6 +5,12 @@
     "empty": "No store is connected yet.",
     "connected": "Connected",
     "notConnected": "Not connected",
+    "states": {
+      "pending": "Connected, not synced",
+      "syncing": "Syncing",
+      "synced": "Synced"
+    },
+    "syncedWhen": "First synced",
     "listings_one": "{{linked}} of {{count}} listing sells an item",
     "listings_other": "{{linked}} of {{count}} listings sell an item",
     "pushesQueued_one": "{{count}} push waiting",
@@ -43,7 +49,7 @@
   "product": {
     "title": "In your stores",
     "empty": "This product isn't listed in a connected store.",
-    "live": "Edited live in the store: Hoard keeps no copy.",
+    "live": "Hoard keeps the store's copy up to date. Saving writes to the store.",
     "addTo": "Add to {{store}}",
     "added": "Added to the store as a draft.",
     "addFailed": "The product couldn't be added to the store.",
@@ -101,6 +107,40 @@
     "LISTING_UNLINKED": "The listing no longer sells an item.",
     "LOCATION_UNMAPPED": "The store's location no longer sells stock from Hoard.",
     "STORE_HOLDS_OTHER": "The store held a different amount, so Hoard is waiting for its orders.",
-    "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection."
+    "INITIATIVE_UNAVAILABLE": "Initiative couldn't hand over the store's connection.",
+    "STORE_SYNCED": "The store is synced already.",
+    "STORE_NOT_SYNCED": "The store isn't synced yet.",
+    "STORE_SYNCING": "The store is syncing. Wait until it finishes."
+  },
+  "sync": {
+    "open": "Sync with {{channel}}",
+    "title": "Sync with {{channel}}",
+    "next": "Next",
+    "now": "Sync now",
+    "started": "The sync has started. You can leave this page: it carries on.",
+    "startFailed": "The sync couldn't start.",
+    "about": {
+      "description": "What syncing does",
+      "reads": "Hoard reads the store's products and variants, with their titles, descriptions, images, prices and visibility; its locations; how much of each item it holds and what each cost; and its orders from the last 60 days, each with its customer number. From then on Hoard keeps every order, so its history grows past what the store keeps.",
+      "replaces": "Where a Hoard product already matches one in the store (by SKU, then title), the store's version replaces Hoard's, and Hoard's stock counts are set to the store's.",
+      "sends": "Nothing is sent to the store. A big store can take a while: you can leave this page, and the sync carries on."
+    },
+    "locations": {
+      "description": "Where each store location's stock goes",
+      "goesInto": "Its stock goes into",
+      "new": "A new location: {{name}}",
+      "none": "The store has no locations.",
+      "loadFailed": "The store's locations couldn't be read."
+    },
+    "after": {
+      "description": "After the sync",
+      "keeps": "The store keeps syncing. Its orders and product changes come into Hoard as they happen, and when Hoard's stock changes (a production run, a purchase, a stocktake), Hoard sends the new count to the store.",
+      "remove": "To stop, come back here and choose Remove sync; everything already in Hoard stays."
+    },
+    "remove": "Remove sync",
+    "removeTitle": "Remove the sync with {{store}}?",
+    "removeBody": "Hoard stops hearing from the store and stops sending it stock counts. Everything the sync brought into Hoard stays: products, locations, stock, orders and listings. Syncing again later replaces what conflicts, as the first sync did.",
+    "removed": "The sync was removed.",
+    "removeFailed": "The sync couldn't be removed."
   }
 }

@@ -120,7 +120,8 @@
         "expired": "Expired",
         "lost": "Lost",
         "personal_use": "Personal use",
-        "returned_damaged": "Returned damaged"
+        "returned_damaged": "Returned damaged",
+        "synced_from_store": "Synced from store"
       }
     },
     "holdReasons": {

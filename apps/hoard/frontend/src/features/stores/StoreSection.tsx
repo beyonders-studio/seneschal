@@ -3,11 +3,12 @@ import { Plus, Trash2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type {
-  ProductDetail,
-  StoreImageWrite,
-  StoreProductRead,
-  StoreRead,
+import {
+  type ProductDetail,
+  type StoreImageWrite,
+  type StoreProductRead,
+  type StoreRead,
+  StoreState,
 } from "@/api/generated/hoard.schemas";
 import { getListListingsQueryKey, useListListings } from "@/api/generated/listings/listings";
 import {
@@ -34,7 +35,8 @@ import { Textarea } from "@/ui/textarea";
 const LISTINGS = 200;
 
 /** A product in each connected store, on its page: its listings, and the
- *  store's own title, description, images and prices, edited live. */
+ *  store's own title, description, images and prices, from Hoard's copy,
+ *  saved to the store. It is added only to a synced store. */
 export function StoreSection({ product }: { product: ProductDetail }) {
   const { t } = useTranslation("stores");
   const stores = useListStores().data ?? [];
@@ -51,7 +53,10 @@ export function StoreSection({ product }: { product: ProductDetail }) {
     ).values(),
   ];
   const unlisted = stores.filter(
-    (store) => store.connected && !listings.some((listing) => listing.store_id === store.id)
+    (store) =>
+      store.connected &&
+      store.state === StoreState.synced &&
+      !listings.some((listing) => listing.store_id === store.id)
   );
 
   return (

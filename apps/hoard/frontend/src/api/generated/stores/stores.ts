@@ -22,14 +22,17 @@ import type {
 
 import type {
   HTTPValidationError,
+  JobRead,
   ListStorePushesParams,
   PageStorePushRead,
+  StoreLocationFound,
   StoreLocationRead,
   StoreLocationWrite,
   StoreProductCreate,
   StoreProductRead,
   StoreProductWrite,
   StoreRead,
+  StoreSyncWrite,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -170,8 +173,9 @@ export function useListStores<
 }
 
 /**
- * Read the store's locations and products again, matching each product
- * not yet linked, and push each listing what is available.
+ * Read a synced store's locations and products again, taking each
+ * product not yet listed into Hoard as its sync did, and push each listing
+ * what is available.
  * @summary Refresh Store
  */
 export const refreshStore = (
@@ -229,8 +233,9 @@ export type RefreshStoreMutationError = ErrorType<void | HTTPValidationError>;
 export type RefreshStoreMutationVariables = { storeId: number };
 
 /**
- * Read the store's locations and products again, matching each product
- * not yet linked, and push each listing what is available.
+ * Read a synced store's locations and products again, taking each
+ * product not yet listed into Hoard as its sync did, and push each listing
+ * what is available.
  * @summary Refresh Store
  */
 export const useRefreshStore = <TError = ErrorType<void | HTTPValidationError>, TContext = unknown>(
@@ -251,6 +256,322 @@ export const useRefreshStore = <TError = ErrorType<void | HTTPValidationError>, 
   TContext
 > => {
   return useMutation(getRefreshStoreMutationOptions(options), queryClient);
+};
+/**
+ * The store's locations, read from the store now, for choosing where
+ * each one's stock goes before a sync.
+ * @summary Read Store Locations
+ */
+export const readStoreLocations = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreLocationFound[]>(
+    { url: `/api/v1/stores/${storeId}/store-locations`, method: "GET", signal },
+    options
+  );
+};
+
+export const getReadStoreLocationsQueryKey = (storeId: number) => {
+  return [`/api/v1/stores/${storeId}/store-locations`] as const;
+};
+
+export const getReadStoreLocationsQueryOptions = <
+  TData = Awaited<ReturnType<typeof readStoreLocations>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadStoreLocationsQueryKey(storeId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readStoreLocations>>> = ({ signal }) =>
+    readStoreLocations(storeId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: storeId !== null && storeId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ReadStoreLocationsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readStoreLocations>>
+>;
+export type ReadStoreLocationsQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The store's locations, read from the store now, for choosing where
+ * each one's stock goes before a sync.
+ * @summary Read Store Locations
+ */
+export function useReadStoreLocations<
+  TData = Awaited<ReturnType<typeof readStoreLocations>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readStoreLocations>>,
+          TError,
+          Awaited<ReturnType<typeof readStoreLocations>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's locations, read from the store now, for choosing where
+ * each one's stock goes before a sync.
+ * @summary Read Store Locations
+ */
+export function useReadStoreLocations<
+  TData = Awaited<ReturnType<typeof readStoreLocations>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readStoreLocations>>,
+          TError,
+          Awaited<ReturnType<typeof readStoreLocations>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's locations, read from the store now, for choosing where
+ * each one's stock goes before a sync.
+ * @summary Read Store Locations
+ */
+export function useReadStoreLocations<
+  TData = Awaited<ReturnType<typeof readStoreLocations>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's locations, read from the store now, for choosing where
+ * each one's stock goes before a sync.
+ * @summary Read Store Locations
+ */
+export function useReadStoreLocations<
+  TData = Awaited<ReturnType<typeof readStoreLocations>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readStoreLocations>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadStoreLocationsQueryOptions(storeId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Queue the store's sync, taking each store location's stock as
+ * ``body`` says. A sync already waiting or running is answered instead.
+ * @summary Sync Store
+ */
+export const syncStore = (
+  storeId: number,
+  storeSyncWrite: BodyType<StoreSyncWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<JobRead>(
+    {
+      url: `/api/v1/stores/${storeId}/sync`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: storeSyncWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getSyncStoreMutationKey = () => ["syncStore"] as const;
+
+export const getSyncStoreMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof syncStore>>,
+    TError,
+    SyncStoreMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof syncStore>>,
+  TError,
+  SyncStoreMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSyncStoreMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof syncStore>>,
+    SyncStoreMutationVariables
+  > = (props) => {
+    const { storeId, data } = props ?? {};
+
+    return syncStore(storeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SyncStoreMutationResult = NonNullable<Awaited<ReturnType<typeof syncStore>>>;
+export type SyncStoreMutationBody = BodyType<StoreSyncWrite>;
+export type SyncStoreMutationError = ErrorType<void>;
+export type SyncStoreMutationVariables = { storeId: number; data: BodyType<StoreSyncWrite> };
+
+/**
+ * Queue the store's sync, taking each store location's stock as
+ * ``body`` says. A sync already waiting or running is answered instead.
+ * @summary Sync Store
+ */
+export const useSyncStore = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof syncStore>>,
+      TError,
+      SyncStoreMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof syncStore>>,
+  TError,
+  SyncStoreMutationVariables,
+  TContext
+> => {
+  return useMutation(getSyncStoreMutationOptions(options), queryClient);
+};
+/**
+ * Remove the store's sync: Hoard stops hearing from it and pushing to it,
+ * and it is pending again. Everything the sync brought in stays.
+ * @summary Unsync Store
+ */
+export const unsyncStore = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreRead>(
+    { url: `/api/v1/stores/${storeId}/unsync`, method: "POST", signal },
+    options
+  );
+};
+
+export const getUnsyncStoreMutationKey = () => ["unsyncStore"] as const;
+
+export const getUnsyncStoreMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof unsyncStore>>,
+    TError,
+    UnsyncStoreMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof unsyncStore>>,
+  TError,
+  UnsyncStoreMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUnsyncStoreMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof unsyncStore>>,
+    UnsyncStoreMutationVariables
+  > = (props) => {
+    const { storeId } = props ?? {};
+
+    return unsyncStore(storeId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UnsyncStoreMutationResult = NonNullable<Awaited<ReturnType<typeof unsyncStore>>>;
+
+export type UnsyncStoreMutationError = ErrorType<void | HTTPValidationError>;
+export type UnsyncStoreMutationVariables = { storeId: number };
+
+/**
+ * Remove the store's sync: Hoard stops hearing from it and pushing to it,
+ * and it is pending again. Everything the sync brought in stays.
+ * @summary Unsync Store
+ */
+export const useUnsyncStore = <TError = ErrorType<void | HTTPValidationError>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof unsyncStore>>,
+      TError,
+      UnsyncStoreMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof unsyncStore>>,
+  TError,
+  UnsyncStoreMutationVariables,
+  TContext
+> => {
+  return useMutation(getUnsyncStoreMutationOptions(options), queryClient);
 };
 /**
  * Set the Hoard location whose stock a store location sells, or none; the
@@ -490,7 +811,7 @@ export function useListStorePushes<
 }
 
 /**
- * A store's product, read from the store now.
+ * A store's product, from Hoard's copy of it.
  * @summary Read Store Product
  */
 export const readStoreProduct = (
@@ -542,7 +863,7 @@ export type ReadStoreProductQueryResult = NonNullable<Awaited<ReturnType<typeof 
 export type ReadStoreProductQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
- * A store's product, read from the store now.
+ * A store's product, from Hoard's copy of it.
  * @summary Read Store Product
  */
 export function useReadStoreProduct<
@@ -566,7 +887,7 @@ export function useReadStoreProduct<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A store's product, read from the store now.
+ * A store's product, from Hoard's copy of it.
  * @summary Read Store Product
  */
 export function useReadStoreProduct<
@@ -590,7 +911,7 @@ export function useReadStoreProduct<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A store's product, read from the store now.
+ * A store's product, from Hoard's copy of it.
  * @summary Read Store Product
  */
 export function useReadStoreProduct<
@@ -606,7 +927,7 @@ export function useReadStoreProduct<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * A store's product, read from the store now.
+ * A store's product, from Hoard's copy of it.
  * @summary Read Store Product
  */
 export function useReadStoreProduct<
@@ -632,7 +953,8 @@ export function useReadStoreProduct<
 
 /**
  * Write a product's edits to the store, and answer it as the store keeps
- * it now. Its listings are kept, and those not yet linked matched again.
+ * it now, kept as Hoard's copy. Its listings are kept, and those not yet
+ * linked matched again.
  * @summary Save Store Product
  */
 export const saveStoreProduct = (
@@ -705,7 +1027,8 @@ export type SaveStoreProductMutationVariables = {
 
 /**
  * Write a product's edits to the store, and answer it as the store keeps
- * it now. Its listings are kept, and those not yet linked matched again.
+ * it now, kept as Hoard's copy. Its listings are kept, and those not yet
+ * linked matched again.
  * @summary Save Store Product
  */
 export const useSaveStoreProduct = <

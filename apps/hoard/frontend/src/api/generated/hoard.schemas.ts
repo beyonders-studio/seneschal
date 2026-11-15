@@ -610,6 +610,7 @@ export const DefaultReason = {
   lost: "lost",
   personal_use: "personal_use",
   returned_damaged: "returned_damaged",
+  synced_from_store: "synced_from_store",
 } as const;
 
 /**
@@ -2358,6 +2359,29 @@ export interface StoreImageWrite {
   alt?: string | null;
 }
 
+/**
+ * Where a store location's stock goes once the store is synced: a Hoard
+ * location, a new one named as the store names it, or, with neither,
+ * nowhere: its stock is not read and nothing is pushed there.
+ */
+export interface StoreLocationChoice {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  external_id: string;
+  location_id?: number | null;
+  new?: boolean;
+}
+
+/**
+ * One of the store's locations, as the store has it now.
+ */
+export interface StoreLocationFound {
+  external_id: string;
+  name: string;
+}
+
 export interface StoreLocationRead {
   id: number;
   external_id: string;
@@ -2390,7 +2414,7 @@ export interface StoreVariantRead {
 }
 
 /**
- * A store's product, as the store keeps it now.
+ * A store's product, as Hoard's copy of it holds it.
  */
 export interface StoreProductRead {
   store_id: number;
@@ -2402,6 +2426,10 @@ export interface StoreProductRead {
   variants: StoreVariantRead[];
   images: StoreImageRead[];
   published_on: string[];
+  product_type: string | null;
+  vendor: string | null;
+  tags: string[];
+  updated_at: string | null;
   listings: ListingRead[];
 }
 
@@ -2436,6 +2464,17 @@ export interface StoreProductWrite {
   published_on?: string[];
 }
 
+/**
+ * Where a store's sync stands.
+ */
+export type StoreState = (typeof StoreState)[keyof typeof StoreState];
+
+export const StoreState = {
+  pending: "pending",
+  syncing: "syncing",
+  synced: "synced",
+} as const;
+
 export interface StoreRead {
   id: number;
   channel: Channel;
@@ -2443,12 +2482,22 @@ export interface StoreRead {
   account_label: string | null;
   connected: boolean;
   last_check_error: string | null;
+  state: StoreState;
   imported_at: string | null;
+  sync_job_id: number | null;
   locations: StoreLocationRead[];
   listings: number;
   linked: number;
   pushes_queued: number;
   pushes_failed: number;
+}
+
+/**
+ * Where each of the store's locations takes its stock from; one not
+ * named takes none.
+ */
+export interface StoreSyncWrite {
+  locations?: StoreLocationChoice[];
 }
 
 /**
