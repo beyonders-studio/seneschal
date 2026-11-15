@@ -380,6 +380,14 @@ CONNECTORS: dict[Channel, Callable[[Mapping[str, Any]], Connector]] = {
 }
 
 
+def order_page(channel: Channel, shop_domain: str, order_id: str) -> str | None:
+    """Where the store's admin shows one of its orders, by the store's id for
+    it; None for a channel Hoard knows no such address of."""
+    if channel is Channel.SHOPIFY:
+        return f"https://{shop_domain}/admin/orders/{order_id.rsplit('/', 1)[-1]}"
+    return None
+
+
 def connector_for(channel: Channel, values: Mapping[str, Any]) -> Connector:
     """The connector for ``channel``'s store, from its connection's values."""
     build = CONNECTORS.get(channel)

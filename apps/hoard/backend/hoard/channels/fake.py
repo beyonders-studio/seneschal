@@ -14,7 +14,7 @@ import json
 from collections import defaultdict
 from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -96,10 +96,12 @@ class FakeConnector:
         return self.shop_products.get(product_id)
 
     async def save_product(self, product: StoreProduct) -> StoreProduct:
+        """Keep ``product`` as the store's, changed now."""
         self._checked()
         assert product.id in self.shop_products
-        self.shop_products[product.id] = product
-        return product
+        saved = replace(product, updated_at=datetime.now(UTC))
+        self.shop_products[product.id] = saved
+        return saved
 
     async def create_product(self, product: StoreProduct) -> StoreProduct:
         self._checked()

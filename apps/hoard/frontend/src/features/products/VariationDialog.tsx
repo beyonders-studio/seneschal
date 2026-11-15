@@ -3,13 +3,23 @@ import { Plus, X } from "lucide-react";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ProductVariationRead, ProductVariationWrite } from "@/api/generated/hoard.schemas";
+import type {
+  ProductDetail,
+  ProductVariationRead,
+  ProductVariationWrite,
+} from "@/api/generated/hoard.schemas";
 import {
   createProductVariation,
   getReadProductQueryKey,
   updateProductVariation,
 } from "@/api/generated/products/products";
 import { orNull } from "@/features/items/format";
+import {
+  changedInStore,
+  storeVersions,
+  useListedIn,
+  useRefreshStoreProducts,
+} from "@/features/products/storeVersions";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
@@ -25,17 +35,18 @@ import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 
 /**
- * Adding a variation to product `productId`, or editing `variation`, in a
- * dialog. Closing it drops what was typed. Its price is a field only for a
- * member who sees costs.
+ * Adding a variation to `product`, or editing `variation`, in a dialog.
+ * Closing it drops what was typed. Its price is a field only for a member who
+ * sees costs. A new SKU or attributes of a variation a synced store lists are
+ * written to the store first, as the product's are (`ProductDialog`).
  */
 export function VariationDialog({
-  productId,
+  product,
   variation,
   open,
   onOpenChange,
 }: {
-  productId: number;
+  product: ProductDetail;
   variation?: ProductVariationRead;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -45,7 +56,7 @@ export function VariationDialog({
       <DialogContent>
         {open && (
           <VariationForm
-            productId={productId}
+            product={product}
             variation={variation}
             onSaved={() => onOpenChange(false)}
           />
@@ -56,11 +67,11 @@ export function VariationDialog({
 }
 
 function VariationForm({
-  productId,
+  product,
   variation,
   onSaved,
 }: {
-  productId: number;
+  product: ProductDetail;
   variation?: ProductVariationRead;
   onSaved: () => void;
 }) {
@@ -72,14 +83,20 @@ function VariationForm({
   );
   const [sku, setSku] = useState(variation?.sku ?? "");
   const [price, setPrice] = useState(variation?.price ?? "");
+  const listedIn = useListedIn();
+  const refresh = useRefreshStoreProducts();
   const save = useMutation({
     mutationFn: (body: ProductVariationWrite) =>
       variation
-        ? updateProductVariation(productId, variation.id, body)
-        : createProductVariation(productId, body),
-    onSuccess: (product) => {
-      queryClient.setQueryData(getReadProductQueryKey(productId), product);
+        ? updateProductVariation(product.id, variation.id, body)
+        : createProductVariation(product.id, body),
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(getReadProductQueryKey(product.id), saved);
+      await refresh(product);
       onSaved();
+    },
+    onError: (error) => {
+      if (changedInStore(error)) void refresh(product);
     },
   });
 
@@ -98,6 +115,7 @@ function VariationForm({
       ),
       sku: orNull(sku),
       ...(seesCosts ? { price: orNull(price) } : {}),
+      store_versions: storeVersions(product),
     });
   };
 
@@ -165,7 +183,9 @@ function VariationForm({
         </div>
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
-            {errorMessage(save.error, t, "products.saveFailed")}
+            {changedInStore(save.error)
+              ? t("products.changedInStore", { store: listedIn(product) })
+              : errorMessage(save.error, t, "products.saveFailed")}
           </p>
         )}
       </DialogBody>

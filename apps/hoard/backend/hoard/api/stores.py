@@ -8,6 +8,9 @@ mapping its locations.
 A store's products are shown from Hoard's copy of them (``hoard.listings``),
 which the store's webhooks and the reconcile keep up to date, and written
 back to the store as they are edited; the store's answer is kept as the copy.
+An edit names the version of the product it started from, the store's
+``updated_at`` as the copy held it, and is sent only while the store holds
+that version (:func:`started_from`).
 Prices are sent and taken only for a member who sees costs. A Hoard product
 can be made in a store, its listings linked to its variations at once.
 """
@@ -75,7 +78,7 @@ _LIVE: dict[int | str, dict[str, Any]] = {
 _CHANGE_LIVE: dict[int | str, dict[str, Any]] = {
     **_LIVE,
     403: {"description": "READ_ONLY"},
-    409: {"description": "STORE_NOT_CONNECTED, STORE_NOT_SYNCED"},
+    409: {"description": "STORE_NOT_CONNECTED, STORE_NOT_SYNCED, STORE_PRODUCT_CHANGED"},
 }
 _ADMIN: dict[int | str, dict[str, Any]] = {
     **_CHANGE_LIVE,
@@ -97,6 +100,9 @@ class StoreError(StrEnum):
     STORE_NOT_SYNCED = "STORE_NOT_SYNCED"
     #: The store's sync is running.
     STORE_SYNCING = "STORE_SYNCING"
+    #: The store's product changed since the edit started: nothing was sent,
+    #: and Hoard's copy now holds the store's version.
+    STORE_PRODUCT_CHANGED = "STORE_PRODUCT_CHANGED"
 
 
 class StoreState(StrEnum):
@@ -259,6 +265,8 @@ class StoreProductWrite(BaseModel):
     """A store product as an edit leaves it. Variants it does not name stay
     as they are; its images are the ones it lists, in order."""
 
+    #: When the store last changed it, as read when the edit started.
+    updated_at: datetime | None
     title: items.Text
     description: str | None = Field(default=None, max_length=100_000)
     status: str | None = Field(default=None, max_length=50)
@@ -273,7 +281,8 @@ class StoreProductCreate(BaseModel):
     product_id: int
 
 
-def _store_refused(refused: ConnectRefused) -> HTTPException:
+def store_refused(refused: ConnectRefused) -> HTTPException:
+    """The answer to the store refusing what Hoard asked."""
     return refuse(status.HTTP_502_BAD_GATEWAY, refused.code)
 
 
@@ -283,7 +292,7 @@ def _require_synced(store: Store) -> None:
         raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_SYNCED)
 
 
-async def _connector(plugin: Plugin, community_ref: str, store: Store) -> Connector:
+async def store_connector(plugin: Plugin, community_ref: str, store: Store) -> Connector:
     """The store's connector, from the values its connection holds now."""
     if not store.connected:
         raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_CONNECTED)
@@ -294,7 +303,7 @@ async def _connector(plugin: Plugin, community_ref: str, store: Store) -> Connec
             status.HTTP_503_SERVICE_UNAVAILABLE, HoardError.INITIATIVE_UNAVAILABLE
         ) from None
     except ConnectRefused as refused:
-        raise _store_refused(refused) from None
+        raise store_refused(refused) from None
     if connector is None:
         raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_NOT_CONNECTED)
     return connector
@@ -373,12 +382,12 @@ async def refresh_store(
     what is available."""
     store = await found(db, Store, store_id)
     _require_synced(store)
-    connector = await _connector(plugin, session.community_ref, store)
+    connector = await store_connector(plugin, session.community_ref, store)
     try:
         locations = await connector.locations()
         products = [product async for product in connector.products()]
     except ConnectRefused as refused:
-        raise _store_refused(refused) from None
+        raise store_refused(refused) from None
     await listings.keep_locations(db, store, locations)
     await listings.adopt(db, store, products)
     await _queue_store(db, store)
@@ -393,11 +402,11 @@ async def read_store_locations(
     """The store's locations, read from the store now, for choosing where
     each one's stock goes before a sync."""
     store = await found(db, Store, store_id)
-    connector = await _connector(plugin, session.community_ref, store)
+    connector = await store_connector(plugin, session.community_ref, store)
     try:
         locations = await connector.locations()
     except ConnectRefused as refused:
-        raise _store_refused(refused) from None
+        raise store_refused(refused) from None
     return [
         StoreLocationFound(external_id=external_id, name=name)
         for external_id, name in locations.items()
@@ -611,6 +620,30 @@ async def _copy(db: AsyncSession, store: Store, product_id: str) -> StoreProduct
     return copy
 
 
+async def started_from(
+    db: WriteSession,
+    store: Store,
+    connector: Connector,
+    product_id: str,
+    updated_at: datetime | None,
+) -> StoreProduct:
+    """The store's product as the store holds it now, when that is the version
+    an edit started from, by the store's ``updated_at``. Otherwise the store's
+    version is kept as Hoard's copy and the edit is refused with
+    ``STORE_PRODUCT_CHANGED``; nothing is sent to the store."""
+    try:
+        product = await connector.product(product_id)
+    except ConnectRefused as refused:
+        raise store_refused(refused) from None
+    if product is None:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    if product.updated_at != updated_at:
+        await listings.match(db, store, [product])
+        await db.commit()
+        raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_PRODUCT_CHANGED)
+    return product
+
+
 @router.get("/{store_id}/products/{product_id}", responses=_READ)
 async def read_store_product(
     store_id: int, product_id: str, db: OrganizationSessionDep, sees_costs: SeesCostsDep
@@ -650,19 +683,18 @@ async def save_store_product(
     session: SessionDep,
     sees_costs: SeesCostsDep,
 ) -> StoreProductRead:
-    """Write a product's edits to the store, and answer it as the store keeps
-    it now, kept as Hoard's copy. Its listings are kept, and those not yet
-    linked matched again."""
+    """Write a product's edits to the store, while the store holds the version
+    they started from, and answer it as the store keeps it now, kept as
+    Hoard's copy. Its listings are kept, and those not yet linked matched
+    again."""
     store = await found(db, Store, store_id)
     _require_synced(store)
-    connector = await _connector(plugin, session.community_ref, store)
+    connector = await store_connector(plugin, session.community_ref, store)
+    product = await started_from(db, store, connector, product_id, body.updated_at)
     try:
-        product = await connector.product(product_id)
-        if product is None:
-            raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
         saved = await connector.save_product(_edited(product, body, sees_costs))
     except ConnectRefused as refused:
-        raise _store_refused(refused) from None
+        raise store_refused(refused) from None
     await listings.match(db, store, [saved])
     await db.commit()
     return await _product_read(db, store, await _copy(db, store, product_id), sees_costs)
@@ -713,11 +745,11 @@ async def create_store_product(
             )
         ).all()
     )
-    connector = await _connector(plugin, session.community_ref, store)
+    connector = await store_connector(plugin, session.community_ref, store)
     try:
         made = await connector.create_product(_new_product(product, variations, sees_costs))
     except ConnectRefused as refused:
-        raise _store_refused(refused) from None
+        raise store_refused(refused) from None
     kept = await listings.match(db, store, [made])
     for listing, variation in zip(kept, variations, strict=False):
         listing.item_id, listing.matched_by = variation.id, MatchedBy.EXTERNAL_ID

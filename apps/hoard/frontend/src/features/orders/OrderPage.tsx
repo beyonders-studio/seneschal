@@ -1,6 +1,6 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { Ban, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
+import { Ban, ExternalLink, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -54,7 +54,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 const ASSUMED = "assumed";
 
 /** One order, under Orders: its customer and lines, its shipments with the
- *  lots they draw and what came back, cancelling and reopening it. */
+ *  lots they draw and what came back, cancelling and reopening it. An order
+ *  its synced store manages is shown as it stands, with a link to it in the
+ *  store: only the lots its shipments draw and what comes back change here. */
 export function OrderPage({ orderId }: { orderId: number }) {
   const { t } = useTranslation("orders");
   const order = useReadOrder(orderId);
@@ -94,7 +96,7 @@ function useChange() {
 }
 
 function Order({ order }: { order: OrderRead }) {
-  const { t } = useTranslation("orders");
+  const { t } = useTranslation(["orders", "stores"]);
   const queries = useQueryClient();
   const navigate = useNavigate();
   const { read_only } = useSession();
@@ -113,8 +115,8 @@ function Order({ order }: { order: OrderRead }) {
   const cancel = useCancelOrder();
   const reopen = useReopenOrder();
   const cancelled = order.status === "cancelled";
-  const byHand = order.store_id === null;
-  const editsLines = byHand && !cancelled && !read_only;
+  const managed = order.managed_by_store !== null;
+  const editsLines = !managed && !read_only && !cancelled;
 
   return (
     <section className="flex flex-col gap-4">
@@ -147,37 +149,52 @@ function Order({ order }: { order: OrderRead }) {
         </div>
         <div className="flex flex-wrap gap-2">
           <HoldFromOrder order={order} />
-          <Button variant="outline" onClick={() => setEditing(true)} disabled={read_only}>
-            <Pencil aria-hidden />
-            {t("hoard:common.edit")}
-          </Button>
-          {cancelled ? (
-            <Button
-              variant="outline"
-              disabled={read_only || reopen.isPending}
-              onClick={() => void change(reopen.mutateAsync({ orderId: order.id }))}
-            >
-              <RotateCcw aria-hidden />
-              {t("order.reopen")}
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              disabled={read_only || cancel.isPending}
-              onClick={() => void change(cancel.mutateAsync({ orderId: order.id }))}
-            >
-              <Ban aria-hidden />
-              {t("order.cancel")}
+          {order.store_url && order.managed_by_store && (
+            <Button variant="outline" asChild>
+              <a href={order.store_url} target="_blank" rel="noreferrer">
+                <ExternalLink aria-hidden />
+                {t("order.openInStore", { store: t(`stores:channels.${order.managed_by_store}`) })}
+              </a>
             </Button>
           )}
-          {byHand && (
-            <Button variant="outline" onClick={() => setDeleting(true)} disabled={read_only}>
-              <Trash2 aria-hidden />
-              {t("hoard:common.delete")}
-            </Button>
+          {!managed && (
+            <>
+              <Button variant="outline" onClick={() => setEditing(true)} disabled={read_only}>
+                <Pencil aria-hidden />
+                {t("hoard:common.edit")}
+              </Button>
+              {cancelled ? (
+                <Button
+                  variant="outline"
+                  disabled={read_only || reopen.isPending}
+                  onClick={() => void change(reopen.mutateAsync({ orderId: order.id }))}
+                >
+                  <RotateCcw aria-hidden />
+                  {t("order.reopen")}
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  disabled={read_only || cancel.isPending}
+                  onClick={() => void change(cancel.mutateAsync({ orderId: order.id }))}
+                >
+                  <Ban aria-hidden />
+                  {t("order.cancel")}
+                </Button>
+              )}
+              <Button variant="outline" onClick={() => setDeleting(true)} disabled={read_only}>
+                <Trash2 aria-hidden />
+                {t("hoard:common.delete")}
+              </Button>
+            </>
           )}
         </div>
       </div>
+      {order.managed_by_store && (
+        <p className="text-sm text-muted-foreground">
+          {t("order.managed", { store: t(`stores:channels.${order.managed_by_store}`) })}
+        </p>
+      )}
 
       <Table>
         <TableHeader>
@@ -256,7 +273,7 @@ function Order({ order }: { order: OrderRead }) {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-lg font-semibold tracking-tight">{t("shipments.title")}</h3>
-        {!cancelled && leftToShip(order).length > 0 && (
+        {!managed && !cancelled && leftToShip(order).length > 0 && (
           <Button
             variant="outline"
             disabled={read_only}
@@ -276,6 +293,7 @@ function Order({ order }: { order: OrderRead }) {
           shipment={shipment}
           number={index + 1}
           cancelled={cancelled}
+          managed={managed}
           onAction={setShipmentAction}
         />
       ))}
@@ -391,11 +409,14 @@ function ShipmentCard({
   shipment,
   number,
   cancelled,
+  managed,
   onAction,
 }: {
   shipment: OrderShipmentRead;
   number: number;
   cancelled: boolean;
+  /** Whether its order's store manages it: only lots and returns change here. */
+  managed: boolean;
   onAction: (action: ShipmentAction) => void;
 }) {
   const { t } = useTranslation("orders");
@@ -444,7 +465,7 @@ function ShipmentCard({
               .join(" · ")}
           </p>
         </div>
-        {!read_only && (
+        {!read_only && !managed && (
           <div className="flex flex-wrap gap-2">
             {pending && !cancelled && (
               <Button size="sm" onClick={() => onAction({ kind: "ship", shipment })}>
@@ -574,7 +595,7 @@ function ShipmentCard({
                       {t("shipments.return")}
                     </Button>
                   )}
-                  {!read_only && pending && (
+                  {!read_only && !managed && pending && (
                     <Button
                       size="sm"
                       variant="ghost"

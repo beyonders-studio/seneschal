@@ -6,8 +6,10 @@ have shipped, and its shipments, each with its lines, their lots and what came
 back of them (``hoard.api.shipments`` changes those). A hand order names its
 customer by an Initiative contact's id; a store's order names the store, its
 number there and the store's number for its customer instead, with that
-customer's other orders, and its lines change only in the store. Orders are
-listed by status, or by a store's customer.
+customer's other orders. A synced store's order is managed in the store
+(:func:`hoard.orders.store_owned`): every change to it here is refused, and it
+is read with the address of its page in the store's admin. Orders are listed
+by status, or by a store's customer.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
-from hoard import holds, orders, stock
+from hoard import channels, holds, orders, stock
 from hoard.api.adjustments import (
     NOT_FOUND,
     AdjustmentItem,
@@ -40,6 +42,7 @@ from hoard.api.shapes import Page, PageDep
 from hoard.orders import OrderError, OrderRefused
 from hoard.records import (
     PLACES,
+    Channel,
     Hold,
     Lot,
     Order,
@@ -63,7 +66,7 @@ Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 Text = Annotated[str, StringConstraints(strip_whitespace=True, max_length=2000)]
 CHANGE_REFUSED: Responses = {
     409: {
-        "description": "ORDER_CANCELLED, ORDER_NOT_CANCELLED, ORDER_FROM_STORE, "
+        "description": "ORDER_CANCELLED, ORDER_NOT_CANCELLED, MANAGED_BY_STORE, "
         "ORDER_LINE_PART, ORDER_LINE_SHIPPED, ORDER_SHIPPED"
     },
     422: {"description": "ORDER_ITEM_NOT_SOLD"},
@@ -186,6 +189,12 @@ class CustomerOrder(BaseModel):
 
 class OrderRead(OrderSummary):
     external_id: str | None
+    #: The channel of the store managing it, once that store is synced: Hoard
+    #: changes nothing of it but the lots its shipments draw and what comes
+    #: back of them. Null for an order Hoard manages.
+    managed_by_store: Channel | None
+    #: The order's page in its store's admin, while its store manages it.
+    store_url: str | None
     initiative_id: int | None
     shipping: Decimal
     tax: Decimal
@@ -343,9 +352,14 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
             .order_by(*LATEST_FIRST)
         )
         others = list(found.all())
+    store = await orders.store_owned(db, order)
     return OrderRead(
         **_summary(order, value),
         external_id=order.external_id,
+        managed_by_store=None if store is None else store.channel,
+        store_url=channels.order_page(store.channel, store.shop_domain, order.external_id)
+        if store is not None and store.shop_domain and order.external_id
+        else None,
         initiative_id=order.initiative_id,
         shipping=order.shipping,
         tax=order.tax,
@@ -412,6 +426,12 @@ def order_refused(refused: OrderRefused) -> Exception:
     if refused.code is OrderError.ORDER_ITEM_NOT_SOLD:
         return refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code)
     return refuse(status.HTTP_409_CONFLICT, refused.code)
+
+
+async def refuse_store_owned(db: WriteSession, order: Order) -> None:
+    """Refuse a change to an order its store manages: ``MANAGED_BY_STORE``."""
+    if await orders.store_owned(db, order) is not None:
+        raise refuse(status.HTTP_409_CONFLICT, OrderError.MANAGED_BY_STORE)
 
 
 async def _flush_code(db: WriteSession) -> None:
@@ -548,11 +568,15 @@ class OrderUpdate(BaseModel):
     delivery_address: Text | None = None
 
 
-@router.patch("/{order_id}", responses={**NOT_FOUND, 409: {"description": "ORDER_CODE_TAKEN"}})
+@router.patch(
+    "/{order_id}",
+    responses={**NOT_FOUND, 409: {"description": "ORDER_CODE_TAKEN, MANAGED_BY_STORE"}},
+)
 async def update_order(db: WriteSessionDep, order_id: int, body: OrderUpdate) -> OrderRead:
     """Change an order."""
     sent = changes(body, nullable={"due_on", "delivery_address"})
     order = await known(db, Order, order_id)
+    await refuse_store_owned(db, order)
     if "location_id" in sent:
         sent["location_id"] = await location_or_main(db, sent["location_id"])
     if "delivery_address" in sent:
@@ -572,9 +596,11 @@ async def update_order(db: WriteSessionDep, order_id: int, body: OrderUpdate) ->
     responses={**NOT_FOUND, **CHANGE_REFUSED},
 )
 async def delete_order(db: WriteSessionDep, order_id: int) -> None:
-    """Delete a hand order with its shipments, while none of them has shipped."""
+    """Delete an order with its shipments, while none of them has shipped."""
+    order = await known(db, Order, order_id)
+    await refuse_store_owned(db, order)
     try:
-        await orders.delete(db, await known(db, Order, order_id))
+        await orders.delete(db, order)
     except OrderRefused as refused:
         raise order_refused(refused) from None
     await db.commit()
@@ -584,6 +610,7 @@ async def delete_order(db: WriteSessionDep, order_id: int) -> None:
 async def cancel_order(db: WriteSessionDep, order_id: int) -> OrderRead:
     """Cancel an order and its pending shipments; what shipped stays shipped."""
     order = await known(db, Order, order_id)
+    await refuse_store_owned(db, order)
     try:
         await orders.cancel(db, order)
     except OrderRefused as refused:
@@ -596,6 +623,7 @@ async def cancel_order(db: WriteSessionDep, order_id: int) -> OrderRead:
 async def reopen_order(db: WriteSessionDep, order_id: int) -> OrderRead:
     """Reopen a cancelled order."""
     order = await known(db, Order, order_id)
+    await refuse_store_owned(db, order)
     try:
         await orders.reopen(db, order)
     except OrderRefused as refused:
@@ -609,6 +637,7 @@ async def _line(db: WriteSession, order_id: int, line_id: int) -> tuple[Order, O
     line = await known(db, OrderLine, line_id)
     if line.order_id != order.id:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    await refuse_store_owned(db, order)
     return order, line
 
 
@@ -618,8 +647,9 @@ async def _line(db: WriteSession, order_id: int, line_id: int) -> tuple[Order, O
     responses={**NOT_FOUND, **CHANGE_REFUSED},
 )
 async def create_order_line(db: WriteSessionDep, order_id: int, body: OrderLineCreate) -> OrderRead:
-    """Sell a variation on a hand order; a bundle comes with its parts."""
+    """Sell a variation on an order; a bundle comes with its parts."""
     order = await known(db, Order, order_id)
+    await refuse_store_owned(db, order)
     try:
         await orders.add_line(db, order, body.item_id, body.quantity, body.price)
     except OrderRefused as refused:
@@ -639,7 +669,7 @@ class OrderLineUpdate(BaseModel):
 async def update_order_line(
     db: WriteSessionDep, order_id: int, line_id: int, body: OrderLineUpdate
 ) -> OrderRead:
-    """Change a hand order's line: no less than its shipments hold of it."""
+    """Change an order's line: no less than its shipments hold of it."""
     sent = changes(body)
     order, line = await _line(db, order_id, line_id)
     try:
@@ -654,7 +684,7 @@ async def update_order_line(
 
 @router.delete("/{order_id}/lines/{line_id}", responses={**NOT_FOUND, **CHANGE_REFUSED})
 async def delete_order_line(db: WriteSessionDep, order_id: int, line_id: int) -> OrderRead:
-    """Remove a hand order's line, with a bundle's parts, while no shipment holds them."""
+    """Remove an order's line, with a bundle's parts, while no shipment holds them."""
     order, line = await _line(db, order_id, line_id)
     try:
         await orders.remove_line(db, order, line)

@@ -14,7 +14,9 @@ less is available than nothing, the open orders are **short**: each of their
 lines, by as much as the item lacks, up to what the line has left to ship.
 
 An order is made by hand, with its lines, or copied in from a store
-(``hoard.sync``), whose lines change only there. A bundle sold by hand is
+(``hoard.sync``). Once that store is synced, the store manages its orders
+(:func:`store_owned`): Hoard changes nothing of one but the lots its
+shipments draw and what comes back of them. A bundle sold by hand is
 split into its parts, as its recipe holds them, each a line of its own at no
 price. An order is **shipped** once its shipments have shipped every line, and
 open again once one is unshipped; cancelling it cancels the shipments still
@@ -45,6 +47,7 @@ from hoard.records import (
     Shipment,
     ShipmentLine,
     ShipmentStatus,
+    Store,
     Variation,
 )
 from hoard.stock import on_hand
@@ -60,8 +63,8 @@ class OrderError(StrEnum):
     ORDER_CANCELLED = "ORDER_CANCELLED"
     #: The order is not cancelled, so there is nothing to reopen.
     ORDER_NOT_CANCELLED = "ORDER_NOT_CANCELLED"
-    #: A store's order: its lines change in the store.
-    ORDER_FROM_STORE = "ORDER_FROM_STORE"
+    #: A synced store's order: it changes in the store.
+    MANAGED_BY_STORE = "MANAGED_BY_STORE"
     #: A bundle's part: it changes with its bundle's line.
     ORDER_LINE_PART = "ORDER_LINE_PART"
     #: A shipment holds the line, or more of it than asked for.
@@ -147,6 +150,16 @@ async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
     return found
 
 
+async def store_owned(db: AsyncSession, order: Order) -> Store | None:
+    """The store managing an order: the store it came from, once that store is
+    synced. None for an order Hoard manages: one made by hand, or a store's
+    while the store is pending or after its sync is removed."""
+    if order.store_id is None:
+        return None
+    store = await db.get(Store, order.store_id)
+    return store if store is not None and store.imported_at is not None else None
+
+
 async def lines(db: AsyncSession, order_id: int) -> list[OrderLine]:
     """An order's lines, in the order they were added, each bundle's parts
     after it."""
@@ -213,9 +226,7 @@ async def _variation(db: WriteSession, item_id: int) -> tuple[Product, Variation
     return await db.get_one(Product, variation.product_id), variation
 
 
-def _by_hand(order: Order) -> None:
-    if order.store_id is not None:
-        raise OrderRefused(OrderError.ORDER_FROM_STORE)
+def _not_cancelled(order: Order) -> None:
     if order.status is OrderStatus.CANCELLED:
         raise OrderRefused(OrderError.ORDER_CANCELLED)
 
@@ -253,9 +264,9 @@ async def _split(db: WriteSession, line: OrderLine, product: Product) -> None:
 async def add_line(
     db: WriteSession, order: Order, item_id: int, quantity: Decimal, price: Decimal | None = None
 ) -> OrderLine:
-    """Sell ``quantity`` of a variation on a hand order, at ``price`` each or
+    """Sell ``quantity`` of a variation on an order, at ``price`` each or
     else its own; a bundle is split into its parts."""
-    _by_hand(order)
+    _not_cancelled(order)
     product, variation = await _variation(db, item_id)
     line = OrderLine(
         organization_id=db.organization_id,
@@ -280,9 +291,9 @@ async def change_line(
     quantity: Decimal | None = None,
     price: Decimal | None = None,
 ) -> None:
-    """Change a hand order's line: no less than its shipments hold of it, and
+    """Change an order's line: no less than its shipments hold of it, and
     a bundle's only while none of its parts is in a shipment."""
-    _by_hand(order)
+    _not_cancelled(order)
     if line.bundle_line_id is not None:
         raise OrderRefused(OrderError.ORDER_LINE_PART)
     if price is not None:
@@ -304,9 +315,9 @@ async def change_line(
 
 
 async def remove_line(db: WriteSession, order: Order, line: OrderLine) -> None:
-    """Remove a hand order's line, with a bundle's parts, while no shipment
+    """Remove an order's line, with a bundle's parts, while no shipment
     holds any of them."""
-    _by_hand(order)
+    _not_cancelled(order)
     if line.bundle_line_id is not None:
         raise OrderRefused(OrderError.ORDER_LINE_PART)
     holding = await held(db, order.id)
@@ -359,10 +370,8 @@ async def reopen(db: WriteSession, order: Order) -> None:
 
 
 async def delete(db: WriteSession, order: Order) -> None:
-    """Delete a hand order with its shipments, while none of them has shipped.
+    """Delete an order with its shipments, while none of them has shipped.
     A hold placed from it stays, naming no order."""
-    if order.store_id is not None:
-        raise OrderRefused(OrderError.ORDER_FROM_STORE)
     shipped = await db.exec(
         select(func.count())
         .select_from(Shipment)

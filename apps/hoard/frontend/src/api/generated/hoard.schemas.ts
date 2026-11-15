@@ -1496,6 +1496,8 @@ export interface OrderRead {
   status: OrderStatus;
   total: string;
   external_id: string | null;
+  managed_by_store: Channel | null;
+  store_url: string | null;
   initiative_id: number | null;
   shipping: string;
   tax: string;
@@ -1769,6 +1771,20 @@ export interface ProductVariationRead {
 }
 
 /**
+ * A synced store's product that lists a product's variations.
+ */
+export interface ProductStoreProduct {
+  store_id: number;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  product_id: string;
+  updated_at: string | null;
+  channel: Channel;
+}
+
+/**
  * A product, with its variations' stock and lots at each location.
  */
 export interface ProductDetail {
@@ -1789,6 +1805,7 @@ export interface ProductDetail {
   rinse_off: boolean;
   properties: HoardPropertySummary[];
   variations: ProductVariationRead[];
+  store_products: ProductStoreProduct[];
 }
 
 export interface ProductImageRead {
@@ -1803,6 +1820,20 @@ export interface ProductImageRead {
 export type ProductVariationWriteAttributes = { [key: string]: string };
 
 /**
+ * A version of a synced store's product: when the store last changed
+ * it, as Hoard's copy held it.
+ */
+export interface StoreVersion {
+  store_id: number;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  product_id: string;
+  updated_at: string | null;
+}
+
+/**
  * A variation as it is added, or as an edit leaves it. Its price is taken
  * only from a member who sees costs.
  */
@@ -1811,6 +1842,8 @@ export interface ProductVariationWrite {
   sku?: string | null;
   price?: number | string | null;
   auto_manufacture?: AutoManufacture | null;
+  /** @maxItems 100 */
+  store_versions?: StoreVersion[];
 }
 
 /**
@@ -1831,6 +1864,8 @@ export interface ProductWrite {
   cure_days?: number | null;
   traceability_list?: boolean;
   rinse_off?: boolean;
+  /** @maxItems 100 */
+  store_versions?: StoreVersion[];
 }
 
 export interface PurchaseLineCreate {
@@ -2452,6 +2487,7 @@ export interface StoreVariantWrite {
  * as they are; its images are the ones it lists, in order.
  */
 export interface StoreProductWrite {
+  updated_at: string | null;
   /**
    * @minLength 1
    * @maxLength 200
