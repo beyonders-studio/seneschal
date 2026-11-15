@@ -790,6 +790,8 @@ def definition() -> dict[str, Any]:
     return {
         "plugin_kind": "service",
         "service": {"public_id": PUBLIC_ID, "protocol": PROTOCOL_VERSION, "scopes": SCOPES},
+        # In beta: a deployment's owner picks the communities that may use it.
+        "availability": "beta",
         "features": ["actions", "dashboards", "endpoints", "fields", "pages", "parts", "widgets"],
         "permissions": PERMISSIONS,
         "connections": CONNECTIONS,
