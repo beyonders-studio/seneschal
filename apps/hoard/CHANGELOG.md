@@ -8,10 +8,13 @@ All notable changes to Hoard are recorded here. The format follows
 
 ### Added
 
+- **Sync with Shopify.** A newly connected store waits, untouched, until an admin chooses **Sync with Shopify** in Settings › Stores. A short guide explains what syncing does and lets you choose which Hoard location each store location's stock goes into. The sync then reads the store's products, its last 60 days of orders and its stock and costs into Hoard: matched products take the store's names and SKUs, the others are made in Hoard, and Hoard's counts are set to the store's. Nothing is sent to the store, and the sync carries on if you leave the page, with its progress shown in Settings. **Remove sync** stops it and keeps everything it brought in.
+- **Hoard keeps a copy of each store product,** up to date as it changes in the store, so a product's store details show without asking the store each time. Products made in the store after the sync are made in Hoard too; one deleted in the store keeps its Hoard product.
 - **Customer numbers on store orders.** Each Shopify order keeps the store's number for its customer, and nothing else about them. An order's page lists the customer's other orders, and the orders list filters by customer number. Hoard now asks the store's app for the `read_customers` permission.
 
 ### Changed
 
+- A store's locations start with no Hoard location: the sync, or an admin, chooses where each one's stock goes.
 - Exports run in the background: Hoard shows each one's progress, then offers its file to download once it's ready. Only the member who started an export can download it, for a week.
 - Hoard's pages no longer repeat the tab's name as a heading above their own tabs.
 
