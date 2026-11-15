@@ -6,6 +6,8 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-15
+
 ### Added
 
 - **Sync with Shopify.** A newly connected store waits, untouched, until an admin chooses **Sync with Shopify** in Settings › Stores. A short guide explains what syncing does and lets you choose which Hoard location each store location's stock goes into. The sync then reads the store's products, its last 60 days of orders and its stock and costs into Hoard: matched products take the store's names and SKUs, the others are made in Hoard, and Hoard's counts are set to the store's. Nothing is sent to the store, and the sync carries on if you leave the page, with its progress shown in Settings. **Remove sync** stops it and keeps everything it brought in.
