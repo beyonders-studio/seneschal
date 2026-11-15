@@ -28,7 +28,7 @@ from collections import defaultdict
 from decimal import Decimal
 from enum import StrEnum
 
-from sqlalchemy import func, update
+from sqlalchemy import ColumnElement, func, update
 from sqlalchemy.orm import aliased
 from sqlmodel import col, exists, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -80,6 +80,13 @@ class OrderRefused(Exception):
 SELLING = func.coalesce(OrderLine.current_quantity, OrderLine.quantity)
 
 
+def ships_itself() -> ColumnElement[bool]:
+    """Whether a line ships itself, in a query: all but a bundle's own line,
+    whose parts are lines of their own."""
+    part = aliased(OrderLine)
+    return ~exists().where(col(part.bundle_line_id) == OrderLine.id)
+
+
 def selling(line: OrderLine) -> Decimal:
     """How many a line sells now: a store's after its edits and refunds."""
     return line.quantity if line.current_quantity is None else line.current_quantity
@@ -98,15 +105,10 @@ async def committed(db: AsyncSession, item_id: int, location_id: int | None = No
         .correlate(OrderLine)
         .scalar_subquery()
     )
-    part = aliased(OrderLine)
     query = (
         select(func.coalesce(func.sum(func.greatest(SELLING - shipped, 0)), 0))
         .join(Order, col(Order.id) == OrderLine.order_id)
-        .where(
-            OrderLine.item_id == item_id,
-            Order.status == OrderStatus.OPEN,
-            ~exists().where(col(part.bundle_line_id) == OrderLine.id),
-        )
+        .where(OrderLine.item_id == item_id, Order.status == OrderStatus.OPEN, ships_itself())
     )
     if location_id is not None:
         query = query.where(Order.location_id == location_id)

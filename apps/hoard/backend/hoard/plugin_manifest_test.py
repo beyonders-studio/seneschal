@@ -23,21 +23,28 @@ def test_every_endpoint_it_declares_is_answered():
     assert {endpoint["id"]: endpoint["permission"] for endpoint in called} == {
         **{endpoint_id: "use" for endpoint_id in ENDPOINTS},
         plugin_manifest.VALUATION: plugin_manifest.SEE_COSTS,
+        plugin_manifest.COST_TO_MAKE: plugin_manifest.SEE_COSTS,
     }
 
 
-def test_its_widgets_and_dashboard_draw_its_own_reads():
+def test_its_widgets_and_dashboards_draw_its_own_reads():
     definition = plugin_manifest.definition()
-    reads = {e["id"] for e in definition["endpoints"] if e["direction"] == "read"}
+    reads = {e["id"]: e for e in definition["endpoints"] if e["direction"] == "read"}
     widgets = {widget["id"]: widget for widget in definition["widgets"]}
 
     for widget in widgets.values():
         assert "function render(" in widget["module_source"], widget["id"]
-        assert set(widget["endpoints"]) <= reads, widget["id"]
+        assert set(widget["endpoints"]) <= set(reads), widget["id"]
         assert set(widget["sample_data"]) == set(widget["endpoints"]), widget["id"]
+        for endpoint, sample in widget["sample_data"].items():
+            assert set(sample) == {r["key"] for r in reads[endpoint]["returns"]}, widget["id"]
     for dashboard in definition["dashboards"]:
         for tile in dashboard["widgets"]:
             assert tile["binding"]["endpoint_id"] in widgets[tile["type"]]["endpoints"]
+    # Each dashboard is a catalog listing of its own.
+    uids = [plugin_manifest.UID, *(d["uid"] for d in definition["dashboards"])]
+    public_ids = [plugin_manifest.PUBLIC_ID, *(d["public_id"] for d in definition["dashboards"])]
+    assert len(set(uids)) == len(uids) and len(set(public_ids)) == len(public_ids)
 
 
 def test_its_endpoints_are_its_own_and_only_link_task_is_public():
