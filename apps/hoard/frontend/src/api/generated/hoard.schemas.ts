@@ -1735,6 +1735,7 @@ export interface ProductRead {
   on_hand: string;
   default_price: string | null;
   auto_manufacture: AutoManufacture | null;
+  bundle: boolean;
   cure_days: number | null;
   traceability_list: boolean;
   rinse_off: boolean;
@@ -1961,6 +1962,10 @@ export interface ProductVariationRead {
   price: string | null;
   average_cost: string | null;
   auto_manufacture: AutoManufacture | null;
+  supplier_contact_id: number | null;
+  supplier_code: string | null;
+  purchase_unit_id: number | null;
+  purchase_conversion: string;
 }
 
 /**
@@ -1994,6 +1999,7 @@ export interface ProductDetail {
   on_hand: string;
   default_price: string | null;
   auto_manufacture: AutoManufacture | null;
+  bundle: boolean;
   cure_days: number | null;
   traceability_list: boolean;
   rinse_off: boolean;
@@ -2036,6 +2042,10 @@ export interface ProductVariationWrite {
   sku?: string | null;
   price?: number | string | null;
   auto_manufacture?: AutoManufacture | null;
+  supplier_contact_id?: number | null;
+  supplier_code?: string | null;
+  purchase_unit_id?: number | null;
+  purchase_conversion?: number | string;
   /** @maxItems 100 */
   store_versions?: StoreVersion[];
 }
@@ -2064,7 +2074,7 @@ export interface ProductWrite {
 }
 
 export interface PurchaseLineCreate {
-  material_id: number;
+  item_id: number;
   purchase_quantity: number | string;
   tracking_quantity?: number | string | null;
   unit_cost?: number | string | null;
@@ -2097,7 +2107,7 @@ export interface PurchaseLot {
 
 export interface PurchaseLineRead {
   id: number;
-  material: AdjustmentItem;
+  item: AdjustmentItem;
   sku: string | null;
   category_id: number | null;
   purchase_quantity: string;
@@ -2121,11 +2131,11 @@ export interface PurchaseLineReceive {
 
 /**
  * A change to a line: only what is sent. A new purchase quantity without a
- * tracking quantity makes as many tracking units as the material's conversion
+ * tracking quantity makes as many tracking units as the item's conversion
  * says.
  */
 export interface PurchaseLineUpdate {
-  material_id?: number | null;
+  item_id?: number | null;
   purchase_quantity?: number | string | null;
   tracking_quantity?: number | string | null;
   unit_cost?: number | string | null;
@@ -3135,7 +3145,7 @@ export type SuggestRecordsParams = {
 
 export type ReadUnitConversionParams = {
   from_unit_id: number;
-  to_unit_id: number;
+  to_unit_id?: number | null;
 };
 
 export type ListSettingsTypesParams = {

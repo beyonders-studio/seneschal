@@ -499,7 +499,8 @@ export const useUpdateProduct = <TError = ErrorType<void>, TContext = unknown>(
 };
 /**
  * Remove a product with its variations, their stock, lots and
- * adjustments, and its images, unless a synced store lists it.
+ * adjustments, and its images, unless a synced store lists it. One a
+ * purchase bought stays.
  * @summary Delete Product
  */
 export const deleteProduct = (
@@ -558,7 +559,8 @@ export type DeleteProductMutationVariables = { productId: number };
 
 /**
  * Remove a product with its variations, their stock, lots and
- * adjustments, and its images, unless a synced store lists it.
+ * adjustments, and its images, unless a synced store lists it. One a
+ * purchase bought stays.
  * @summary Delete Product
  */
 export const useDeleteProduct = <TError = ErrorType<void>, TContext = unknown>(
@@ -768,7 +770,7 @@ export const useUpdateProductVariation = <TError = ErrorType<void>, TContext = u
 };
 /**
  * Remove a variation with its stock, lots and adjustments, unless a
- * synced store lists it; a product keeps its last one.
+ * synced store lists it or a purchase bought it; a product keeps its last one.
  * @summary Delete Product Variation
  */
 export const deleteProductVariation = (
@@ -830,7 +832,7 @@ export type DeleteProductVariationMutationVariables = { productId: number; varia
 
 /**
  * Remove a variation with its stock, lots and adjustments, unless a
- * synced store lists it; a product keeps its last one.
+ * synced store lists it or a purchase bought it; a product keeps its last one.
  * @summary Delete Product Variation
  */
 export const useDeleteProductVariation = <TError = ErrorType<void>, TContext = unknown>(

@@ -2,12 +2,12 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { PurchaseLineRead, PurchaseRead } from "@/api/generated/hoard.schemas";
-import { SETTINGS } from "@/features/items/testing";
+import { material, product, productDetail, SETTINGS, variation } from "@/features/items/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
 const line = (overrides: Partial<PurchaseLineRead> = {}): PurchaseLineRead => ({
   id: 9,
-  material: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
+  item: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
   sku: "FL-1",
   category_id: 2,
   purchase_quantity: "1.000000",
@@ -92,6 +92,58 @@ describe("PurchasePage", () => {
       received_on: "2026-11-04",
       quantity: "200",
       number: "L-7",
+    });
+  });
+
+  it("buys a product as a material is bought, and never a bundle", async () => {
+    const asked = await openSignedIn(
+      "/stock/purchases/5",
+      signedIn({ permissions: ["use", "costs"] }),
+      {
+        "GET /api/v1/purchases/5": { status: 200, data: purchase([]) },
+        "GET /api/v1/materials": { status: 200, data: { items: [material()], total: 1 } },
+        "GET /api/v1/products": {
+          status: 200,
+          data: {
+            items: [
+              product({ name: "Infuser" }),
+              product({ id: 8, name: "Gift box", bundle: true }),
+            ],
+            total: 2,
+          },
+        },
+        "GET /api/v1/products/7": {
+          status: 200,
+          data: productDetail({ name: "Infuser", variations: [variation()] }),
+        },
+        "POST /api/v1/purchases/5/lines": { status: 201, data: purchase([]) },
+        ...SETTINGS,
+        "GET /api/v1/contacts": { status: 200, data: [] },
+        "GET /api/v1/members": { status: 200, data: [] },
+      }
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add a line" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a line" });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Material or product" }));
+    await screen.findByRole("option", { name: /Oolong/ });
+    expect(screen.queryByRole("option", { name: /Gift box/ })).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: /Infuser/ }));
+    fireEvent.change(within(dialog).getByLabelText("Quantity bought"), {
+      target: { value: "12" },
+    });
+    await waitFor(() =>
+      expect(asked.some((request) => request.url === "/api/v1/products/7")).toBe(true)
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = asked.find((request) => request.url === "/api/v1/purchases/5/lines");
+      expect(JSON.parse(sent?.data)).toEqual({
+        item_id: 20,
+        purchase_quantity: "12",
+        unit_cost: "0",
+      });
     });
   });
 

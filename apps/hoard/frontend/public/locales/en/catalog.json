@@ -38,6 +38,8 @@
     "defaultPrice": "Default price",
     "usesDefaultPrice": "Default",
     "priceHint": "Leave it blank to sell it at the product's default price.",
+    "oneAtATime": "One at a time",
+    "conversionHint": "How many of it come in one of the unit it's bought in.",
     "images": "Pictures",
     "noImages": "No pictures yet.",
     "imagePrompt": "Drop a GIF, JPEG, PNG or WebP picture of up to 5 MB here.",

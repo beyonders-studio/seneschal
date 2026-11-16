@@ -128,7 +128,7 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>{t("purchases.lines.material")}</TableHead>
+            <TableHead>{t("purchases.lines.item")}</TableHead>
             <TableHead>{t("hoard:common.sku")}</TableHead>
             <TableHead>{t("hoard:common.category")}</TableHead>
             <TableHead className="text-right">{t("hoard:common.quantity")}</TableHead>
@@ -148,7 +148,7 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
         <TableBody>
           {purchase.lines.map((line) => (
             <TableRow key={line.id}>
-              <TableCell>{item(line.material)}</TableCell>
+              <TableCell>{item(line.item)}</TableCell>
               <TableCell>{line.sku}</TableCell>
               <TableCell>{category(line.category_id)}</TableCell>
               <TableCell className="text-right">
@@ -187,7 +187,7 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
               <TableCell>{line.lot?.number}</TableCell>
               <TableCell className="text-right">
                 {!read_only && (
-                  <RowActionsMenu subject={item(line.material)}>
+                  <RowActionsMenu subject={item(line.item)}>
                     <DropdownMenuItem onSelect={() => setLineAction({ kind: "edit", line })}>
                       {t("hoard:common.edit")}
                     </DropdownMenuItem>

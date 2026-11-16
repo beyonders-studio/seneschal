@@ -208,7 +208,7 @@ export const createPurchase = (
 export const getCreatePurchaseMutationKey = () => ["createPurchase"] as const;
 
 export const getCreatePurchaseMutationOptions = <
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -245,7 +245,7 @@ export const getCreatePurchaseMutationOptions = <
 
 export type CreatePurchaseMutationResult = NonNullable<Awaited<ReturnType<typeof createPurchase>>>;
 export type CreatePurchaseMutationBody = BodyType<PurchaseCreate>;
-export type CreatePurchaseMutationError = ErrorType<void | HTTPValidationError>;
+export type CreatePurchaseMutationError = ErrorType<void>;
 export type CreatePurchaseMutationVariables = { data: BodyType<PurchaseCreate> };
 
 /**
@@ -253,10 +253,7 @@ export type CreatePurchaseMutationVariables = { data: BodyType<PurchaseCreate> }
  * initiative the page was opened in; it is recorded as placed.
  * @summary Create Purchase
  */
-export const useCreatePurchase = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(
+export const useCreatePurchase = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof createPurchase>>,
@@ -612,7 +609,7 @@ export const createPurchaseLine = (
 export const getCreatePurchaseLineMutationKey = () => ["createPurchaseLine"] as const;
 
 export const getCreatePurchaseLineMutationOptions = <
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -651,7 +648,7 @@ export type CreatePurchaseLineMutationResult = NonNullable<
   Awaited<ReturnType<typeof createPurchaseLine>>
 >;
 export type CreatePurchaseLineMutationBody = BodyType<PurchaseLineCreate>;
-export type CreatePurchaseLineMutationError = ErrorType<void | HTTPValidationError>;
+export type CreatePurchaseLineMutationError = ErrorType<void>;
 export type CreatePurchaseLineMutationVariables = {
   purchaseId: number;
   data: BodyType<PurchaseLineCreate>;
@@ -661,10 +658,7 @@ export type CreatePurchaseLineMutationVariables = {
  * Add a line to a purchase.
  * @summary Create Purchase Line
  */
-export const useCreatePurchaseLine = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(
+export const useCreatePurchaseLine = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof createPurchaseLine>>,
@@ -709,7 +703,7 @@ export const updatePurchaseLine = (
 export const getUpdatePurchaseLineMutationKey = () => ["updatePurchaseLine"] as const;
 
 export const getUpdatePurchaseLineMutationOptions = <
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -748,7 +742,7 @@ export type UpdatePurchaseLineMutationResult = NonNullable<
   Awaited<ReturnType<typeof updatePurchaseLine>>
 >;
 export type UpdatePurchaseLineMutationBody = BodyType<PurchaseLineUpdate>;
-export type UpdatePurchaseLineMutationError = ErrorType<void | HTTPValidationError>;
+export type UpdatePurchaseLineMutationError = ErrorType<void>;
 export type UpdatePurchaseLineMutationVariables = {
   purchaseId: number;
   lineId: number;
@@ -759,10 +753,7 @@ export type UpdatePurchaseLineMutationVariables = {
  * Change a line, and carry the change into what it received.
  * @summary Update Purchase Line
  */
-export const useUpdatePurchaseLine = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(
+export const useUpdatePurchaseLine = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof updatePurchaseLine>>,
