@@ -10,9 +10,9 @@ as :mod:`hoard.api.items` takes them.
 
 A product is read with its figures (``hoard.summary``): each variation's
 stock, what it sold and shipped and, to a member who sees costs, what it
-earned and cost and its price at each price point, typed in here or left to
-the suggested price; and its variations' added up. An archived product is
-listed only when asked for.
+earned and cost, what one costs by its parts, its price and the margin left
+there; and its variations' added up, to retail and to wholesale customers
+apart. An archived product is listed only when asked for.
 
 A product a synced store lists stays the store's to show: changing its name
 or status, or a listed variation's SKU or options, is written to the store
@@ -39,7 +39,6 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import listings, stock, summary, units
 from hoard.api import items, stores
-from hoard.api.adjustments import AdjustmentError
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import (
@@ -59,7 +58,6 @@ from hoard.records import (
     Item,
     ItemStatus,
     Listing,
-    PricePoint,
     Product,
     RecordKind,
     StockLevel,
@@ -67,7 +65,6 @@ from hoard.records import (
     StoreProductCopy,
     Unit,
     Variation,
-    VariationPrice,
 )
 from seneschal_core.api import (
     OrganizationSessionDep,
@@ -186,32 +183,20 @@ class PriceCost(BaseModel):
     total: Decimal
 
 
-class PointPriceRead(BaseModel):
-    """A variation at a price point."""
-
-    price_point_id: int
-    #: Its price there, typed in; null leaves it to the suggested price.
-    typed: Decimal | None
-    #: Its cost marked up, to the currency's smallest unit; null without a cost.
-    suggested: Decimal | None
-    #: What it sells for there: the typed price, or else the suggested one.
-    price: Decimal | None
-    #: The listing fee on one sold.
-    fee: Decimal
-    #: The commission on its price.
-    commission: Decimal | None
-    #: The price less the cost, the fee and the commission; null without a cost.
-    margin: Decimal | None
-    #: The margin as a percentage of the price.
-    margin_share: Decimal | None
-
-
 class VariationPricing(BaseModel):
-    """A variation's cost and its price at each price point, by name."""
+    """A variation's cost, its price and the margin left at that price."""
 
     #: Null for one that never had a cost.
     cost: PriceCost | None
-    points: list[PointPriceRead]
+    #: Its listing's price in a synced store, else its own or its product's
+    #: default price; null without any.
+    price: Decimal | None
+    #: Whether the price is a store's.
+    store_price: bool
+    #: The price less the cost; null without either.
+    margin: Decimal | None
+    #: The margin as a percentage of the price.
+    margin_share: Decimal | None
 
 
 class ProductVariationRead(items.ItemHoldings):
@@ -245,6 +230,16 @@ class ProductVariationRead(items.ItemHoldings):
     pricing: VariationPricing | None
 
 
+class SalesGroupRead(BaseModel):
+    """What a product's variations sold and shipped in one group of sales,
+    and what that earned."""
+
+    sold: Decimal
+    shipped: Decimal
+    #: Null without ``costs``.
+    profit: ItemProfit | None
+
+
 class ProductTotals(BaseModel):
     """A product's variations' figures added up."""
 
@@ -261,6 +256,11 @@ class ProductTotals(BaseModel):
     overdue: bool
     #: Null without ``costs``.
     profit: ItemProfit | None
+    #: What sold to retail customers: every hand order's, and every store
+    #: order's but wholesale ones.
+    retail: SalesGroupRead
+    #: What sold to the store's wholesale customers; null while none bought any.
+    wholesale: SalesGroupRead | None
 
 
 class ProductDetail(ProductRead, items.ItemStamps):
@@ -311,13 +311,6 @@ class ProductVariationWrite(BaseModel):
     purchase_conversion: items.Positive = Decimal(1)
     #: As for a product's (:attr:`ProductWrite.store_versions`).
     store_versions: list[StoreVersion] = Field(default_factory=list, max_length=100)
-
-
-class VariationPriceWrite(BaseModel):
-    """A variation's price at a price point: null leaves it to the
-    suggested price."""
-
-    price: items.Amount | None
 
 
 class ProductImageRead(BaseModel):
@@ -414,20 +407,15 @@ def _pricing(priced: summary.Pricing) -> VariationPricing:
             overhead=cost.overhead,
             total=cost.total,
         ),
-        points=[
-            PointPriceRead(
-                price_point_id=at.price_point_id,
-                typed=at.typed,
-                suggested=at.suggested,
-                price=at.price,
-                fee=at.fee,
-                commission=at.commission,
-                margin=at.margin,
-                margin_share=at.margin_share,
-            )
-            for at in priced.points
-        ],
+        price=priced.price,
+        store_price=priced.store_price,
+        margin=priced.margin,
+        margin_share=priced.margin_share,
     )
+
+
+def _group(sales: summary.Sales, sees_costs: bool) -> SalesGroupRead:
+    return SalesGroupRead(sold=sales.sold, shipped=sales.shipped, profit=_profit(sales, sees_costs))
 
 
 async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> ProductDetail:
@@ -452,9 +440,9 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
                 **variation.model_dump(),
                 **held[variation.id].model_dump(),
                 "average_cost": item.average_cost,
-                "sold": figures[variation.id].sales.sold,
-                "shipped": figures[variation.id].sales.shipped,
-                "profit": _profit(figures[variation.id].sales, sees_costs),
+                "sold": figures[variation.id].sales.whole.sold,
+                "shipped": figures[variation.id].sales.whole.shipped,
+                "profit": _profit(figures[variation.id].sales.whole, sees_costs),
                 "pricing": _pricing(priced[variation.id]) if sees_costs else None,
                 **dict.fromkeys(_hidden(sees_costs, "price", "average_cost")),
             }
@@ -462,6 +450,7 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
         for variation, item in rows
     ]
     totals = summary.total(figures.values())
+    sales, wholesale = totals.sales.whole, totals.sales.wholesale
     on_hand = sum((variation.on_hand for variation in variations), Decimal(0))
     values = (await values_of(db, RecordKind.PRODUCT, [product_id]))[product_id]
     store_products = {
@@ -482,11 +471,15 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
                 available=totals.available,
                 potential=totals.potential,
                 made=totals.made,
-                sold=totals.sales.sold,
-                shipped=totals.sales.shipped,
+                sold=sales.sold,
+                shipped=sales.shipped,
                 on_order=totals.on_order.quantity,
                 overdue=totals.on_order.overdue,
-                profit=_profit(totals.sales, sees_costs),
+                profit=_profit(sales, sees_costs),
+                retail=_group(totals.sales.retail, sees_costs),
+                wholesale=_group(wholesale, sees_costs)
+                if wholesale.sold or wholesale.shipped
+                else None,
             ),
             "variations": variations,
             "store_products": list(store_products.values()),
@@ -734,47 +727,6 @@ async def delete_product_variation(product_id: int, variation_id: int, db: Write
     with refused_as(SettingsError.IN_USE):
         await stock.remove_item(db, variation_id)
         await db.commit()
-
-
-@router.put(
-    "/{product_id}/variations/{variation_id}/prices/{price_point_id}",
-    responses={**_READ, 403: {"description": "READ_ONLY, COSTS_HIDDEN"}},
-)
-async def set_variation_price(
-    product_id: int,
-    variation_id: int,
-    price_point_id: int,
-    body: VariationPriceWrite,
-    db: WriteSessionDep,
-    sees_costs: SeesCostsDep,
-) -> ProductDetail:
-    """Set a variation's price at a price point; null leaves it to the
-    suggested price. Refused from a member who doesn't see costs."""
-    if not sees_costs:
-        raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
-    await _product_variation(db, product_id, variation_id)
-    await found(db, PricePoint, price_point_id)
-    kept = (
-        await db.exec(
-            select(VariationPrice).where(
-                VariationPrice.variation_id == variation_id,
-                VariationPrice.price_point_id == price_point_id,
-            )
-        )
-    ).first()
-    if body.price is None:
-        if kept is not None:
-            await db.delete(kept)
-    else:
-        kept = kept or VariationPrice(
-            organization_id=db.organization_id,
-            variation_id=variation_id,
-            price_point_id=price_point_id,
-        )
-        kept.price = body.price
-        db.add(kept)
-    await db.commit()
-    return await _detail(db, product_id, sees_costs)
 
 
 @router.get("/{product_id}/images", responses=_READ)

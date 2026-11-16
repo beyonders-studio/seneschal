@@ -19,8 +19,11 @@ A connector:
 * lists the store's locations, and sets what is available at each;
 * reads, in bulk, what each inventory item cost and what is available of it
   at each location (:meth:`Connector.stock_levels`), for a store's sync;
-* reads the store's orders, with their fulfillments, and pushes a shipment
-  back as a fulfillment;
+* reads the store's orders, with their fulfillments and whether a company
+  bought them, and pushes a shipment back as a fulfillment;
+* lists the store's customer segments (:meth:`Connector.segments`), and
+  reads who is in one: all its members at once, for a batch of orders, or
+  whether one customer is, for one order;
 * reads a webhook delivery Initiative checked and forwarded as a
   :class:`Nudge`: which record changed, which Hoard refetches, with the body
   of an order's delivery, and reads that body as the order it describes, for
@@ -246,6 +249,8 @@ class StoreOrder:
     refunded: Decimal = Decimal(0)
     #: The store's number for its customer; None for an order with none.
     customer: str | None = None
+    #: Whether the store's buyer is a company, which buys wholesale.
+    company: bool = False
     fulfillments: Sequence[StoreFulfillment] = ()
     updated_at: datetime | None = None
 
@@ -395,6 +400,18 @@ class Connector(Protocol):
     async def push_fulfillment(self, order_id: str, fulfillment: StoreFulfillment) -> str:
         """Record a shipment at the store as a fulfillment of the order's lines,
         and answer the store's id for it."""
+        ...
+
+    async def segments(self) -> dict[str, str]:
+        """The store's customer segments: each one's name, by the store's id."""
+        ...
+
+    async def segment_members(self, segment_id: str) -> set[str]:
+        """The store's numbers for the customers in a segment now."""
+        ...
+
+    async def in_segment(self, segment_id: str, customer: str) -> bool:
+        """Whether the customer the store numbers ``customer`` is in a segment now."""
         ...
 
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:

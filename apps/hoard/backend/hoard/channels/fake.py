@@ -78,6 +78,13 @@ class FakeConnector:
     field_store: dict[str, dict[str, str]] = field(default_factory=dict)
     #: Each field value written to it.
     field_writes: list[FieldValue] = field(default_factory=list)
+    #: Its customer segments' names, by id.
+    shop_segments: dict[str, str] = field(default_factory=dict)
+    #: The customers in each segment, by the segment's id.
+    members: dict[str, set[str]] = field(default_factory=dict)
+    #: The segments read whole, and the customers asked after one at a time.
+    member_reads: list[str] = field(default_factory=list)
+    membership_reads: list[tuple[str, str]] = field(default_factory=list)
 
     def _checked(self) -> None:
         if self.refuse is not None:
@@ -174,6 +181,20 @@ class FakeConnector:
         made = replace(fulfillment, id=f"fulfillment-{len(self.fulfillments) + 1}")
         self.fulfillments.append((order_id, made))
         return str(made.id)
+
+    async def segments(self) -> dict[str, str]:
+        self._checked()
+        return dict(self.shop_segments)
+
+    async def segment_members(self, segment_id: str) -> set[str]:
+        self._checked()
+        self.member_reads.append(segment_id)
+        return set(self.members.get(segment_id, set()))
+
+    async def in_segment(self, segment_id: str, customer: str) -> bool:
+        self._checked()
+        self.membership_reads.append((segment_id, customer))
+        return customer in self.members.get(segment_id, set())
 
     def order_webhook(self, order: StoreOrder) -> tuple[dict[str, str], str]:
         """The headers and body of the webhook the store sends about

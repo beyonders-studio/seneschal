@@ -5,6 +5,11 @@ A store is pending, syncing or synced (``hoard.store_sync``). Syncing it, and
 removing its sync, is an administrator's, as are reading the store again and
 mapping its locations.
 
+A synced store's wholesale segment, the store's customer segment whose
+orders are wholesale, is an administrator's to choose, from the store's
+segments read now; choosing it marks the store's orders again as a job
+(``hoard.store_sync``).
+
 A store's fields are mapped to what they fill in Hoard (``hoard.store_fields``):
 in the sync's request, and, once it is synced, one at a time, each new one
 read in as a job. The products whose allergens or ingredient list differ
@@ -122,6 +127,8 @@ class StoreError(StrEnum):
     STORE_NOT_SYNCED = "STORE_NOT_SYNCED"
     #: The store's sync is running.
     STORE_SYNCING = "STORE_SYNCING"
+    #: The segment named is not one of the store's.
+    SEGMENT_UNKNOWN = "SEGMENT_UNKNOWN"
     #: The store's product changed since the edit started: nothing was sent,
     #: and Hoard's copy now holds the store's version.
     STORE_PRODUCT_CHANGED = "STORE_PRODUCT_CHANGED"
@@ -175,6 +182,9 @@ class StoreRead(BaseModel):
     #: Its sync running or waiting, else the last one it had.
     sync_job_id: int | None
     locations: list[StoreLocationRead]
+    #: The store's id for the customer segment whose orders are wholesale;
+    #: null for none.
+    wholesale_segment: str | None
     #: Its listings, and how many of them sell an item.
     listings: int
     linked: int
@@ -208,6 +218,19 @@ class StoreLocationFound(BaseModel):
 
     external_id: str
     name: str
+
+
+class StoreSegmentRead(BaseModel):
+    """One of the store's customer segments."""
+
+    #: The store's id for it.
+    id: str
+    name: str
+
+
+class StoreWholesaleWrite(BaseModel):
+    #: The store's id for the segment whose orders are wholesale; null for none.
+    segment_id: Annotated[str, Field(min_length=1, max_length=200)] | None
 
 
 class StoreLocationChoice(BaseModel):
@@ -602,6 +625,55 @@ async def unsync_store(
         except ConnectRefused:
             connector = None
     await store_sync.unsync(db, store, connector, address)
+    await db.commit()
+    return await _store_read(db, store)
+
+
+async def _segments(connector: Connector) -> dict[str, str]:
+    try:
+        return await connector.segments()
+    except ConnectRefused as refused:
+        raise store_refused(refused) from None
+
+
+@router.get("/{store_id}/segments", responses={**_LIVE, 403: {"description": "ADMIN_ONLY"}})
+async def list_store_segments(
+    store_id: int, db: OrganizationSessionDep, plugin: PluginDep, session: AdminDep
+) -> list[StoreSegmentRead]:
+    """The store's customer segments, read from the store now, by name, for
+    choosing the one whose orders are wholesale."""
+    store = await found(db, Store, store_id)
+    segments = await _segments(await store_connector(plugin, session.community_ref, store))
+    return sorted(
+        (StoreSegmentRead(id=segment_id, name=name) for segment_id, name in segments.items()),
+        key=lambda segment: (segment.name.casefold(), segment.id),
+    )
+
+
+@router.put(
+    "/{store_id}/wholesale",
+    responses={**_ADMIN, 422: {"description": "SEGMENT_UNKNOWN"}},
+)
+async def set_store_wholesale(
+    store_id: int,
+    body: StoreWholesaleWrite,
+    db: WriteSessionDep,
+    plugin: PluginDep,
+    session: AdminDep,
+) -> StoreRead:
+    """Choose the customer segment of a synced store whose orders are
+    wholesale, or none; its orders are marked again by who is in it now, as a
+    job."""
+    store = await found(db, Store, store_id)
+    _require_synced(store)
+    if body.segment_id is not None:
+        connector = await store_connector(plugin, session.community_ref, store)
+        if body.segment_id not in await _segments(connector):
+            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.SEGMENT_UNKNOWN)
+    if body.segment_id != store.wholesale_segment:
+        store.wholesale_segment = body.segment_id
+        db.add(store)
+        await store_sync.queue_wholesale(db, store, session.member_ref)
     await db.commit()
     return await _store_read(db, store)
 

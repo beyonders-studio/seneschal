@@ -49,6 +49,11 @@ brought in stays.
 :func:`run_fields`) reads in a field mapped after the sync, as the sync does,
 and sends what Hoard works out where it differs from the store
 (``hoard.store_fields.send``).
+
+**A wholesale job** (:data:`WHOLESALE_JOB`, run by :func:`run_wholesale`)
+marks each of a store's orders again once its wholesale segment is chosen:
+an order a company bought stays wholesale, and every other is wholesale
+while its customer is in the segment now, read from the store once.
 """
 
 from __future__ import annotations
@@ -63,8 +68,8 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import func
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import Text, any_, bindparam, func, update
+from sqlalchemy.dialects.postgresql import ARRAY, insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -79,11 +84,13 @@ from hoard.records import (
     Item,
     Listing,
     Location,
+    Order,
     Store,
     StoreLocation,
+    WholesaleBuyer,
 )
 from hoard.stock import StockRefused
-from seneschal_core import organizations
+from seneschal_core import jobs, organizations
 from seneschal_core.api import ErrorCode
 from seneschal_core.db import WriteSession
 from seneschal_core.initiative_api import InitiativeRefused, InitiativeUnavailable
@@ -93,6 +100,8 @@ logger = logging.getLogger(__name__)
 
 #: The kind of job a store's sync is.
 STORE_SYNC_JOB = "store_sync"
+#: The kind of job that marks a store's orders by its wholesale segment.
+WHOLESALE_JOB = "store_wholesale"
 #: How many products, or items' stock, one commit takes.
 AT_ONCE = 50
 
@@ -475,6 +484,59 @@ async def run_fields(job: JobContext) -> None:
         await store_fields.send(session, store_id, connector, bool(job.args.get("send")))
     except ConnectRefused as refused:
         raise JobError(refused.code.value) from None
+
+
+async def queue_wholesale(db: WriteSession, store: Store, started_by: str | None) -> Job:
+    """Queue the marking of a store's orders by its wholesale segment; one
+    already waiting or running is answered instead, and reads the segment the
+    store holds once it is done."""
+    return await jobs.enqueue(
+        db, WHOLESALE_JOB, {"store_id": store.id}, started_by=started_by, unique_key=str(store.id)
+    )
+
+
+async def run_wholesale(job: JobContext) -> None:
+    """Mark each of the store's orders by who is in its wholesale segment now,
+    again for a segment chosen while the members were read."""
+    store_id = int(job.args["store_id"])
+    async with job.plugin.database.organization_session(job.organization_id) as db:
+        store = await db.get(Store, store_id)
+    if store is None:
+        raise JobError(SyncError.STORE_NOT_CONNECTED.value, retry=False)
+    while True:
+        segment, members = store.wholesale_segment, set[str]()
+        if segment is not None:
+            connector = await _connector(job, store, synced=True)
+            try:
+                members = await connector.segment_members(segment)
+            except ConnectRefused as refused:
+                raise JobError(refused.code.value) from None
+        async with job.plugin.database.write_session(
+            job.organization_id, actor=job.started_by
+        ) as db:
+            store = await db.get_one(Store, store_id, with_for_update=True)
+            if store.wholesale_segment != segment:
+                continue
+            ours = col(Order.store_id) == store_id
+            await db.execute(
+                update(Order)
+                .where(ours, col(Order.wholesale) == WholesaleBuyer.SEGMENT)
+                .values(wholesale=None)
+                .execution_options(synchronize_session=False)
+            )
+            await db.execute(
+                update(Order)
+                .where(
+                    ours,
+                    col(Order.wholesale).is_(None),
+                    col(Order.store_customer)
+                    == any_(bindparam("members", sorted(members), type_=ARRAY(Text))),
+                )
+                .values(wholesale=WholesaleBuyer.SEGMENT)
+                .execution_options(synchronize_session=False)
+            )
+            await db.commit()
+            return
 
 
 async def unsync(db: WriteSession, store: Store, connector: Connector | None, address: str) -> None:

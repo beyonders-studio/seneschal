@@ -11,6 +11,7 @@ import pytest
 from sqlmodel import select
 
 from hoard import channels, listings, plugin_manifest
+from hoard.app import JOB_HANDLERS
 from hoard.channels import ConnectError, StoreImage, StoreProduct, StoreVariant
 from hoard.channels.fake import FakeConnector
 from hoard.channels.hooks import webhook_address
@@ -19,14 +20,17 @@ from hoard.records import (
     Listing,
     Location,
     MatchedBy,
+    Order,
     Product,
     PushStatus,
     StockPush,
     Store,
     StoreLocation,
     Variation,
+    WholesaleBuyer,
 )
 from hoard.stock import add_product, add_variation
+from seneschal_core import jobs
 from seneschal_core.db import WriteSession
 from seneschal_core.testing import InitiativeStandIn
 
@@ -202,6 +206,63 @@ async def test_an_admin_reads_the_store_again_and_maps_its_locations(
     assert (unknown.status_code, unknown.json()) == (422, {"detail": "LOCATION_UNKNOWN"})
     sold = (await db.exec(select(Listing.item_id).where(Listing.variant_id == "v1"))).one()
     assert sold == large.id
+
+
+async def test_an_admin_chooses_the_wholesale_segment_and_the_orders_are_marked_again(
+    app, client, sign_in, db: WriteSession, store: Store, shop: FakeConnector, sell
+):
+    shop.shop_segments = {"seg-b": "wholesale", "seg-a": "VIP"}
+    shop.members = {"seg-b": {"7"}}
+    for external_id, customer, wholesale in (
+        ("o-1", "8", WholesaleBuyer.COMPANY),
+        ("o-2", "7", None),
+        ("o-3", "9", WholesaleBuyer.SEGMENT),
+        ("o-4", None, None),
+    ):
+        await sell(
+            store_id=store.id,
+            external_id=external_id,
+            customer_contact_id=None,
+            store_customer=customer,
+            wholesale=wholesale,
+        )
+    await db.commit()
+
+    async def marked() -> dict[str | None, WholesaleBuyer | None]:
+        await jobs.work(app.state.plugin, db.organization_id, JOB_HANDLERS)
+        found = await db.exec(
+            select(Order.external_id, Order.wholesale).execution_options(populate_existing=True)
+        )
+        return dict(found.all())
+
+    await sign_in(client)
+    refused = await client.get(f"/api/v1/stores/{store.id}/segments")
+    assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
+    await sign_in(client, admin=True)
+    assert (await client.get(f"/api/v1/stores/{store.id}/segments")).json() == [
+        {"id": "seg-a", "name": "VIP"},
+        {"id": "seg-b", "name": "wholesale"},
+    ]
+    path = f"/api/v1/stores/{store.id}/wholesale"
+    unknown = await client.put(path, json={"segment_id": "seg-x"})
+    assert (unknown.status_code, unknown.json()) == (422, {"detail": "SEGMENT_UNKNOWN"})
+
+    chosen = await client.put(path, json={"segment_id": "seg-b"})
+
+    assert chosen.json()["wholesale_segment"] == "seg-b"
+    # A company's order stays wholesale; every other is as the segment stands now.
+    assert await marked() == {
+        "o-1": WholesaleBuyer.COMPANY,
+        "o-2": WholesaleBuyer.SEGMENT,
+        "o-3": None,
+        "o-4": None,
+    }
+    assert shop.member_reads == ["seg-b"]
+
+    await client.put(path, json={"segment_id": None})
+
+    assert await marked() == {"o-1": WholesaleBuyer.COMPANY, "o-2": None, "o-3": None, "o-4": None}
+    assert shop.member_reads == ["seg-b"]
 
 
 async def test_a_consignees_location_is_never_mapped_to_a_stores(

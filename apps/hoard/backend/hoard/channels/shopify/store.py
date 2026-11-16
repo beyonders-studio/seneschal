@@ -20,10 +20,15 @@
   for a store's sync.
 * **Orders** carry their lines, each with how many it sells now and how
   many were refunded, the total refunded, the customer's number and nothing
-  else about them, the fulfillments sent, and, where the store granted a
-  fulfillment order permission, the parts still to send: a scheduled part
-  carries the fulfillment order's id and the day it is due. An order's
-  refunds are read only where a line sells fewer than were ordered.
+  else about them, whether a company bought them (the order's purchasing
+  entity, or its webhook body's ``company``), the fulfillments sent, and,
+  where the store granted a fulfillment order permission, the parts still to
+  send: a scheduled part carries the fulfillment order's id and the day it is
+  due. An order's refunds are read only where a line sells fewer than were
+  ordered.
+* **Customer segments** are listed by name, under ``read_customers``. A
+  segment's members are read a page at a time, each by the number at the end
+  of its member id; one customer's membership is asked for by their number.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
 * **Fields** are the store's metafields. Their definitions are read for
@@ -599,6 +604,37 @@ class ShopifyConnector:
         user_errors(payload)
         return str((payload.get("fulfillment") or {})["id"])
 
+    # Customer segments.
+
+    async def segments(self) -> dict[str, str]:
+        nodes = await self._pages(queries.SEGMENTS, {}, ("segments",))
+        return {str(node["id"]): str(node.get("name") or "") for node in nodes}
+
+    async def segment_members(self, segment_id: str) -> set[str]:
+        members: set[str] = set()
+        after: str | None = None
+        while True:
+            data = await self.client.query(
+                queries.SEGMENT_MEMBERS, {"segmentId": segment_id, "after": after}
+            )
+            page = data.get("customerSegmentMembers") or {}
+            for edge in page.get("edges") or []:
+                member = _id(edge.get("node"))
+                if member is not None:
+                    # The number at the end of the member's id: the customer's.
+                    members.add(member.rsplit("/", 1)[-1])
+            after = _next(page)
+            if after is None:
+                return members
+
+    async def in_segment(self, segment_id: str, customer: str) -> bool:
+        data = await self.client.query(
+            queries.SEGMENT_MEMBERSHIP,
+            {"customerId": f"gid://shopify/Customer/{customer}", "segmentIds": [segment_id]},
+        )
+        found = (data.get("customerSegmentMembership") or {}).get("memberships") or []
+        return any(each.get("segmentId") == segment_id and each.get("isMember") for each in found)
+
     # Webhooks and the history import.
 
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:
@@ -1049,6 +1085,7 @@ def _store_order(
         refunded=_money(node.get("totalRefundedSet")),
         # The number at the end of the customer's id.
         customer=None if customer is None else customer.rsplit("/", 1)[-1],
+        company=(node.get("purchasingEntity") or {}).get("__typename") == "PurchasingCompany",
         fulfillments=list(fulfillments),
         updated_at=_datetime(node.get("updatedAt")),
     )
@@ -1140,6 +1177,8 @@ def _webhook_order(body: Mapping[str, Any]) -> StoreOrder | None:
         discount=_money(body.get("total_discounts_set")),
         refunded=refunded,
         customer=str(number) if _count(number) else None,
+        # The REST order's purchasing company: null when none bought it.
+        company=isinstance(body.get("company"), dict),
         fulfillments=fulfillments,
         updated_at=_datetime(body.get("updated_at")),
     )

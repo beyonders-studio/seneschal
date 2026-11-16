@@ -37,6 +37,7 @@ from hoard.records import (
     StoreNudge,
     StoreProductCopy,
     Variation,
+    WholesaleBuyer,
 )
 from hoard.stock import add_product, on_hand
 from seneschal_core.api import Plugin
@@ -451,6 +452,63 @@ async def test_the_history_import_copies_orders_moving_no_stock_but_what_is_open
     assert store.orders_since is not None
 
 
+async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    sold: Sold,
+    plugin: Plugin,
+    organization_id: int,
+):
+    await sold("Tea", "v-tea")
+    store.wholesale_segment = "seg-1"
+    await db.commit()
+    fake.members = {"seg-1": {"7"}}
+    fake.history = [
+        _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", number=f"#{at}", **fields)
+        for at, fields in enumerate(
+            [{"customer": "7"}, {"customer": "8", "company": True}, {"customer": "8"}, {}], 1
+        )
+    ]
+
+    async def marks() -> dict[str | None, WholesaleBuyer | None]:
+        found = await db.exec(
+            select(Order.external_id, Order.wholesale).execution_options(populate_existing=True)
+        )
+        return dict(found.all())
+
+    await sync.import_history(plugin, organization_id, store, fake)
+
+    assert await marks() == {
+        "o-1": WholesaleBuyer.SEGMENT,
+        "o-2": WholesaleBuyer.COMPANY,
+        "o-3": None,
+        "o-4": None,
+    }
+    # The segment is read once for every order the import copied.
+    assert (fake.member_reads, fake.membership_reads) == (["seg-1"], [])
+
+    # An order arriving alone asks after its one customer.
+    await sync.copy_order(
+        db, store, fake, _order(_line("l-5", "v-tea", "1"), order_id="o-5", customer="7")
+    )
+    assert fake.membership_reads == [("seg-1", "7")]
+    # Each keeps what it was marked when it arrived, but a company is a company.
+    fake.members = {}
+    for at, fields in ((1, {"customer": "7"}), (3, {"customer": "8", "company": True})):
+        found = _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", **fields)
+        await sync.copy_order(db, store, fake, found)
+    await db.commit()
+    assert await marks() == {
+        "o-1": WholesaleBuyer.SEGMENT,
+        "o-2": WholesaleBuyer.COMPANY,
+        "o-3": WholesaleBuyer.COMPANY,
+        "o-4": None,
+        "o-5": WholesaleBuyer.SEGMENT,
+    }
+    assert len(fake.membership_reads) == 1
+
+
 async def test_the_worker_refetches_what_each_nudge_names(
     db: WriteSession,
     store: Store,
@@ -649,8 +707,9 @@ async def test_the_reconcile_copies_in_what_changed(
 
     monkeypatch.setattr(listings, "adopt", adopt)
     await sold("Tea", "v-tea")
-    await db.commit()
     since = datetime(2026, 11, 1, tzinfo=UTC)
+    store.orders_since = since - timedelta(days=7)
+    await db.commit()
     for number in range(3):
         fake.shop_products[f"p-{number}"] = StoreProduct(
             id=f"p-{number}", title="Tea", updated_at=since + timedelta(days=number - 1)
@@ -671,6 +730,13 @@ async def test_the_reconcile_copies_in_what_changed(
     await db.refresh(store)
     assert store.orders_since is not None and store.orders_since > since
     assert store.products_since == store.orders_since
+
+    # A store whose orders were never stamped as read reads every one again.
+    store.orders_since = None
+    await db.commit()
+    await sync.reconcile(plugin, organization_id, store, fake, since)
+    found = await db.exec(select(Order.external_id).order_by(col(Order.external_id)))
+    assert found.all() == ["o-1", "o-2"]
 
 
 async def test_a_nudge_left_wakes_the_worker_for_its_organization(

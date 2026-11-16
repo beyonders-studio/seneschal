@@ -234,7 +234,7 @@ query HoardAvailable($item: ID!, $location: ID!) {
 
 # Orders.
 
-# Of the customer, only their id.
+# Of the customer, only their id; of the buyer, only whether it is a company.
 ORDER_FIELDS = """
 id name processedAt updatedAt cancelledAt fullyPaid displayFulfillmentStatus currencyCode
 totalShippingPriceSet { shopMoney { amount } }
@@ -242,6 +242,7 @@ totalTaxSet { shopMoney { amount } }
 totalDiscountsSet { shopMoney { amount } }
 totalRefundedSet { shopMoney { amount } }
 customer { id }
+purchasingEntity { __typename }
 """
 
 LINE_FIELDS = """
@@ -358,6 +359,31 @@ mutation HoardFulfillmentCreate($fulfillment: FulfillmentInput!) {
   fulfillmentCreate(fulfillment: $fulfillment) {
     fulfillment { id }
     userErrors { field message }
+  }
+}
+"""
+
+# Customer segments, and who is in one: only the members' ids.
+
+SEGMENTS = f"""
+query HoardSegments($after: String) {{
+  segments(first: 100, after: $after) {{ nodes {{ id name }} {PAGE_INFO} }}
+}}
+"""
+
+SEGMENT_MEMBERS = f"""
+query HoardSegmentMembers($segmentId: ID!, $after: String) {{
+  customerSegmentMembers(segmentId: $segmentId, first: 250, after: $after) {{
+    edges {{ node {{ id }} }}
+    {PAGE_INFO}
+  }}
+}}
+"""
+
+SEGMENT_MEMBERSHIP = """
+query HoardSegmentMembership($customerId: ID!, $segmentIds: [ID!]!) {
+  customerSegmentMembership(customerId: $customerId, segmentIds: $segmentIds) {
+    memberships { segmentId isMember }
   }
 }
 """

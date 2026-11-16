@@ -13,12 +13,20 @@ product the store no longer has loses its listings and copy.
 A store's order is copied in whole each time (:func:`copy_order`): its lines
 by the store's line ids, each sold item found through its listing, with how
 many each sells now and how many were refunded; its refunded total, its
-currency and its customer's number; and its status from the store's: cancelled, shipped once
-the store fulfilled every line, pending until it is paid, and open,
-committing what its lines sell, once it is. A copy older than the one Hoard
-holds, by the store's ``updated_at``, is skipped. An order that first claims
-its stock makes what it sells where auto-manufacture says so
+currency and its customer's number; and its status from the store's:
+cancelled, shipped once the store fulfilled every line, pending until it is
+paid, and open, committing what its lines sell, once it is. A copy older than
+the one Hoard holds, by the store's ``updated_at``, is skipped. An order that
+first claims its stock makes what it sells where auto-manufacture says so
 (``hoard.automanufacture``).
+
+A store's order is **wholesale** when the store says a company bought it, or
+when it first arrives and its customer is in the store's wholesale segment
+(:attr:`hoard.records.Store.wholesale_segment`): asked of the store for the
+one customer of an order a nudge refetches, and read whole once for a batch
+of orders. Hoard keeps why on the order, never who is in the segment; an
+order keeps the segment's answer from when it arrived until the segment is
+chosen again (``hoard.store_sync``).
 
 A nudge refetches its order from the store. An order the store no longer
 returns, one older than the window it keeps, is copied from the webhook's own
@@ -83,6 +91,7 @@ from hoard.records import (
     StoreLocation,
     StoreNudge,
     Variation,
+    WholesaleBuyer,
 )
 from hoard.shipments import ShipmentRefused
 from hoard.stock import main_location
@@ -145,11 +154,28 @@ async def _location(db: WriteSession, mapped: dict[str, int], found: StoreOrder)
 
 class _Items:
     """The item each of a store's lines sells, through its listing: a product
-    with no listing linked yet is read from the store and matched, once."""
+    with no listing linked yet is read from the store and matched, once. And
+    whether a customer is in the store's wholesale segment: asked of the store
+    for one order, or, for a ``batch`` of them, read once for them all."""
 
-    def __init__(self, db: WriteSession, store: Store, connector: Connector) -> None:
+    def __init__(
+        self, db: WriteSession, store: Store, connector: Connector, *, batch: bool = False
+    ) -> None:
         self.db, self.store, self.connector = db, store, connector
         self.read: set[str] = set()
+        self.batch = batch
+        #: The segment's members, once a batch read them.
+        self.members: set[str] | None = None
+
+    async def in_segment(self, customer: str | None) -> bool:
+        segment = self.store.wholesale_segment
+        if segment is None or customer is None:
+            return False
+        if not self.batch:
+            return await self.connector.in_segment(segment, customer)
+        if self.members is None:
+            self.members = await self.connector.segment_members(segment)
+        return customer in self.members
 
     async def _linked(self, line: StoreLine) -> int | None:
         found = await self.db.exec(
@@ -415,6 +441,7 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
         return order
     mapped = await _mapped(db, store)
     before = None if order is None else order.status
+    arrived = order is None
     if order is None:
         order = Order(
             organization_id=db.organization_id,
@@ -435,6 +462,10 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
         currency if len(currency) == 3 and currency.isascii() and currency.isalpha() else None
     )
     order.store_updated_at = found.updated_at or order.store_updated_at
+    if found.company:
+        order.wholesale = WholesaleBuyer.COMPANY
+    elif arrived and await items.in_segment(found.customer):
+        order.wholesale = WholesaleBuyer.SEGMENT
     await db.flush()
     selling_changed = await _copy_lines(db, items, order, found)
 
@@ -676,7 +707,7 @@ async def _copy_all(
     ``progress`` every :data:`PRODUCTS_AT_ONCE`. One that fails is left for
     the next reconcile. Answers the store, as read again after a failure, and
     whether every order was copied."""
-    items = _Items(db, store, connector)
+    items = _Items(db, store, connector, batch=True)
     copied = True
     for done, order in enumerate(found, 1):
         try:
@@ -710,11 +741,14 @@ async def reconcile(
     since: datetime | None,
 ) -> None:
     """Copy in the store's orders and products changed since ``since``, when
-    the reconcile last succeeded, or since the store's own stamps."""
+    the reconcile last succeeded, or since the store's own stamps. A store
+    whose orders were never stamped as read has every order it lets Hoard read
+    copied in again."""
     started = _now()
     async with plugin.database.write_session(organization_id, actor=None) as db:
         kept = await db.get_one(Store, store.id, populate_existing=True)
-        products_since, orders_since = since or kept.products_since, since or kept.orders_since
+        products_since = since or kept.products_since
+        orders_since = None if kept.orders_since is None else since or kept.orders_since
         batch = []
         async for product in connector.products(products_since):
             batch.append(product)

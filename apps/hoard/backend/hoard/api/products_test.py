@@ -20,10 +20,10 @@ from hoard.records import (
     Channel,
     ItemStatus,
     Location,
-    PricePoint,
     Product,
     Store,
     Variation,
+    WholesaleBuyer,
 )
 from hoard.stock import add_product, add_variation, adjust, transfer
 from seneschal_core.db import WriteSession
@@ -151,13 +151,17 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
             "overhead": None,
             "total": "3.000000",
         },
-        "points": [],
+        # Its product's default price, at its cost.
+        "price": "12.000000",
+        "store_price": False,
+        "margin": "9.000000",
+        "margin_share": "75.00",
     }
     listed = (await client.get("/api/v1/products")).json()
     assert [(p["name"], p["on_hand"]) for p in listed["items"]] == [("Chai", "4.000000")]
 
 
-async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
+async def test_a_product_adds_up_its_variations_retail_and_wholesale_apart(
     client, sign_in, db: WriteSession, main: Location, lot, sell, buy
 ):
     product = await _product(db, main, "4")
@@ -169,8 +173,6 @@ async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
     sold = await sell((chai.id, "1", "12"), (large.id, "2", "20"))
     bought = await buy((large, "3", "5"))
     await sell((large.id, "1", "20"))
-    wholesale = PricePoint(organization_id=db.organization_id, name="Wholesale", markup=Decimal(20))
-    db.add(wholesale)
     # Two at a consignee's shop are on hand there, and available to nobody else.
     shop = Location(organization_id=db.organization_id, name="Shop", contact_id=8, consignee=True)
     db.add(shop)
@@ -193,12 +195,10 @@ async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
         "on_order": "0",
         "overdue": False,
         "profit": None,
+        # No store order was wholesale: every sale is retail.
+        "retail": {"sold": "4.000000", "shipped": "0", "profit": None},
+        "wholesale": None,
     }
-    path = f"/api/v1/products/{product.id}/variations/{large.id}/prices/{wholesale.id}"
-    refused = await client.put(path, json={"price": "9"})
-    assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
-    refused = await client.put("/api/v1/contacts/5/price-point", json={"price_point_id": 1})
-    assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
 
     # Its orders and purchases, by item.
     orders = (await client.get("/api/v1/orders", params={"item_id": chai.id})).json()
@@ -207,19 +207,20 @@ async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
     assert [purchase["id"] for purchase in purchases["items"]] == [bought.id]
     assert (await client.get("/api/v1/purchases", params={"item_id": chai.id})).json()["total"] == 0
 
+    # A store order its store sold wholesale counts apart.
+    store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
+    db.add(store)
+    await db.flush()
+    await sell(
+        (large.id, "2", "8"),
+        store_id=store.id,
+        external_id="o-1",
+        wholesale=WholesaleBuyer.COMPANY,
+    )
+    await db.commit()
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
-    # Typed at a price point, and back to the suggested price: 5 marked up 20%.
-    typed = (await client.put(path, json={"price": "9"})).json()
-    [_, priced] = typed["variations"]
-    assert [(at["typed"], at["price"]) for at in priced["pricing"]["points"]] == [
-        ("9.000000", "9.000000")
-    ]
-    cleared = (await client.put(path, json={"price": None})).json()
-    [_, priced] = cleared["variations"]
-    assert [(at["typed"], at["suggested"]) for at in priced["pricing"]["points"]] == [
-        (None, "6.00")
-    ]
-    assert cleared["totals"]["profit"] == {
+    totals = (await client.get(f"/api/v1/products/{product.id}")).json()["totals"]
+    nothing = {
         "revenue": "0.000000",
         "cost": "0.000000",
         "profit": "0.000000",
@@ -227,6 +228,9 @@ async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
         "uncosted": 0,
         "left_out": 0,
     }
+    assert (totals["sold"], totals["profit"]) == ("6.000000", nothing)
+    assert totals["retail"] == {"sold": "4.000000", "shipped": "0", "profit": nothing}
+    assert totals["wholesale"] == {"sold": "2.000000", "shipped": "0", "profit": nothing}
 
 
 async def test_archived_products_are_listed_only_when_asked(

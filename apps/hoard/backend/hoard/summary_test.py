@@ -3,7 +3,7 @@ costs, sales and pricing, each read once for many items."""
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from hoard import orders, purchases, recipes, runs, shipments, summary
@@ -11,18 +11,21 @@ from hoard.records import (
     Adjustment,
     AdjustmentKind,
     CategoryKind,
+    Channel,
+    Listing,
     Location,
+    MatchedBy,
     OrderStatus,
     OrganizationSettings,
-    PricePoint,
     Product,
     ProductionRun,
     Purchase,
     PurchaseLine,
     Recipe,
     Stocktake,
+    Store,
     Unit,
-    VariationPrice,
+    WholesaleBuyer,
 )
 from hoard.stock import add_product, adjust
 from hoard.stocktakes import confirm_row, start_stocktake
@@ -455,7 +458,8 @@ async def test_sales_count_what_sold_and_shipped_and_profit_what_shipped(
     await sell((chai.id, "4", "10"), status=OrderStatus.CANCELLED)
     await db.flush()
 
-    sales = (await summary.summarise(db, [chai.id], TODAY))[chai.id].sales
+    groups = (await summary.summarise(db, [chai.id], TODAY))[chai.id].sales
+    sales = groups.whole
 
     # Sold: the first order's 5 and the refunded order's 1. Shipped: 4, less 1 back.
     assert (sales.sold, sales.shipped) == (6, 3)
@@ -463,6 +467,47 @@ async def test_sales_count_what_sold_and_shipped_and_profit_what_shipped(
     assert (sales.revenue, sales.cost, sales.profit) == (27, 6, 21)
     assert sales.profit_share == Decimal("77.78")
     assert (sales.uncosted, sales.left_out) == (0, frozenset())
+    # Every hand order is retail.
+    assert groups.retail == sales and groups.wholesale == summary.Sales()
+
+
+async def test_a_wholesale_orders_lines_count_in_the_wholesale_group(
+    db: WriteSession, main: Location, lot, sell, product
+):
+    chai = await product("Chai")
+    await lot(chai.id, "C1", "20", unit_cost="2")
+    store = Store(organization_id=db.organization_id, channel=Channel.SHOPIFY)
+    db.add(store)
+    await db.flush()
+    await _ship(db, main, await sell((chai.id, "2", "10")))
+    for buyer, external_id in ((WholesaleBuyer.COMPANY, "o-1"), (WholesaleBuyer.SEGMENT, "o-2")):
+        await _ship(
+            db,
+            main,
+            await sell(
+                (chai.id, "3", "6"), store_id=store.id, external_id=external_id, wholesale=buyer
+            ),
+        )
+    # In another currency: counted apart, in its own group.
+    euros = await sell(
+        (chai.id, "1", "6"),
+        store_id=store.id,
+        external_id="o-3",
+        wholesale=WholesaleBuyer.SEGMENT,
+        currency="EUR",
+    )
+    await _ship(db, main, euros)
+
+    groups = (await summary.summarise(db, [chai.id], TODAY))[chai.id].sales
+
+    assert (groups.retail.sold, groups.retail.revenue, groups.retail.profit) == (2, 20, 16)
+    assert (groups.wholesale.sold, groups.wholesale.revenue, groups.wholesale.profit) == (
+        7,
+        36,
+        24,
+    )
+    assert (groups.retail.left_out, groups.wholesale.left_out) == (frozenset(), {euros.id})
+    assert groups.whole.revenue == 56
 
 
 async def test_a_shipment_with_no_cost_is_counted_and_another_currency_left_out(
@@ -474,7 +519,7 @@ async def test_a_shipment_with_no_cost_is_counted_and_another_currency_left_out(
     euros = await sell((tea.id, "2", "5"), currency="EUR")
     await _ship(db, main, euros)
 
-    sales = (await summary.summarise(db, [tea.id], TODAY))[tea.id].sales
+    sales = (await summary.summarise(db, [tea.id], TODAY))[tea.id].sales.whole
 
     assert (sales.sold, sales.shipped) == (3, 3)
     assert (sales.revenue, sales.cost, sales.uncosted) == (5, 0, 1)
@@ -506,7 +551,7 @@ async def test_a_bundle_is_available_as_its_contents_make_and_profits_from_them(
 
     await _ship(db, main, order)
     figures = await summary.summarise(db, [gift.id, infuser.id], TODAY)
-    gift_sales, infuser_sales = figures[gift.id].sales, figures[infuser.id].sales
+    gift_sales, infuser_sales = figures[gift.id].sales.whole, figures[infuser.id].sales.whole
     assert (gift_sales.sold, gift_sales.shipped, figures[gift.id].committed) == (2, 2, 0)
     # The bundle's line earned it; its parts cost it 2 × (4 + 2 × 1).
     assert (gift_sales.revenue, gift_sales.cost) == (40, 12)
@@ -515,7 +560,7 @@ async def test_a_bundle_is_available_as_its_contents_make_and_profits_from_them(
     assert (infuser_sales.revenue, infuser_sales.cost) == (0, 0)
 
 
-async def test_prices_follow_markup_fee_and_commission_from_the_cost(
+async def test_pricing_is_the_cost_by_its_parts_and_the_margin_at_the_stores_price(
     db: WriteSession, main: Location, lot, material, product
 ):
     db.add(
@@ -523,35 +568,38 @@ async def test_prices_follow_markup_fee_and_commission_from_the_cost(
             organization_id=db.organization_id, labour_rate=Decimal(30), overhead=Decimal(10)
         )
     )
-    retail = PricePoint(organization_id=db.organization_id, name="Retail", markup=Decimal(100))
-    wholesale = PricePoint(
-        organization_id=db.organization_id,
-        name="Wholesale",
-        markup=Decimal(50),
-        listing_fee=Decimal("0.3"),
-        commission=Decimal(10),
-    )
-    db.add_all([retail, wholesale])
     lye = await material("Lye")
-    soap, never = await product("Soap"), await product("Never costed")
+    soap = await product("Soap", default_price=Decimal(6))
+    never, listed = await product("Never costed"), await product("Listed")
     await recipes.save(
         db,
         Recipe(variation_id=soap.id, batch_quantity=Decimal(10), minutes=20),
         [recipes.Line(lye.id, Decimal(100))],
     )
     await lot(soap.id, "S1", "5", unit_cost="2.5")
+    await lot(listed.id, "L1", "5", unit_cost="3")
+    synced = Store(
+        organization_id=db.organization_id,
+        channel=Channel.SHOPIFY,
+        imported_at=datetime(2026, 11, 1, tzinfo=UTC),
+    )
+    pending = Store(organization_id=db.organization_id, channel=Channel.WOOCOMMERCE)
+    db.add_all([synced, pending])
+    await db.flush()
     db.add_all(
-        VariationPrice(
+        Listing(
             organization_id=db.organization_id,
-            variation_id=variation.id,
-            price_point_id=wholesale.id,
-            price=Decimal(4),
+            store_id=store.id,
+            item_id=listed.id,
+            product_id=f"p-{store.id}",
+            price=Decimal(price),
+            matched_by=MatchedBy.HAND,
         )
-        for variation in (soap, never)
+        for store, price in ((pending, "9"), (synced, "2.5"))
     )
     await db.flush()
 
-    priced = await summary.pricing(db, [soap.id, never.id])
+    priced = await summary.pricing(db, [soap.id, never.id, listed.id])
 
     # 2.50 of goods, 20 minutes at 30 an hour over 10 is 1.00 of labour, and
     # 10% of both for overhead.
@@ -563,26 +611,15 @@ async def test_prices_follow_markup_fee_and_commission_from_the_cost(
         Decimal("0.35"),
         Decimal("3.85"),
     )
-    by_name = dict(zip(("retail", "wholesale"), priced[soap.id].points, strict=True))
-    assert (by_name["retail"].suggested, by_name["retail"].price) == (
-        Decimal("7.70"),
-        Decimal("7.70"),
+    # Not listed in a synced store: its product's default price.
+    assert (priced[soap.id].price, priced[soap.id].store_price) == (6, False)
+    assert (priced[soap.id].margin, priced[soap.id].margin_share) == (
+        Decimal("2.15"),
+        Decimal("35.83"),
     )
-    assert (by_name["retail"].margin, by_name["retail"].margin_share) == (Decimal("3.85"), 50)
-    # Marked up to 5.775, the cent rounds up; the typed 4 sells under cost
-    # once its fee and 10% commission are paid.
-    assert by_name["wholesale"].suggested == Decimal("5.78")
-    assert (by_name["wholesale"].price, by_name["wholesale"].commission) == (4, Decimal("0.4"))
-    assert by_name["wholesale"].margin == Decimal("-0.55")
-    # Never costed: no suggestion and no margin, even at a typed price.
+    # The synced store's price, under its cost of 3.30.
+    assert (priced[listed.id].price, priced[listed.id].store_price) == (Decimal("2.5"), True)
+    assert priced[listed.id].margin == Decimal("-0.8")
+    # Never costed, and no price: no margin.
     assert priced[never.id].cost is None
-    assert [(at.suggested, at.price, at.margin) for at in priced[never.id].points] == [
-        (None, None, None),
-        (None, 4, None),
-    ]
-
-
-def test_a_suggested_price_rounds_to_the_currencys_smallest_unit():
-    assert summary.in_currency(Decimal("123.5"), "JPY") == 124
-    assert summary.in_currency(Decimal("1.2345"), "BHD") == Decimal("1.235")
-    assert summary.in_currency(Decimal("1.005"), "EUR") == Decimal("1.01")
+    assert (priced[never.id].price, priced[never.id].margin) == (None, None)
