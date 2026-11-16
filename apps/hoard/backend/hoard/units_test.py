@@ -39,6 +39,8 @@ def test_standard_units_of_one_measure_convert_and_others_do_not():
     assert units.factor(JAR, GRAM) is None
     assert units.factor(None, None) == 1
     assert units.factor(None, GRAM) is None
+    # A variation counts in units of itself, which convert as each.
+    assert (units.factor(EACH, None), units.factor(None, JAR)) == (1, None)
     with pytest.raises(UnitRefused) as refused:
         units.convert(Decimal(1), MILLILITRE, GRAM)
     assert refused.value.code is UnitError.UNIT_NOT_CONVERTIBLE
@@ -48,6 +50,11 @@ def test_a_purchase_converts_between_standard_units_and_a_custom_one_is_typed():
     assert units.purchase_conversion(KILOGRAM, GRAM) == Decimal("1000.000000")
     assert units.purchase_conversion(JAR, GRAM) is None
     assert units.purchase_conversion(GRAM, GRAM) is None
+    # A variation bought by the dozen is 12 of it; by the jar, the number typed.
+    dozen = Unit(id=9, name="dozen", standard="dozen")
+    assert units.purchase_conversion(dozen, None) == 12
+    assert units.purchase_conversion(JAR, None) is None
+    assert units.purchase_conversion(None, None) is None
     tonne = Unit(id=7, name="tonne", standard="tonne")
     milligram = Unit(id=8, name="mg", standard="milligram")
     with pytest.raises(UnitRefused) as refused:

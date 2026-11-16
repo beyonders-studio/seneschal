@@ -487,7 +487,9 @@ export const useCreateSettingsUnit = <TError = ErrorType<void>, TContext = unkno
 };
 /**
  * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
- * are standard units of one measure: as a purchase converts.
+ * are standard units of one measure: as a purchase converts. Without
+ * ``to_unit_id``, how many of a variation it is, which counts in units of
+ * itself.
  * @summary Read Unit Conversion
  */
 export const readUnitConversion = (
@@ -536,7 +538,9 @@ export type ReadUnitConversionQueryError = ErrorType<void | HTTPValidationError>
 
 /**
  * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
- * are standard units of one measure: as a purchase converts.
+ * are standard units of one measure: as a purchase converts. Without
+ * ``to_unit_id``, how many of a variation it is, which counts in units of
+ * itself.
  * @summary Read Unit Conversion
  */
 export function useReadUnitConversion<
@@ -560,7 +564,9 @@ export function useReadUnitConversion<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
- * are standard units of one measure: as a purchase converts.
+ * are standard units of one measure: as a purchase converts. Without
+ * ``to_unit_id``, how many of a variation it is, which counts in units of
+ * itself.
  * @summary Read Unit Conversion
  */
 export function useReadUnitConversion<
@@ -586,7 +592,9 @@ export function useReadUnitConversion<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
- * are standard units of one measure: as a purchase converts.
+ * are standard units of one measure: as a purchase converts. Without
+ * ``to_unit_id``, how many of a variation it is, which counts in units of
+ * itself.
  * @summary Read Unit Conversion
  */
 export function useReadUnitConversion<
@@ -602,7 +610,9 @@ export function useReadUnitConversion<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
- * are standard units of one measure: as a purchase converts.
+ * are standard units of one measure: as a purchase converts. Without
+ * ``to_unit_id``, how many of a variation it is, which counts in units of
+ * itself.
  * @summary Read Unit Conversion
  */
 export function useReadUnitConversion<

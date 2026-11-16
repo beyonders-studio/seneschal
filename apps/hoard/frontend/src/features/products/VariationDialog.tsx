@@ -13,7 +13,10 @@ import {
   getReadProductQueryKey,
   updateProductVariation,
 } from "@/api/generated/products/products";
+import { useReadUnitConversion } from "@/api/generated/settings/settings";
+import { SupplierPicker } from "@/features/contacts/SupplierPicker";
 import { orNull } from "@/features/items/format";
+import { UnitPicker } from "@/features/items/UnitPicker";
 import {
   changedInStore,
   storeVersions,
@@ -37,7 +40,10 @@ import { Input } from "@/ui/input";
 /**
  * Adding a variation to `product`, or editing `variation`, in a dialog.
  * Closing it drops what was typed. Its price is a field only for a member who
- * sees costs. A new SKU or attributes of a variation a synced store lists are
+ * sees costs. Unless the product is a bundle, it says how it is bought: its
+ * supplier, their code for it, and the unit it comes in, which a standard
+ * unit of count converts by itself (a dozen is 12) and another by the number
+ * typed. A new SKU or attributes of a variation a synced store lists are
  * written to the store first, as the product's are (`ProductDialog`).
  */
 export function VariationDialog({
@@ -83,6 +89,14 @@ function VariationForm({
   );
   const [sku, setSku] = useState(variation?.sku ?? "");
   const [price, setPrice] = useState(variation?.price ?? "");
+  const [supplierId, setSupplierId] = useState(variation?.supplier_contact_id ?? null);
+  const [supplierCode, setSupplierCode] = useState(variation?.supplier_code ?? "");
+  const [purchaseUnitId, setPurchaseUnitId] = useState(variation?.purchase_unit_id ?? null);
+  const [conversion, setConversion] = useState(variation?.purchase_conversion ?? "1");
+  const known = useReadUnitConversion(
+    { from_unit_id: purchaseUnitId ?? 0 },
+    { query: { enabled: purchaseUnitId !== null } }
+  ).data?.factor;
   const listedIn = useListedIn();
   const refresh = useRefreshStoreProducts();
   const save = useMutation({
@@ -115,6 +129,10 @@ function VariationForm({
       ),
       sku: orNull(sku),
       ...(seesCosts ? { price: orNull(price) } : {}),
+      supplier_contact_id: supplierId,
+      supplier_code: orNull(supplierCode),
+      purchase_unit_id: purchaseUnitId,
+      purchase_conversion: purchaseUnitId === null ? "1" : (known ?? conversion),
       store_versions: storeVersions(product),
     });
   };
@@ -179,6 +197,42 @@ function VariationForm({
                 onChange={(event) => setPrice(event.target.value)}
               />
             </Field>
+          )}
+          {!product.bundle && (
+            <>
+              <SupplierPicker
+                label={t("materials.supplier")}
+                value={supplierId}
+                onChange={setSupplierId}
+              />
+              <Field label={t("materials.supplierCode")}>
+                <Input
+                  value={supplierCode}
+                  onChange={(event) => setSupplierCode(event.target.value)}
+                />
+              </Field>
+              <Field label={t("materials.purchaseUnit")}>
+                <UnitPicker
+                  value={purchaseUnitId}
+                  onChange={setPurchaseUnitId}
+                  none={t("products.oneAtATime")}
+                />
+              </Field>
+              {purchaseUnitId !== null && (
+                <Field
+                  label={t("materials.conversion")}
+                  hint={known ? t("materials.conversionKnown") : t("products.conversionHint")}
+                >
+                  <Input
+                    inputMode="decimal"
+                    value={known ?? conversion}
+                    onChange={(event) => setConversion(event.target.value)}
+                    disabled={!!known}
+                    required
+                  />
+                </Field>
+              )}
+            </>
           )}
         </div>
         {save.isError && (

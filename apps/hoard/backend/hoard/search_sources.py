@@ -10,7 +10,8 @@ of record people look for, each with the page that opens it.
 * **Lots**: number, which is their code too; their item's name, notes and
   text properties.
 * **Production runs**: code; their item's name.
-* **Purchases**: code; their materials' names and notes.
+* **Purchases**: code; the names of the materials and products their lines
+  buy, and notes.
 * **Orders**: code, the store's number for them and for their customer; their
   lines' items' names.
 * **Stocktakes**: their location and date; notes.
@@ -184,21 +185,16 @@ PURCHASES = SearchSource(
     path="'/stock/purchases/' || r.id",
     codes="ARRAY[r.code]",
     body=(
-        """(SELECT string_agg(m.name, ' ' ORDER BY pl.id)
-             FROM purchase_lines pl JOIN materials m ON m.id = pl.material_id
-            WHERE pl.purchase_id = r.id)""",
+        f"""(SELECT string_agg({_item_name("pl.item_id")}, ' ' ORDER BY pl.id)
+              FROM purchase_lines pl WHERE pl.purchase_id = r.id)""",
         "r.notes",
     ),
     watch=("code", "notes"),
     dependencies=(
         SearchDependency(
-            "purchase_lines", "SELECT d.purchase_id", watch=("purchase_id", "material_id")
+            "purchase_lines", "SELECT d.purchase_id", watch=("purchase_id", "item_id")
         ),
-        SearchDependency(
-            "materials",
-            "SELECT pl.purchase_id FROM purchase_lines pl WHERE pl.material_id = d.id",
-            watch=("name",),
-        ),
+        *_item_names("purchase_lines", "purchase_id", "item_id"),
     ),
 )
 

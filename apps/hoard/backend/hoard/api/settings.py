@@ -391,11 +391,14 @@ async def list_settings_units(
 
 @router.get("/units/conversion", responses=_READ)
 async def read_unit_conversion(
-    db: OrganizationSessionDep, from_unit_id: int, to_unit_id: int
+    db: OrganizationSessionDep, from_unit_id: int, to_unit_id: int | None = None
 ) -> UnitConversion:
     """How many ``to_unit_id`` units one ``from_unit_id`` unit is, when they
-    are standard units of one measure: as a purchase converts."""
-    source, target = await found(db, Unit, from_unit_id), await found(db, Unit, to_unit_id)
+    are standard units of one measure: as a purchase converts. Without
+    ``to_unit_id``, how many of a variation it is, which counts in units of
+    itself."""
+    source = await found(db, Unit, from_unit_id)
+    target = None if to_unit_id is None else await found(db, Unit, to_unit_id)
     return UnitConversion(factor=units.purchase_conversion(source, target))
 
 

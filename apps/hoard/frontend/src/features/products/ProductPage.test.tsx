@@ -6,6 +6,8 @@ import { productDetail, SETTINGS, stockRow, variation } from "@/features/items/t
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
 
+Element.prototype.scrollIntoView ??= () => {};
+
 const CHAI = productDetail({
   on_hand: "6.000000",
   default_price: "12.000000",
@@ -118,6 +120,44 @@ describe("ProductPage", () => {
       expect(JSON.parse(String(sent?.data))).toMatchObject({ name: "Chai", status: "archived" });
     });
     expect(asked.some((request) => request.method === "delete")).toBe(false);
+  });
+
+  it("says how a variation is bought: a dozen of it converts by itself", async () => {
+    const asked = await openSignedIn("/stock/products/7", signedIn(), {
+      ...opened,
+      "GET /api/v1/settings/units": {
+        status: 200,
+        data: [
+          { id: 1, name: "g", standard: "gram", measure: "mass", aliases: [] },
+          { id: 2, name: "dozen", standard: "dozen", measure: "count", aliases: [] },
+        ],
+      },
+      "GET /api/v1/settings/units/conversion": { status: 200, data: { factor: "12.000000" } },
+      "GET /api/v1/contacts": { status: 200, data: [] },
+      "POST /api/v1/products/7/variations": { status: 201, data: CHAI },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add variation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add variation" });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Bought in" }));
+    fireEvent.click(await screen.findByRole("option", { name: /dozen/ }));
+    expect(await within(dialog).findByDisplayValue("12.000000")).toHaveProperty("disabled", true);
+    fireEvent.change(within(dialog).getByLabelText("Supplier's code"), {
+      target: { value: "INF-12" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      const sent = asked.find((request) => request.url === "/api/v1/products/7/variations");
+      expect(JSON.parse(String(sent?.data))).toMatchObject({
+        supplier_code: "INF-12",
+        purchase_unit_id: 2,
+        purchase_conversion: "12.000000",
+      });
+    });
+    expect(
+      asked.find((request) => request.url === "/api/v1/settings/units/conversion")?.params
+    ).toEqual({ from_unit_id: 2 });
   });
 
   describe("by its type", () => {

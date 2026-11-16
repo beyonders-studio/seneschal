@@ -1,5 +1,6 @@
 """Purchases through the API: receiving lines, or part of one, on the day they
-arrived; when a purchase is overdue; and costs only for who sees them."""
+arrived; when a purchase is overdue; products bought by their own purchase
+unit; and costs only for who sees them."""
 
 from __future__ import annotations
 
@@ -9,8 +10,18 @@ from decimal import Decimal
 from sqlmodel import select
 
 from hoard import plugin_manifest
-from hoard.records import Adjustment, Category, CategoryKind, Item, Lot, OutboxEvent, Purchase
-from hoard.stock import on_hand
+from hoard.records import (
+    Adjustment,
+    Category,
+    CategoryKind,
+    Item,
+    Lot,
+    OutboxEvent,
+    Product,
+    Purchase,
+    Unit,
+)
+from hoard.stock import add_product, on_hand
 from seneschal_core.db import WriteSession
 
 
@@ -18,14 +29,12 @@ async def _average(db: WriteSession, item_id: int) -> Decimal:
     return (await db.exec(select(Item.average_cost).where(Item.id == item_id))).one()
 
 
-async def _buy(client, material_id: int, quantity: str, unit_cost: str, **fields) -> dict:
+async def _buy(client, item_id: int, quantity: str, unit_cost: str, **fields) -> dict:
     answer = await client.post(
         "/api/v1/purchases",
         json={
             "dated_on": "2026-11-01",
-            "lines": [
-                {"material_id": material_id, "purchase_quantity": quantity, "unit_cost": unit_cost}
-            ],
+            "lines": [{"item_id": item_id, "purchase_quantity": quantity, "unit_cost": unit_cost}],
             **fields,
         },
     )
@@ -101,13 +110,13 @@ async def test_costs_are_neither_sent_nor_taken_without_the_permission(
 
     refused = await client.post(
         "/api/v1/purchases",
-        json={"shipping": "1", "lines": [{"material_id": flour.id, "purchase_quantity": "2"}]},
+        json={"shipping": "1", "lines": [{"item_id": flour.id, "purchase_quantity": "2"}]},
     )
     assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
 
     made = await client.post(
         "/api/v1/purchases",
-        json={"lines": [{"material_id": flour.id, "purchase_quantity": "2"}]},
+        json={"lines": [{"item_id": flour.id, "purchase_quantity": "2"}]},
     )
     purchase = made.json()
     assert made.status_code == 201
@@ -207,3 +216,37 @@ async def test_part_of_a_line_is_received_on_its_day_and_an_open_purchase_is_ove
         f"/api/v1/purchases/{purchase['id']}", json={"expected_on": None, "notes": None}
     )
     assert (cleared.json()["expected_on"], cleared.json()["notes"]) == (None, None)
+
+
+async def test_a_product_is_bought_by_the_dozen_and_a_bundle_is_not(
+    client, sign_in, db: WriteSession
+):
+    dozen = Unit(organization_id=db.organization_id, name="dozen", standard="dozen")
+    ware = Category(organization_id=db.organization_id, kind=CategoryKind.PRODUCT, name="Ware")
+    db.add_all([dozen, ware])
+    await db.flush()
+    product, infuser = await add_product(db, Product(name="Infuser", category_id=ware.id))
+    _, box = await add_product(db, Product(name="Gift box", bundle=True))
+    await db.commit()
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+
+    # A dozen converts by itself, whatever number is sent.
+    changed = await client.put(
+        f"/api/v1/products/{product.id}/variations/{infuser.id}",
+        json={"sku": "INF-1", "purchase_unit_id": dozen.id, "purchase_conversion": "10"},
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["variations"][0]["purchase_conversion"] == "12.000000"
+
+    purchase = await _receive(client, await _buy(client, infuser.id, "2", "18"))
+    [line] = purchase["lines"]
+    assert (line["item"]["name"], line["sku"], line["category_id"]) == ("Infuser", "INF-1", ware.id)
+    assert (line["tracking_quantity"], line["landed_cost"]) == ("24.000000", "1.500000")
+    assert await on_hand(db, infuser.id) == 24
+
+    refused = await client.post(
+        "/api/v1/purchases", json={"lines": [{"item_id": box.id, "purchase_quantity": "1"}]}
+    )
+    assert (refused.status_code, refused.json()) == (422, {"detail": "PURCHASE_LINE_KIND"})
+    taken = await client.delete(f"/api/v1/products/{product.id}")
+    assert (taken.status_code, taken.json()) == (409, {"detail": "IN_USE"})

@@ -46,7 +46,7 @@ async def test_records_export_as_csv_and_json(
     ] == [(str(flour.id), "'=Flour", "F-1", "true", "")]
     assert lines.headers["content-disposition"] == 'attachment; filename="purchase_lines.json"'
     [line] = lines.json()
-    assert (line["purchase_id"], line["material_id"], line["tracking_quantity"]) == (
+    assert (line["purchase_id"], line["item_id"], line["tracking_quantity"]) == (
         purchase.id,
         flour.id,
         "4.000000",

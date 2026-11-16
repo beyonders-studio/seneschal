@@ -1,8 +1,11 @@
 """Products, their variations and their images, and their stock per location.
 
 A product sells through its variations, each an item with its own stock; a
-simple product has one, its default. Prices and average costs are sent only to
-a member who sees costs, and only theirs are taken. Images are kept by Hoard,
+simple product has one, its default. A variation can be bought, as a material
+is, with a supplier, a supplier code and a purchase unit: it counts in units of
+itself, so a standard unit of count converts by itself (a dozen is 12) and
+another holds the number typed (``hoard.units``). Prices and average costs are
+sent only to a member who sees costs, and only theirs are taken. Images are kept by Hoard,
 as :mod:`hoard.api.items` takes them.
 
 A product a synced store lists stays the store's to show: changing its name
@@ -28,11 +31,17 @@ from sqlalchemy import and_, func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import listings, stock
+from hoard import listings, stock, units
 from hoard.api import items, stores
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
-from hoard.api.settings import found, type_of
+from hoard.api.settings import (
+    SettingsError,
+    found,
+    refused_as,
+    require_references,
+    type_of,
+)
 from hoard.api.shapes import Page, PageDep
 from hoard.channels import ConnectRefused, StoreProduct, StoreVariant
 from hoard.records import (
@@ -48,6 +57,7 @@ from hoard.records import (
     StockLevel,
     Store,
     StoreProductCopy,
+    Unit,
     Variation,
 )
 from seneschal_core.api import (
@@ -79,8 +89,8 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "LAST_VARIATION, LISTED_IN_STORE"},
-    422: {"description": "CATEGORY_UNKNOWN, TYPE_UNKNOWN"},
+    409: {"description": "LAST_VARIATION, LISTED_IN_STORE, IN_USE"},
+    422: {"description": "CATEGORY_UNKNOWN, TYPE_UNKNOWN, UNIT_UNKNOWN, AMOUNT_TOO_SMALL"},
 }
 #: A change written to the stores that list the product first.
 _CHANGE_LIVE: dict[int | str, dict[str, Any]] = {
@@ -121,6 +131,9 @@ class ProductRead(BaseModel):
     default_price: Decimal | None
     #: Whether a store order makes it; null takes the organization's.
     auto_manufacture: AutoManufacture | None
+    #: Sold as the variations its recipe holds: it has no stock of its own,
+    #: and isn't bought.
+    bundle: bool
     #: How many days what a run makes cures before it is sold; null for none.
     cure_days: int | None
     #: Whether it is on the US Food Traceability List.
@@ -145,6 +158,14 @@ class ProductVariationRead(items.ItemHoldings):
     average_cost: Decimal | None
     #: Whether a store order makes it; null takes its product's.
     auto_manufacture: AutoManufacture | None
+    #: The preferred supplier, when it is bought: an Initiative contact's id.
+    supplier_contact_id: int | None
+    #: The supplier's code for it.
+    supplier_code: str | None
+    #: The unit it is bought in, when not one at a time.
+    purchase_unit_id: int | None
+    #: How many of it one purchase unit holds.
+    purchase_conversion: Decimal
 
 
 class ProductDetail(ProductRead, items.ItemStamps):
@@ -187,6 +208,11 @@ class ProductVariationWrite(BaseModel):
     price: items.Amount | None = None
     #: Left as it is unless sent; null takes its product's.
     auto_manufacture: AutoManufacture | None = None
+    supplier_contact_id: int | None = None
+    supplier_code: items.OptionalText = None
+    purchase_unit_id: int | None = None
+    #: Taken only for a purchase unit that doesn't convert by itself.
+    purchase_conversion: items.Positive = Decimal(1)
     #: As for a product's (:attr:`ProductWrite.store_versions`).
     store_versions: list[StoreVersion] = Field(default_factory=list, max_length=100)
 
@@ -214,6 +240,26 @@ def _written(body: ProductWrite | ProductVariationWrite, sees_costs: bool, price
     return body.model_dump(
         exclude=_hidden(sees_costs, price) | unsent | {"store_versions", "type_id"}
     )
+
+
+async def _variation_written(
+    db: AsyncSession, body: ProductVariationWrite, sees_costs: bool
+) -> dict:
+    """What a variation write changes, with its purchase conversion: one for
+    none, by itself for a standard unit of count, and as sent otherwise."""
+    await require_references(db, kind=CategoryKind.PRODUCT, units=(body.purchase_unit_id,))
+    bought = (
+        None if body.purchase_unit_id is None else await db.get_one(Unit, body.purchase_unit_id)
+    )
+    try:
+        conversion = units.purchase_conversion(bought, None)
+    except units.UnitRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+    return _written(body, sees_costs, "price") | {
+        "purchase_conversion": Decimal(1)
+        if bought is None
+        else conversion or body.purchase_conversion
+    }
 
 
 async def _on_hand(db: AsyncSession, product_ids: Sequence[int]) -> dict[int, Decimal]:
@@ -443,11 +489,13 @@ async def update_product(
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
 async def delete_product(product_id: int, db: WriteSessionDep) -> None:
     """Remove a product with its variations, their stock, lots and
-    adjustments, and its images, unless a synced store lists it."""
+    adjustments, and its images, unless a synced store lists it. One a
+    purchase bought stays."""
     product = await found(db, Product, product_id)
     await _refuse_listed(db, product_id)
-    await stock.remove_product(db, product)
-    await db.commit()
+    with refused_as(SettingsError.IN_USE):
+        await stock.remove_product(db, product)
+        await db.commit()
 
 
 @router.post("/{product_id}/variations", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
@@ -456,7 +504,7 @@ async def create_product_variation(
 ) -> ProductDetail:
     await found(db, Product, product_id)
     variation = Variation(product_id=product_id)
-    variation.sqlmodel_update(_written(body, sees_costs, "price"))
+    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
     await stock.add_variation(db, variation)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
@@ -496,7 +544,7 @@ async def update_product_variation(
             return replace(held, variants=[edited(held, variant) for variant in held.variants])
 
         await _write_through(db, plugin, session.community_ref, listed, body.store_versions, edit)
-    variation.sqlmodel_update(_written(body, sees_costs, "price"))
+    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
     db.add(variation)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
@@ -509,14 +557,15 @@ async def update_product_variation(
 )
 async def delete_product_variation(product_id: int, variation_id: int, db: WriteSessionDep) -> None:
     """Remove a variation with its stock, lots and adjustments, unless a
-    synced store lists it; a product keeps its last one."""
+    synced store lists it or a purchase bought it; a product keeps its last one."""
     await _product_variation(db, product_id, variation_id)
     await _refuse_listed(db, product_id, variation_id)
     count = select(func.count()).select_from(Variation).where(Variation.product_id == product_id)
     if (await db.exec(count)).one() == 1:
         raise refuse(status.HTTP_409_CONFLICT, ProductError.LAST_VARIATION)
-    await stock.remove_item(db, variation_id)
-    await db.commit()
+    with refused_as(SettingsError.IN_USE):
+        await stock.remove_item(db, variation_id)
+        await db.commit()
 
 
 @router.get("/{product_id}/images", responses=_READ)

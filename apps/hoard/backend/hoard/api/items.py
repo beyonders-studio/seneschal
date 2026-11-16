@@ -247,7 +247,7 @@ async def require_tracking_unit(db: AsyncSession, item_id: int, was: int, now: i
         return
     for held in (
         select(Adjustment.id).where(Adjustment.item_id == item_id),
-        select(PurchaseLine.id).where(PurchaseLine.material_id == item_id),
+        select(PurchaseLine.id).where(PurchaseLine.item_id == item_id),
         select(StocktakeRow.id).where(StocktakeRow.item_id == item_id),
         select(RecipeLine.id).where(RecipeLine.item_id == item_id),
         select(Recipe.id).where(Recipe.base_id == item_id),

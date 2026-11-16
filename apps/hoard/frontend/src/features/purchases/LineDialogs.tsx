@@ -112,7 +112,8 @@ function LineForm({
 }) {
   const { t } = useTranslation("movements");
   const seesCosts = useSeesCosts();
-  const [material, setMaterial] = useState(line?.material.id ?? null);
+  const { item: itemName } = useMovementLabels();
+  const [itemId, setItemId] = useState(line?.item.id ?? null);
   const [quantity, setQuantity] = useState(line?.purchase_quantity ?? "");
   const [tracking, setTracking] = useState(line?.tracking_quantity ?? "");
   const [unitCost, setUnitCost] = useState(line?.unit_cost ?? "");
@@ -121,7 +122,7 @@ function LineForm({
   const update = useUpdatePurchaseLine();
 
   const submit = async () => {
-    if (material === null) return;
+    if (itemId === null) return;
     // A tracking quantity left as it was is made again from a new purchase quantity.
     const amounts = {
       ...(tracking && tracking !== line?.tracking_quantity ? { tracking_quantity: tracking } : {}),
@@ -134,7 +135,7 @@ function LineForm({
               purchaseId: purchase.id,
               lineId: line.id,
               data: {
-                ...(material !== line.material.id ? { material_id: material } : {}),
+                ...(itemId !== line.item.id ? { item_id: itemId } : {}),
                 ...(quantity !== line.purchase_quantity ? { purchase_quantity: quantity } : {}),
                 ...(receivedOn !== (line.received_on ?? "") ? { received_on: receivedOn } : {}),
                 ...amounts,
@@ -142,7 +143,7 @@ function LineForm({
             })
           : await create.mutateAsync({
               purchaseId: purchase.id,
-              data: { material_id: material, purchase_quantity: quantity, ...amounts },
+              data: { item_id: itemId, purchase_quantity: quantity, ...amounts },
             })
       );
     } catch (error) {
@@ -153,11 +154,11 @@ function LineForm({
   return (
     <DialogForm onSubmit={submit} saving={create.isPending || update.isPending}>
       <ItemField
-        materials
-        label={t("purchases.lines.material")}
-        value={material}
-        chosen={line?.material.name}
-        onChange={setMaterial}
+        bought
+        label={t("purchases.lines.item")}
+        value={itemId}
+        chosen={line ? itemName(line.item) : null}
+        onChange={setItemId}
       />
       <div className="grid grid-cols-pair gap-4">
         <Field label={t("purchases.lines.purchaseQuantity")}>

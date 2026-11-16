@@ -273,7 +273,7 @@ async def test_an_archived_material_leaves_pickers_and_comes_back_as_it_was(
     asked = (await client.get("/api/v1/materials", params={"archived": True})).json()
     assert [(row["name"], row["status"]) for row in asked["items"]] == [("Oolong", "archived")]
     bought = (await client.get(f"/api/v1/purchases/{purchase.id}")).json()
-    assert [line["material"]["archived"] for line in bought["lines"]] == [True]
+    assert [line["item"]["archived"] for line in bought["lines"]] == [True]
 
     restored = (await client.put(f"/api/v1/materials/{oolong.id}", json=body)).json()
     assert (restored["status"], restored["notes"], restored["on_hand"]) == (

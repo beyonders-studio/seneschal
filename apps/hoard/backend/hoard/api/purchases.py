@@ -1,6 +1,10 @@
-"""Purchases of materials from suppliers, their lines, and receiving them.
+"""Purchases of materials and products from suppliers, their lines, and
+receiving them.
 
-A purchase names its supplier by an Initiative contact's id. Receiving a line,
+A purchase names its supplier by an Initiative contact's id. A line buys a
+material or a product's variation, so many purchase units that its purchase
+conversion makes so many tracking units (``hoard.units``); a base or a
+bundle's variation is refused ``PURCHASE_LINE_KIND``. Receiving a line,
 or part of one, makes its lot and its purchase adjustment on the day it arrived
 (``hoard.purchases``); every change to a purchase or its lines re-derives what
 its received lines cost. A purchase past the day it was expected with lines
@@ -23,7 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
-from hoard import events, purchases
+from hoard import events, purchases, units
 from hoard.api.adjustments import (
     NOT_FOUND,
     NOTES,
@@ -38,7 +42,16 @@ from hoard.api.adjustments import (
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.shapes import Page, PageDep
 from hoard.purchases import PurchaseError, PurchaseRefused
-from hoard.records import PLACES, Lot, Material, Purchase, PurchaseLine
+from hoard.records import (
+    PLACES,
+    Item,
+    Lot,
+    Material,
+    Product,
+    Purchase,
+    PurchaseLine,
+    Variation,
+)
 from hoard.stock import StockRefused
 from seneschal_core.api import OrganizationSessionDep, SessionDep, WriteSessionDep, refuse
 from seneschal_core.db import OrganizationSession, WriteSession
@@ -50,6 +63,8 @@ Positive = Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=6)]
 Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 #: The fields of a purchase that hold money.
 PURCHASE_COSTS = frozenset({"discount", "shipping", "tax"})
+#: A line naming an item that can't be bought, or a quantity too small to keep.
+UNBOUGHT: Responses = {422: {"description": "PURCHASE_LINE_KIND, AMOUNT_TOO_SMALL"}}
 CONFLICT: Responses = {
     409: {
         "description": "PURCHASE_LINE_RECEIVED, PURCHASE_LINE_NOT_RECEIVED, LOT_IN_USE, "
@@ -69,8 +84,11 @@ class PurchaseLot(BaseModel):
 
 class PurchaseLineRead(BaseModel):
     id: int
-    material: AdjustmentItem
+    #: The material or the product's variation it buys.
+    item: AdjustmentItem
+    #: The material's or the variation's SKU.
     sku: str | None
+    #: The material's category, or the variation's product's.
     category_id: int | None
     purchase_quantity: Decimal
     tracking_quantity: Decimal
@@ -139,17 +157,17 @@ async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -
             )
         ).all()
     )
-    materials = await describe_items(db, [line.material_id for line in lines])
-    filed = {
-        id_: (sku, category_id)
-        for id_, sku, category_id in (
-            await db.exec(
-                select(Material.id, Material.sku, Material.category_id).where(
-                    col(Material.id).in_([line.material_id for line in lines])
-                )
-            )
-        ).all()
-    }
+    ids = [line.item_id for line in lines]
+    items = await describe_items(db, ids)
+    materials = await db.exec(
+        select(Material.id, Material.sku, Material.category_id).where(col(Material.id).in_(ids))
+    )
+    variations = await db.exec(
+        select(Variation.id, Variation.sku, Product.category_id)
+        .join(Product, col(Product.id) == col(Variation.product_id))
+        .where(col(Variation.id).in_(ids))
+    )
+    filed = {id_: (sku, category_id) for id_, sku, category_id in [*materials, *variations]}
     lots = {
         lot.purchase_line_id: lot
         for lot in (
@@ -173,9 +191,9 @@ async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -
         lines=[
             PurchaseLineRead(
                 id=line.id,
-                material=materials[line.material_id],
-                sku=filed[line.material_id][0],
-                category_id=filed[line.material_id][1],
+                item=items[line.item_id],
+                sku=filed[line.item_id][0],
+                category_id=filed[line.item_id][1],
                 purchase_quantity=line.purchase_quantity,
                 tracking_quantity=line.tracking_quantity,
                 received_on=line.received_on,
@@ -286,10 +304,11 @@ async def read_purchase(
 
 
 class PurchaseLineCreate(BaseModel):
-    material_id: int
+    #: A material, or a variation of a product that is not a bundle.
+    item_id: int
     #: How many purchase units.
     purchase_quantity: Positive
-    #: How many tracking units they make; the material's conversion when not given.
+    #: How many tracking units they make; the item's conversion when not given.
     tracking_quantity: Positive | None = None
     #: What one purchase unit cost; none when not given.
     unit_cost: NonNegative | None = None
@@ -312,13 +331,28 @@ class PurchaseCreate(BaseModel):
     lines: list[PurchaseLineCreate] = Field(default_factory=list, max_length=500)
 
 
+async def _bought(db: WriteSession, item_id: int) -> Material | Variation:
+    """The material or variation a line buys: 404 for no item, and 422
+    ``PURCHASE_LINE_KIND`` for one that can't be bought."""
+    await known(db, Item, item_id)
+    try:
+        return await purchases.bought(db, item_id)
+    except PurchaseRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+
+
 async def _tracking(
-    db: WriteSession, material_id: int, purchase_quantity: Decimal, given: Decimal | None
+    db: WriteSession, item_id: int, purchase_quantity: Decimal, given: Decimal | None
 ) -> Decimal:
-    """The tracking quantity ``given``, or what the material's conversion makes
-    of ``purchase_quantity``."""
-    material = await known(db, Material, material_id)
-    return given or (purchase_quantity * material.purchase_conversion).quantize(PLACES)
+    """The tracking quantity ``given``, or what the item's purchase conversion
+    makes of ``purchase_quantity``."""
+    bought = await _bought(db, item_id)
+    if given is not None:
+        return given
+    try:
+        return units.purchased(purchase_quantity, bought.purchase_conversion)
+    except units.UnitRefused as refused:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
 
 
 async def _next_code(db: WriteSession) -> str:
@@ -332,6 +366,7 @@ async def _next_code(db: WriteSession) -> str:
     response_model_exclude_unset=True,
     responses={
         **NOT_FOUND,
+        **UNBOUGHT,
         403: {"description": "COSTS_HIDDEN"},
         409: {"description": "PURCHASE_CODE_TAKEN"},
     },
@@ -366,10 +401,10 @@ async def create_purchase(
             PurchaseLine(
                 organization_id=db.organization_id,
                 purchase_id=purchase.id,
-                material_id=line.material_id,
+                item_id=line.item_id,
                 purchase_quantity=line.purchase_quantity,
                 tracking_quantity=await _tracking(
-                    db, line.material_id, line.purchase_quantity, line.tracking_quantity
+                    db, line.item_id, line.purchase_quantity, line.tracking_quantity
                 ),
                 unit_cost=line.unit_cost or Decimal(0),
             )
@@ -453,7 +488,7 @@ async def _line(db: WriteSession, purchase_id: int, line_id: int) -> tuple[Purch
     "/{purchase_id}/lines",
     status_code=status.HTTP_201_CREATED,
     response_model_exclude_unset=True,
-    responses={**NOT_FOUND, 403: {"description": "COSTS_HIDDEN"}},
+    responses={**NOT_FOUND, **UNBOUGHT, 403: {"description": "COSTS_HIDDEN"}},
 )
 async def create_purchase_line(
     db: WriteSessionDep, sees_costs: SeesCostsDep, purchase_id: int, body: PurchaseLineCreate
@@ -465,10 +500,10 @@ async def create_purchase_line(
         PurchaseLine(
             organization_id=db.organization_id,
             purchase_id=purchase.id,
-            material_id=body.material_id,
+            item_id=body.item_id,
             purchase_quantity=body.purchase_quantity,
             tracking_quantity=await _tracking(
-                db, body.material_id, body.purchase_quantity, body.tracking_quantity
+                db, body.item_id, body.purchase_quantity, body.tracking_quantity
             ),
             unit_cost=body.unit_cost or Decimal(0),
         )
@@ -480,10 +515,10 @@ async def create_purchase_line(
 
 class PurchaseLineUpdate(BaseModel):
     """A change to a line: only what is sent. A new purchase quantity without a
-    tracking quantity makes as many tracking units as the material's conversion
+    tracking quantity makes as many tracking units as the item's conversion
     says."""
 
-    material_id: int | None = None
+    item_id: int | None = None
     purchase_quantity: Positive | None = None
     tracking_quantity: Positive | None = None
     unit_cost: NonNegative | None = None
@@ -494,7 +529,7 @@ class PurchaseLineUpdate(BaseModel):
 @router.patch(
     "/{purchase_id}/lines/{line_id}",
     response_model_exclude_unset=True,
-    responses={**NOT_FOUND, 403: {"description": "COSTS_HIDDEN"}, **CONFLICT},
+    responses={**NOT_FOUND, **UNBOUGHT, 403: {"description": "COSTS_HIDDEN"}, **CONFLICT},
 )
 async def update_purchase_line(
     db: WriteSessionDep,
@@ -507,19 +542,19 @@ async def update_purchase_line(
     sent = changes(body)
     _no_costs(sees_costs, [sent.get("unit_cost")])
     purchase, line = await _line(db, purchase_id, line_id)
-    if line.received_on and sent.get("material_id", line.material_id) != line.material_id:
+    if line.received_on and sent.get("item_id", line.item_id) != line.item_id:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_RECEIVED)
     if line.received_on is None and "received_on" in sent:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_NOT_RECEIVED)
-    if "tracking_quantity" not in sent and {"material_id", "purchase_quantity"} & sent.keys():
+    if "tracking_quantity" not in sent and {"item_id", "purchase_quantity"} & sent.keys():
         sent["tracking_quantity"] = await _tracking(
             db,
-            sent.get("material_id", line.material_id),
+            sent.get("item_id", line.item_id),
             sent.get("purchase_quantity", line.purchase_quantity),
             None,
         )
-    elif "material_id" in sent:
-        await known(db, Material, sent["material_id"])
+    elif "item_id" in sent:
+        await _bought(db, sent["item_id"])
     for name, value in sent.items():
         setattr(line, name, value)
     await _rederive(db, purchase)
@@ -566,7 +601,7 @@ class PurchaseLineReceive(BaseModel):
         **NOT_FOUND,
         409: {
             "description": "PURCHASE_LINE_RECEIVED, RECEIVED_BEFORE_PURCHASE, "
-            "RECEIVED_MORE_THAN_LINE, AMOUNT_TOO_SMALL"
+            "RECEIVED_MORE_THAN_LINE, AMOUNT_TOO_SMALL, PURCHASE_LINE_KIND"
         },
     },
 )

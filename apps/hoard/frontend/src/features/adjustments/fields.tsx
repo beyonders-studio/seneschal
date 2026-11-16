@@ -57,10 +57,13 @@ export function LocationField({
 
 /** Every kind of item. */
 const EVERY_KIND: readonly ItemKind[] = ["material", "base", "variation"];
+/** The kinds a purchase buys. */
+const BOUGHT_KINDS: readonly ItemKind[] = ["material", "variation"];
 
 /**
  * An item to move: a material, a base or a product's variation, of `kinds`;
- * or any material with `materials`, which keeps no stock included. A product
+ * or, with `bought`, what a purchase buys: any material, one that keeps no
+ * stock included, or a variation of a product that is not a bundle. A product
  * with several variations is picked first, then one of them; a product with
  * one is that one. `chosen` names `value` when the field opens with it set;
  * `clearLabel` offers picking none, as that button's name.
@@ -70,15 +73,15 @@ export function ItemField({
   value,
   onChange,
   chosen = null,
-  materials = false,
-  kinds = materials ? ["material"] : EVERY_KIND,
+  bought = false,
+  kinds = bought ? BOUGHT_KINDS : EVERY_KIND,
   clearLabel,
 }: {
   label: string;
   value: number | null;
   onChange: (itemId: number | null) => void;
   chosen?: string | null;
-  materials?: boolean;
+  bought?: boolean;
   kinds?: readonly ItemKind[];
   clearLabel?: string;
 }) {
@@ -100,7 +103,7 @@ export function ItemField({
   });
   const choices: ComboboxItem[] = [
     ...(found.data?.items ?? [])
-      .filter((material) => materials || material.inventoriable)
+      .filter((material) => bought || material.inventoriable)
       .map((material) => ({
         value: `m${material.id}`,
         label: material.name,
@@ -111,11 +114,13 @@ export function ItemField({
       label: base.name,
       hint: t("item.kinds.base"),
     })),
-    ...(products.data?.items ?? []).map((one) => ({
-      value: `p${one.id}`,
-      label: one.name,
-      hint: t("item.kinds.variation"),
-    })),
+    ...(products.data?.items ?? [])
+      .filter((one) => !bought || !one.bundle)
+      .map((one) => ({
+        value: `p${one.id}`,
+        label: one.name,
+        hint: t("item.kinds.variation"),
+      })),
   ];
 
   const choose = async (next: string) => {

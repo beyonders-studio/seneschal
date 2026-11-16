@@ -677,6 +677,8 @@ class Variation(OrganizationRow, Stamped, table=True):
         referable("variations"),
         reference("variations", "id", "items", ondelete="CASCADE"),
         reference("variations", "product_id", "products", ondelete="CASCADE"),
+        reference("variations", "purchase_unit_id", "units"),
+        CheckConstraint("purchase_conversion > 0", name="ck_variations_purchase_conversion"),
         Index(
             "uq_variations_default",
             "organization_id",
@@ -698,6 +700,14 @@ class Variation(OrganizationRow, Stamped, table=True):
     #: Its price, when not the product's default price.
     price: Decimal | None = amount(None)
     is_default: bool = False
+    #: The preferred supplier, when it is bought: an Initiative contact's id.
+    supplier_contact_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The supplier's code for it.
+    supplier_code: str | None = None
+    #: The unit it is bought in, when not one at a time.
+    purchase_unit_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: How many of it one purchase unit holds.
+    purchase_conversion: Decimal = amount(Decimal(1))
     #: Whether a store order makes it; None takes its product's.
     auto_manufacture: AutoManufacture | None = auto_manufacture()
 
@@ -746,7 +756,7 @@ class AdjustmentReason(OrganizationRow, Stamped, table=True):
 
 
 class Purchase(OrganizationRow, Stamped, table=True):
-    """Materials bought from a supplier, received at a location. Its discount
+    """Materials and products bought from a supplier, received at a location. Its discount
     and shipping are spread over its lines by value; its tax is not a cost."""
 
     __tablename__ = "purchases"
@@ -777,8 +787,9 @@ class Purchase(OrganizationRow, Stamped, table=True):
 
 
 class PurchaseLine(OrganizationRow, Stamped, table=True):
-    """A material bought: so many purchase units at a unit cost each, which
-    are so many tracking units. Receiving it makes its lot and its purchase
+    """A material or a product's variation bought: so many purchase units at a
+    unit cost each, which are so many tracking units (of a variation, so many
+    of it). Receiving it makes its lot and its purchase
     adjustment, dated the day it arrived. Receiving part of it splits that
     part off as a line of its own."""
 
@@ -786,7 +797,7 @@ class PurchaseLine(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         referable("purchase_lines"),
         reference("purchase_lines", "purchase_id", "purchases", ondelete="CASCADE"),
-        reference("purchase_lines", "material_id", "materials"),
+        reference("purchase_lines", "item_id", "items"),
         reference("purchase_lines", "split_from_id", "purchase_lines"),
         Index("ix_purchase_lines_purchase", "organization_id", "purchase_id"),
         CheckConstraint(
@@ -797,7 +808,8 @@ class PurchaseLine(OrganizationRow, Stamped, table=True):
 
     id: int = identity()
     purchase_id: int = Field(sa_type=BigInteger)
-    material_id: int = Field(sa_type=BigInteger)
+    #: A material, or a variation of a product that is not a bundle.
+    item_id: int = Field(sa_type=BigInteger)
     purchase_quantity: Decimal = amount()
     tracking_quantity: Decimal = amount()
     #: The cost of one purchase unit, before discount and shipping.

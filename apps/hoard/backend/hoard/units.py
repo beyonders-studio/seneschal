@@ -9,7 +9,8 @@ measure nothing Hoard knows, and convert only to themselves.
 Everything that converts or scales goes through this module:
 
 * converting between units (:func:`factor`, :func:`convert`), which a
-  purchase's conversion takes too (:func:`purchase_conversion`);
+  purchase's conversion takes too (:func:`purchase_conversion`), and a
+  purchase line's quantity in tracking units (:func:`purchased`);
 * a recipe line's quantity in its item's tracking unit, from the amount typed
   in its own unit or from its parts of a ratio (:func:`recipe`);
 * ratio parts from amounts (:func:`parts`) and amounts relative to the
@@ -223,18 +224,24 @@ async def in_tracking_unit(
     return kept(convert(amount, known.get(unit_id), known.get(tracking or 0)))
 
 
+def _standard(unit: Unit | None) -> StandardUnit | None:
+    """The standard unit ``unit`` is: each for none, since a variation counts
+    in units of itself; None for a unit of the community's own."""
+    if unit is None:
+        return STANDARD["each"]
+    return STANDARD[unit.standard] if unit.standard else None
+
+
 def factor(source: Unit | None, target: Unit | None) -> Decimal | None:
     """How many ``target`` units one ``source`` unit is: one for the same
     unit, the standard factor between two standard units of one measure, and
     None when they don't convert. A variation counts in units of itself, with
-    no unit, and converts only to that."""
-    if source is None or target is None:
-        return Decimal(1) if source is target else None
-    if source.id == target.id:
+    no unit, which converts as each: a dozen of it is 12."""
+    if source is target or (source is not None and target is not None and source.id == target.id):
         return Decimal(1)
-    if not source.standard or not target.standard:
+    left, right = _standard(source), _standard(target)
+    if left is None or right is None:
         return None
-    left, right = STANDARD[source.standard], STANDARD[target.standard]
     return left.size / right.size if left.measure is right.measure else None
 
 
@@ -261,11 +268,18 @@ def kept(amount: Decimal) -> Decimal:
 
 def purchase_conversion(purchase: Unit | None, tracking: Unit | None) -> Decimal | None:
     """Tracking units in one purchase unit, when both are standard units of one
-    measure; None when the conversion is a number typed in."""
-    if purchase is None or tracking is None or purchase.id == tracking.id:
+    measure; None when the conversion is a number typed in, or there is no
+    purchase unit. A variation's tracking unit is none: itself, as each."""
+    if purchase is None or (tracking is not None and purchase.id == tracking.id):
         return None
     found = factor(purchase, tracking)
     return None if found is None else kept(found)
+
+
+def purchased(quantity: Decimal, conversion: Decimal) -> Decimal:
+    """What ``quantity`` purchase units are in tracking units, at ``conversion``
+    tracking units each, kept to six places."""
+    return kept(quantity * conversion)
 
 
 def grams(

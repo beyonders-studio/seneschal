@@ -390,9 +390,9 @@ async def materials_short(db: AsyncSession, runs: Iterable[Run]) -> list[Materia
     on_order = dict(
         (
             await db.exec(
-                select(PurchaseLine.material_id, func.sum(PurchaseLine.tracking_quantity))
+                select(PurchaseLine.item_id, func.sum(PurchaseLine.tracking_quantity))
                 .where(col(PurchaseLine.received_on).is_(None))
-                .group_by(col(PurchaseLine.material_id))
+                .group_by(col(PurchaseLine.item_id))
             )
         ).all()
     )

@@ -1,5 +1,6 @@
 """Receiving purchases: landed costs, lots dated the day they arrived,
-receiving part of a line, and edits that re-derive cost."""
+receiving part of a line, products bought as materials are, and edits that
+re-derive cost."""
 
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ from sqlmodel import col, select
 from hoard.purchases import (
     PurchaseError,
     PurchaseRefused,
+    bought,
     landed_costs,
     receive_line,
     rederive_purchase,
@@ -24,10 +26,12 @@ from hoard.records import (
     Location,
     Lot,
     Material,
+    Product,
     Purchase,
     PurchaseLine,
+    Variation,
 )
-from hoard.stock import StockError, StockRefused, adjust, on_hand
+from hoard.stock import StockError, StockRefused, add_product, adjust, on_hand
 from seneschal_core.db import WriteSession
 
 
@@ -46,10 +50,11 @@ async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
 
 
 async def _order(
-    db: WriteSession, main: Location, *lines: tuple[Material, str, str, str], **fields
+    db: WriteSession, main: Location, *lines: tuple[Material | Variation, str, str, str], **fields
 ) -> tuple[Purchase, list[PurchaseLine]]:
     """A purchase dated 8 November of ``lines``, none received: each a
-    material, its purchase and tracking quantities, and its unit cost."""
+    material or a variation, its purchase and tracking quantities, and its
+    unit cost."""
     purchase = Purchase(
         organization_id=db.organization_id,
         code="P-1",
@@ -59,12 +64,12 @@ async def _order(
     )
     db.add(purchase)
     await db.flush()
-    for bought, quantity, tracking, unit_cost in lines:
+    for item, quantity, tracking, unit_cost in lines:
         db.add(
             PurchaseLine(
                 organization_id=db.organization_id,
                 purchase_id=purchase.id,
-                material_id=bought.id,
+                item_id=item.id,
                 purchase_quantity=Decimal(quantity),
                 tracking_quantity=Decimal(tracking),
                 unit_cost=Decimal(unit_cost),
@@ -99,9 +104,7 @@ async def test_discount_and_shipping_spread_by_value_and_tax_stays_out(
         Decimal("2.2"),
         Decimal("6.6"),
     )
-    flour_line = next(
-        line for line in await _lines(db, purchase.id) if line.material_id == flour.id
-    )
+    flour_line = next(line for line in await _lines(db, purchase.id) if line.item_id == flour.id)
     lot = (await db.exec(select(Lot).where(Lot.purchase_line_id == flour_line.id))).one()
     await db.refresh(lot)
     assert (lot.number, lot.balance) == (f"{purchase.code}-{flour_line.id}", 10)
@@ -247,3 +250,25 @@ async def test_receiving_part_of_a_line_splits_it_and_taking_it_back_merges_them
         (part.id, None),
     ]
     assert await on_hand(db, flour.id) == Decimal("253.592")
+
+
+async def test_a_product_s_variation_is_bought_into_a_lot_at_its_landed_cost(
+    db: WriteSession, main: Location, base
+):
+    _, infuser = await add_product(db, Product(name="Infuser"))
+    # Twelve at 2 each, with 6 of shipping: 2.50 each landed.
+    _, [line] = await _order(db, main, (infuser, "12", "12", "2"), shipping=Decimal(6))
+
+    part = await receive_line(db, line, quantity=Decimal(5))
+    lot, adjustment = await _received(db, part)
+    await db.refresh(lot)
+    assert (lot.item_id, lot.balance, adjustment.unit_cost) == (infuser.id, 5, Decimal("2.5"))
+    assert (line.tracking_quantity, line.received_on) == (7, None)
+    assert (await on_hand(db, infuser.id), await _average(db, infuser.id)) == (5, Decimal("2.5"))
+
+    # A bundle has no stock of its own, and a base is made, so neither is bought.
+    _, box = await add_product(db, Product(name="Gift box", bundle=True))
+    for unbought in (box.id, (await base("Syrup")).id):
+        with pytest.raises(PurchaseRefused) as refused:
+            await bought(db, unbought)
+        assert refused.value.code == PurchaseError.PURCHASE_LINE_KIND

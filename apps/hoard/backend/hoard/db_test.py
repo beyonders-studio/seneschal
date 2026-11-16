@@ -318,3 +318,63 @@ def test_the_types_migration_gives_every_record_its_kinds_default_and_keeps_its_
         ("material", "detail", "material"),
         ("material", "table", None),
     ]
+
+
+def test_the_buying_products_migration_keeps_each_lines_item():
+    def migrate(made: AppDatabase) -> None:
+        upgrade(made.owner_url, made.serving_login, "0019")
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+
+            def row(sql: str, *values: object) -> int:
+                [found] = db.execute(sql, values).fetchone() or ()
+                return found
+
+            org = row(
+                "INSERT INTO organizations (community_ref, plugin_install_id) "
+                "VALUES ('buying', 1) RETURNING id"
+            )
+            unit = row(
+                "INSERT INTO units (organization_id, name) VALUES (%s, 'g') RETURNING id", org
+            )
+            kind = row(
+                "INSERT INTO item_types (organization_id, kind, shape, is_default) "
+                "VALUES (%s, 'material', 'ingredient', true) RETURNING id",
+                org,
+            )
+            location = row(
+                "INSERT INTO locations (organization_id, main) VALUES (%s, true) RETURNING id", org
+            )
+            purchase = row(
+                "INSERT INTO purchases (organization_id, code, dated_on, location_id) "
+                "VALUES (%s, 'P-1', '2026-11-08', %s) RETURNING id",
+                org,
+                location,
+            )
+            for name in ("Flour", "Sugar"):
+                item = row(
+                    "INSERT INTO items (organization_id, kind) VALUES (%s, 'material') RETURNING id",
+                    org,
+                )
+                db.execute(
+                    "INSERT INTO materials (id, organization_id, name, tracking_unit_id, type_id) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (item, org, name, unit, kind),
+                )
+                db.execute(
+                    "INSERT INTO purchase_lines (organization_id, purchase_id, material_id, "
+                    "purchase_quantity, tracking_quantity) VALUES (%s, %s, %s, 1, 1)",
+                    (org, purchase, item),
+                )
+
+        upgrade(made.owner_url, made.serving_login)
+
+    with migrated_database("hoard_buying", migrate) as made:
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            lines = db.execute(
+                "SELECT m.name FROM purchase_lines pl JOIN materials m ON m.id = pl.item_id "
+                "ORDER BY pl.id"
+            ).fetchall()
+
+    assert lines == [("Flour",), ("Sugar",)]
