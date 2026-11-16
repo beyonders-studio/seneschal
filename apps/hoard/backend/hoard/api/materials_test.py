@@ -18,6 +18,9 @@ from hoard.records import (
 from hoard.stock import adjust
 from seneschal_core.db import WriteSession
 
+#: A material's stock row's figures that only a recipe or a stocktake gives.
+NONE = {"bin": None, "could_make": None, "last_stocktake": None}
+
 
 async def test_a_material_page_holds_its_stock_and_lots_at_each_location(
     client, sign_in, db: WriteSession, main: Location, material, buy
@@ -48,8 +51,8 @@ async def test_a_material_page_holds_its_stock_and_lots_at_each_location(
         "5.000000",
     )
     assert page["stock"] == [
-        {"location_id": main.id, "quantity": "10.000000", "bin": None},
-        {"location_id": back.id, "quantity": "3.000000", "bin": None},
+        {**NONE, "location_id": main.id, "quantity": "10.000000"},
+        {**NONE, "location_id": back.id, "quantity": "3.000000"},
     ]
     assert [(lot["location_id"], lot["balance"]) for lot in page["lots"]] == [
         (main.id, "10.000000")
@@ -183,6 +186,7 @@ async def test_a_new_material_starts_with_its_notes_bin_and_stock(
     )
     assert page["stock"] == [
         {
+            **NONE,
             "location_id": main.id,
             "quantity": "500.000000",
             "bin": {"zone": "A", "section": "3", "position": None},
@@ -204,9 +208,7 @@ async def test_a_new_material_starts_with_its_notes_bin_and_stock(
         json=body
         | {"name": "Sencha", "start": {"location_id": back.id, "quantity": "2", "unit_cost": "9"}},
     )
-    assert elsewhere.json()["stock"] == [
-        {"location_id": back.id, "quantity": "2.000000", "bin": None}
-    ]
+    assert elsewhere.json()["stock"] == [{**NONE, "location_id": back.id, "quantity": "2.000000"}]
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
     [uncosted] = (
         await client.get("/api/v1/adjustments", params={"item_id": elsewhere.json()["id"]})
@@ -220,6 +222,7 @@ async def test_a_new_material_starts_with_its_notes_bin_and_stock(
     )
     assert binned.json()["stock"] == [
         {
+            **NONE,
             "location_id": main.id,
             "quantity": "0",
             "bin": {"zone": None, "section": None, "position": "Top"},

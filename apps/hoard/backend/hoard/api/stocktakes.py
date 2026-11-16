@@ -11,11 +11,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import Subquery, func
+from sqlalchemy import Subquery, and_, func
 from sqlmodel import col, select
 
 from hoard import stocktakes
@@ -78,6 +78,19 @@ class StocktakeRead(StocktakeSummary):
     rows: list[StocktakeRowRead]
 
 
+class StocktakeCount(BaseModel):
+    """What a stocktake expected of one item and counted."""
+
+    #: What was on hand when its row was first confirmed; null until then.
+    expected: Decimal | None
+    counted: Decimal | None
+
+
+class StocktakeListed(StocktakeSummary):
+    #: The item's count, when the list is of the stocktakes counting one item.
+    count: StocktakeCount | None
+
+
 def _counts() -> Subquery:
     return (
         select(
@@ -114,23 +127,39 @@ def _summary(stocktake: Stocktake, rows: int, confirmed: int, matched: int) -> S
 
 
 @router.get("")
-async def list_stocktakes(db: OrganizationSessionDep, page: PageDep) -> Page[StocktakeSummary]:
-    """Stocktakes, the latest first, with how far each has got and its accuracy."""
+async def list_stocktakes(
+    db: OrganizationSessionDep,
+    page: PageDep,
+    item_id: Annotated[int | None, Query()] = None,
+) -> Page[StocktakeListed]:
+    """Stocktakes, the latest first, with how far each has got and its
+    accuracy: those with a row for one item, with its count, when asked."""
     counts = _counts()
-    total = (await db.exec(select(func.count()).select_from(Stocktake))).one()
+    query: Any = select(Stocktake, counts.c.rows, counts.c.confirmed, counts.c.matched)
+    counted = select(func.count()).select_from(Stocktake)
+    if item_id is not None:
+        of_item = and_(
+            col(StocktakeRow.stocktake_id) == Stocktake.id, col(StocktakeRow.item_id) == item_id
+        )
+        query = query.add_columns(StocktakeRow).join(StocktakeRow, of_item)
+        counted = counted.join(StocktakeRow, of_item)
     rows = await db.exec(
-        select(Stocktake, counts.c.rows, counts.c.confirmed, counts.c.matched)
-        .outerjoin(counts, counts.c.stocktake_id == col(Stocktake.id))
+        query.outerjoin(counts, counts.c.stocktake_id == col(Stocktake.id))
         .order_by(col(Stocktake.dated_on).desc(), col(Stocktake.id).desc())
         .offset(page.offset)
         .limit(page.limit)
     )
     return Page(
         items=[
-            _summary(stocktake, count or 0, confirmed or 0, matched or 0)
-            for stocktake, count, confirmed, matched in rows.all()
+            StocktakeListed(
+                **_summary(stocktake, count or 0, confirmed or 0, matched or 0).model_dump(),
+                count=None
+                if not row
+                else StocktakeCount(expected=row[0].expected, counted=row[0].counted),
+            )
+            for stocktake, count, confirmed, matched, *row in rows.all()
         ],
-        total=total,
+        total=(await db.exec(counted)).one(),
     )
 
 

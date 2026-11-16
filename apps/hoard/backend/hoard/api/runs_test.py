@@ -45,7 +45,8 @@ async def test_a_run_is_opened_completed_and_reopened(
     opened = await client.post(RUNS, json={"item_id": dough.id, "planned_batches": "2"})
     assert opened.status_code == 201, opened.text
     run = opened.json()
-    assert run["code"] == f"R-{run['id']:04d}"
+    # The first in its organization.
+    assert run["code"] == "R-0001"
     assert (run["status"], run["initiative_id"], run["planned_quantity"]) == (
         "not_started",
         7,

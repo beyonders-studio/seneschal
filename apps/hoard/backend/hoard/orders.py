@@ -9,7 +9,8 @@ store's line sells what the store says it does now (``current_quantity``), so
 one refunded before it shipped commits nothing more; one refunded after it
 shipped stays shipped. What is
 **available** is what is on hand less what is committed and what is on hold
-(``hoard.holds``), which is what Hoard tells each store it may sell. Where
+(``hoard.holds``), which is what Hoard tells each store it may sell; both are
+read from ``hoard.summary``. Where
 less is available than nothing, the open orders are **short**: each of their
 lines, by as much as the item lacks, up to what the line has left to ship.
 
@@ -27,7 +28,6 @@ order commits notes it for the items' listings (``hoard.listings``).
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
@@ -36,10 +36,9 @@ from sqlalchemy.orm import aliased
 from sqlmodel import col, exists, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import holds, recipes, units
+from hoard import recipes, units
 from hoard.records import (
     Hold,
-    Lot,
     Order,
     OrderLine,
     OrderStatus,
@@ -52,7 +51,6 @@ from hoard.records import (
     Store,
     Variation,
 )
-from hoard.stock import on_hand
 from seneschal_core.db import WriteSession
 
 
@@ -97,56 +95,14 @@ def selling(line: OrderLine) -> Decimal:
     return line.quantity if line.current_quantity is None else line.current_quantity
 
 
-async def committed(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
-    """What open orders hold of an item and have not shipped: at one location,
-    or at all of them."""
-    shipped = (
-        select(func.coalesce(func.sum(ShipmentLine.quantity), 0))
-        .join(Shipment, col(Shipment.id) == ShipmentLine.shipment_id)
-        .where(
-            ShipmentLine.order_line_id == OrderLine.id,
-            Shipment.status == ShipmentStatus.SHIPPED,
-        )
-        .correlate(OrderLine)
-        .scalar_subquery()
-    )
-    query = (
-        select(func.coalesce(func.sum(func.greatest(SELLING - shipped, 0)), 0))
-        .join(Order, col(Order.id) == OrderLine.order_id)
-        .where(OrderLine.item_id == item_id, Order.status == OrderStatus.OPEN, ships_itself())
-    )
-    if location_id is not None:
-        query = query.where(Order.location_id == location_id)
-    return Decimal((await db.exec(query)).one())
-
-
-async def available(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
-    """What is on hand of an item less what open orders commit and what its
-    held lots hold: at one location, or at all of them."""
-    return (
-        await on_hand(db, item_id, location_id)
-        - await committed(db, item_id, location_id)
-        - await holds.on_hold(db, item_id, location_id)
-    )
-
-
-async def expired(db: AsyncSession, item_id: int, location_id: int, today: date) -> Decimal:
-    """What an item's lots past their expiry date hold at a location, but for
-    those on hold, which are not available anyway."""
-    query = select(func.coalesce(func.sum(func.greatest(Lot.balance, 0)), 0)).where(
-        Lot.item_id == item_id,
-        Lot.location_id == location_id,
-        col(Lot.expires_on) < today,
-        col(Lot.id).not_in(holds.held_lots()),
-    )
-    return Decimal((await db.exec(query)).one())
-
-
 async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
     """How short each of an open order's lines is, by line id: as much of
     what it has left to ship as its item lacks at the order's location once
     every open order's commitments and the lots on hold are counted. A line
     that is not short, and every line of an order that is not open, is none."""
+    # Imported here: the summary reads what open orders commit through this module.
+    from hoard import summary
+
     lacking: dict[int, Decimal] = {}
     found: dict[int, Decimal] = defaultdict(Decimal)
     if order.status is not OrderStatus.OPEN:
@@ -157,7 +113,7 @@ async def short(db: AsyncSession, order: Order) -> dict[int, Decimal]:
         if left <= 0:
             continue
         if line.item_id not in lacking:
-            free = await available(db, line.item_id, order.location_id)
+            free = (await summary.stock_at(db, line.item_id, order.location_id)).available
             lacking[line.item_id] = max(-free, Decimal(0))
         if lacking[line.item_id] > 0:
             found[line.id] = min(left, lacking[line.item_id])

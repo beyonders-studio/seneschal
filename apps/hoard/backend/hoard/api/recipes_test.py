@@ -3,8 +3,20 @@ they make, edited and removed; a bundle's holds variations."""
 
 from __future__ import annotations
 
-from hoard.records import Product, Unit
-from hoard.stock import add_product
+from datetime import date
+from decimal import Decimal
+
+from hoard import plugin_manifest, recipes
+from hoard.records import (
+    Adjustment,
+    AdjustmentKind,
+    Location,
+    OrganizationSettings,
+    Product,
+    Recipe,
+    Unit,
+)
+from hoard.stock import add_product, adjust
 from seneschal_core.db import WriteSession
 
 
@@ -213,3 +225,65 @@ async def test_a_ratio_reads_beside_its_amounts_and_a_draft_switches_both_ways(
         )
     ).json()["switched"]
     assert [line["written"] for line in in_grams["lines"]] == ["2.000000", "1.000000", "1.000000"]
+
+
+async def test_a_recipe_is_costed_only_for_who_sees_costs(
+    client, sign_in, db: WriteSession, main: Location, material, base, buy, lot
+):
+    catnip, rose_hip, lychee = [
+        await material(name) for name in ("Catnip", "Rose hip", "Lychee flavor")
+    ]
+    await buy((catnip, "1000", "0.02"), (rose_hip, "10", "0.01"))
+    # Rose hips used up: their average is nothing, their last known cost 0.01.
+    await adjust(
+        db,
+        Adjustment(
+            item_id=rose_hip.id,
+            location_id=main.id,
+            kind=AdjustmentKind.MANUAL,
+            dated_on=date(2026, 11, 2),
+            change=Decimal(-10),
+        ),
+    )
+    await lot(lychee.id, "L1", "40", unit_cost="0")
+    alyx = await base("Alyx batch")
+    recipe = await recipes.save(
+        db,
+        Recipe(base_id=alyx.id, batch_quantity=Decimal(931), minutes=30),
+        [
+            recipes.Line(catnip.id, Decimal(600)),
+            recipes.Line(rose_hip.id, Decimal(300)),
+            recipes.Line(lychee.id, Decimal(30)),
+        ],
+    )
+    db.add(OrganizationSettings(organization_id=db.organization_id, labour_rate=Decimal(20)))
+    await db.commit()
+
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+    costed = (await client.get(f"/api/v1/recipes/{recipe.id}")).json()
+
+    assert [(line["on_hand"], line["cost"]) for line in costed["lines"]] == [
+        ("1000.000000", {"amount": "12.000000", "last_known": False}),
+        ("0.000000", {"amount": "3.000000", "last_known": True}),
+        ("40.000000", {"amount": None, "last_known": False}),
+    ]
+    assert costed["cost"] == {
+        "labour": "10.000000",
+        "total": "25.000000",
+        "incomplete": True,
+        "unit_cost": "0.026853",
+    }
+    doubled = (await client.get(f"/api/v1/recipes/{recipe.id}", params={"quantity": "1862"})).json()
+    assert (doubled["cost"]["labour"], doubled["cost"]["total"]) == ("20.000000", "50.000000")
+
+    await sign_in(client)
+    hidden = (await client.get(f"/api/v1/recipes/{recipe.id}")).json()
+
+    assert [(line["on_hand"], line["cost"]) for line in hidden["lines"]] == [
+        ("1000.000000", None),
+        ("0.000000", None),
+        ("40.000000", None),
+    ]
+    assert hidden["cost"] is None
+    listed = (await client.get("/api/v1/recipes", params={"base_id": alyx.id})).json()
+    assert listed["items"][0]["cost"] is None

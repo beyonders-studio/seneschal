@@ -16,10 +16,9 @@ import pytest
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 
-from hoard import channels, listings, shipments, sync
+from hoard import channels, listings, shipments, summary, sync
 from hoard.channels import StoreFulfillment, StoreLine, StoreOrder, StoreProduct, StoreVariant
 from hoard.channels.fake import FakeConnector
-from hoard.orders import committed
 from hoard.records import (
     Channel,
     Listing,
@@ -190,12 +189,12 @@ async def test_a_store_order_commits_once_paid_and_ships_with_its_fulfillment(
         5,
         "l-1",
     )
-    assert await committed(db, tea.id) == 0
+    assert (await summary.stock_at(db, tea.id)).committed == 0
 
     paid = _order(_line("l-1", "v-tea", "2"), paid=True, shipping=Decimal(4))
     order = await sync.copy_order(db, store, fake, paid)
     assert (order.status, order.paid, order.shipping) == (OrderStatus.OPEN, True, 4)
-    assert await committed(db, tea.id) == 2
+    assert (await summary.stock_at(db, tea.id)).committed == 2
 
     sent = _sent("f-1", {"l-1": "2"}, tracking_number="1Z99")
     fulfilled = replace(paid, fulfilled=True, fulfillments=[sent])
@@ -209,7 +208,7 @@ async def test_a_store_order_commits_once_paid_and_ships_with_its_fulfillment(
         "1Z99",
         sent.shipped_at.date() if sent.shipped_at else None,
     )
-    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (8, 0)
+    assert (await on_hand(db, tea.id), (await summary.stock_at(db, tea.id)).committed) == (8, 0)
     [shipped] = await shipments.lines(db, shipment.id)
     assert shipped.lot_id is not None and shipped.assumed
 
@@ -219,7 +218,7 @@ async def test_a_store_order_commits_once_paid_and_ships_with_its_fulfillment(
     order = await sync.copy_order(db, store, fake, cancelled)
     [shipment] = await _shipments(db, order)
     assert (order.status, shipment.status) == (OrderStatus.OPEN, ShipmentStatus.CANCELLED)
-    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (10, 2)
+    assert (await on_hand(db, tea.id), (await summary.stock_at(db, tea.id)).committed) == (10, 2)
 
 
 async def test_a_refund_before_shipping_releases_what_the_line_committed(
@@ -240,7 +239,7 @@ async def test_a_refund_before_shipping_releases_what_the_line_committed(
     await lot(tea.id, "T-1", "10")
     paid = _order(_line("l-1", "v-tea", "3"), paid=True, customer="99")
     order = await sync.copy_order(db, store, fake, paid)
-    assert (await committed(db, tea.id), order.store_customer) == (3, "99")
+    assert ((await summary.stock_at(db, tea.id)).committed, order.store_customer) == (3, "99")
     noted.clear()
 
     # Two of the three refunded: the line commits the one it still sells.
@@ -250,12 +249,16 @@ async def test_a_refund_before_shipping_releases_what_the_line_committed(
     )
     [line] = await _lines(db, order)
     assert (line.quantity, line.current_quantity, line.refunded_quantity) == (3, 1, 2)
-    assert (order.status, order.refunded, await committed(db, tea.id)) == (OrderStatus.OPEN, 10, 1)
+    assert (order.status, order.refunded, (await summary.stock_at(db, tea.id)).committed) == (
+        OrderStatus.OPEN,
+        10,
+        1,
+    )
     assert noted == [tea.id]
 
     whole = replace(refunded, current_quantity=Decimal(0), refunded_quantity=Decimal(3))
     await sync.copy_order(db, store, fake, replace(paid, lines=[whole]))
-    assert (await committed(db, tea.id), await on_hand(db, tea.id)) == (0, 10)
+    assert ((await summary.stock_at(db, tea.id)).committed, await on_hand(db, tea.id)) == (0, 10)
 
 
 async def test_a_refund_after_shipping_moves_no_stock(
@@ -270,14 +273,14 @@ async def test_a_refund_after_shipping_moves_no_stock(
         fulfillments=[_sent("f-1", {"l-1": "2"})],
     )
     await sync.copy_order(db, store, fake, shipped)
-    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (8, 0)
+    assert (await on_hand(db, tea.id), (await summary.stock_at(db, tea.id)).committed) == (8, 0)
 
     refunded = _line("l-1", "v-tea", "2", current_quantity=Decimal(0), refunded_quantity=Decimal(2))
     order = await sync.copy_order(db, store, fake, replace(shipped, lines=[refunded]))
 
     [shipment] = await _shipments(db, order)
     assert (order.status, shipment.status) == (OrderStatus.SHIPPED, ShipmentStatus.SHIPPED)
-    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (8, 0)
+    assert (await on_hand(db, tea.id), (await summary.stock_at(db, tea.id)).committed) == (8, 0)
 
 
 async def test_an_older_copy_never_replaces_a_newer_one(
@@ -292,7 +295,7 @@ async def test_an_older_copy_never_replaces_a_newer_one(
     order = await sync.copy_order(db, store, fake, older)
 
     assert (order.status, order.store_updated_at) == (OrderStatus.OPEN, newer)
-    assert await committed(db, tea.id) == 2
+    assert (await summary.stock_at(db, tea.id)).committed == 2
     order = await sync.copy_order(db, store, fake, replace(older, updated_at=newer))
     assert order.status is OrderStatus.CANCELLED
 
@@ -361,7 +364,10 @@ async def test_a_bundle_is_split_into_its_parts(
         ("p-1", bundle.id),
         ("p-2", bundle.id),
     ]
-    assert (await committed(db, cup.id), await committed(db, box.id)) == (4, 0)
+    assert (
+        (await summary.stock_at(db, cup.id)).committed,
+        (await summary.stock_at(db, box.id)).committed,
+    ) == (4, 0)
 
     # A fulfillment of the bundle sends its parts.
     sent = replace(whole, fulfilled=True, fulfillments=[_sent("f-1", {"l-1": "2"})])
@@ -438,7 +444,7 @@ async def test_the_history_import_copies_orders_moving_no_stock_but_what_is_open
     [shipment] = await _shipments(db, copied[0])
     assert (shipment.status, shipment.shipped_on) == (ShipmentStatus.SHIPPED, LONG_AGO.date())
     # What was sent before the store was connected moved nothing.
-    assert (await on_hand(db, tea.id), await committed(db, tea.id)) == (10, 1)
+    assert (await on_hand(db, tea.id), (await summary.stock_at(db, tea.id)).committed) == (10, 1)
     await db.refresh(store)
     assert store.orders_since is not None
 
@@ -622,7 +628,7 @@ async def test_an_order_the_store_no_longer_returns_is_kept_from_its_webhook(
     [order] = (await db.exec(select(Order).execution_options(populate_existing=True))).all()
     [line] = await _lines(db, order)
     assert (order.external_id, line.current_quantity, line.refunded_quantity) == ("o-1", 0, 2)
-    assert await committed(db, tea.id) == 0
+    assert (await summary.stock_at(db, tea.id)).committed == 0
 
 
 async def test_the_reconcile_copies_in_what_changed(

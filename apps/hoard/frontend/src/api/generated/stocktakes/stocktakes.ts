@@ -23,7 +23,7 @@ import type {
 import type {
   HTTPValidationError,
   ListStocktakesParams,
-  PageStocktakeSummary,
+  PageStocktakeListed,
   StocktakeCreate,
   StocktakeRead,
   StocktakeRowConfirm,
@@ -50,7 +50,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Stocktakes, the latest first, with how far each has got and its accuracy.
+ * Stocktakes, the latest first, with how far each has got and its
+ * accuracy: those with a row for one item, with its count, when asked.
  * @summary List Stocktakes
  */
 export const listStocktakes = (
@@ -58,7 +59,7 @@ export const listStocktakes = (
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
-  return apiMutator<PageStocktakeSummary>(
+  return apiMutator<PageStocktakeListed>(
     { url: `/api/v1/stocktakes`, method: "GET", params, signal },
     options
   );
@@ -96,7 +97,8 @@ export type ListStocktakesQueryResult = NonNullable<Awaited<ReturnType<typeof li
 export type ListStocktakesQueryError = ErrorType<HTTPValidationError>;
 
 /**
- * Stocktakes, the latest first, with how far each has got and its accuracy.
+ * Stocktakes, the latest first, with how far each has got and its
+ * accuracy: those with a row for one item, with its count, when asked.
  * @summary List Stocktakes
  */
 export function useListStocktakes<
@@ -119,7 +121,8 @@ export function useListStocktakes<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Stocktakes, the latest first, with how far each has got and its accuracy.
+ * Stocktakes, the latest first, with how far each has got and its
+ * accuracy: those with a row for one item, with its count, when asked.
  * @summary List Stocktakes
  */
 export function useListStocktakes<
@@ -142,7 +145,8 @@ export function useListStocktakes<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Stocktakes, the latest first, with how far each has got and its accuracy.
+ * Stocktakes, the latest first, with how far each has got and its
+ * accuracy: those with a row for one item, with its count, when asked.
  * @summary List Stocktakes
  */
 export function useListStocktakes<
@@ -157,7 +161,8 @@ export function useListStocktakes<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Stocktakes, the latest first, with how far each has got and its accuracy.
+ * Stocktakes, the latest first, with how far each has got and its
+ * accuracy: those with a row for one item, with its count, when asked.
  * @summary List Stocktakes
  */
 export function useListStocktakes<

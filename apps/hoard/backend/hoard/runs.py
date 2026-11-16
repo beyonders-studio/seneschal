@@ -7,10 +7,11 @@ allows: it plans the batches that take exactly that amount (``hoard.units.use``)
 The lines are the run's own from then on, so a later change to the recipe
 leaves them as they are; changing the planned batches scales them.
 
-What a run would take is planned beside what is **usable** at its location:
-what is available (``hoard.orders.available``), less what lots past their
-expiry date hold, since nobody plans to use them up. A line needing more is
-short by the difference, which completing does not refuse.
+What a run would take is planned beside what is **usable** at its location
+(``hoard.summary``): what is available, less what lots past their expiry date
+hold, since nobody plans to use them up. A line needing more is short by the
+difference, which completing does not refuse. The most batches what is usable
+covers is what the item's potential counts there too.
 
 A line consumes the lot someone recorded on it. Completing a run assumes a lot
 for each line that names none: the item's lots at the run's location that hold
@@ -37,13 +38,13 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import delete, func
 from sqlmodel import col, or_, select
 
-from hoard import costing, events, holds, orders, recipes, units
+from hoard import costing, events, holds, recipes, summary, units
 from hoard.holds import HoldError
 from hoard.records import (
     PLACES,
@@ -201,14 +202,6 @@ async def open_run(
     return run
 
 
-async def usable(db: OrganizationSession, item_id: int, location_id: int, today: date) -> Decimal:
-    """What a run at ``location_id`` can plan to use of an item: what is
-    available there, less what its expired lots hold."""
-    return await orders.available(db, item_id, location_id) - await orders.expired(
-        db, item_id, location_id, today
-    )
-
-
 @dataclass(frozen=True)
 class PlanLine:
     item_id: int
@@ -254,13 +247,13 @@ async def plan(
     if recipe is None:
         raise RunRefused(RunError.RUN_NO_RECIPE)
     took = await planned(db, recipe, batches, use)
-    lines: list[PlanLine] = []
-    most: Decimal | None = None
-    for line, quantity in zip(took.lines, took.quantities, strict=True):
-        can_use = await usable(db, line.item_id, location_id, today)
-        lines.append(PlanLine(line.item_id, quantity, can_use, short(quantity, can_use)))
-        covers = max(can_use, Decimal(0)) / line.quantity
-        most = covers if most is None else min(most, covers)
+    held = await summary.stock(db, [line.item_id for line in took.lines], today)
+    can_use = [held[line.item_id].get(location_id, summary.Stock()).usable for line in took.lines]
+    lines = [
+        PlanLine(line.item_id, quantity, usable, short(quantity, usable))
+        for line, quantity, usable in zip(took.lines, took.quantities, can_use, strict=True)
+    ]
+    most = units.covered([line.quantity for line in took.lines], can_use)
     most_use = None
     if use is not None and most is not None and any(line.short for line in lines):
         named = next(line for line in took.lines if line.item_id == use[0])
@@ -269,7 +262,7 @@ async def plan(
         batches=took.batches,
         makes=took.makes,
         lines=lines,
-        most=None if most is None else most.quantize(PLACES, rounding=ROUND_DOWN),
+        most=None if most is None else units.most_batches(most),
         most_use=most_use,
     )
 

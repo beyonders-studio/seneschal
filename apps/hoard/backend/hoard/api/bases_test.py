@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from hoard import recipes
+from hoard import recipes, runs
 from hoard.recipes import Line
 from hoard.records import (
     Adjustment,
@@ -19,9 +19,11 @@ from hoard.records import (
     PropertyType,
     Recipe,
     RecordKind,
+    Stocktake,
     Unit,
 )
 from hoard.stock import add_product, adjust
+from hoard.stocktakes import confirm_row, start_stocktake
 from seneschal_core.db import WriteSession
 
 
@@ -179,3 +181,65 @@ async def test_an_archived_base_leaves_lists_and_pickers_and_keeps_its_history(
     assert [row["name"] for row in (await client.get("/api/v1/reports/reorder")).json()] == [
         "Chai spice"
     ]
+
+
+async def test_a_base_page_shows_its_figures_and_its_history(
+    client, sign_in, db: WriteSession, main: Location, material, base, lot
+):
+    shed = Location(organization_id=db.organization_id, name="Shed")
+    db.add(shed)
+    await db.flush()
+    catnip, chamomile = await material("Catnip"), await material("Chamomile")
+    alyx = await base("Alyx batch")
+    await recipes.save(
+        db,
+        Recipe(base_id=alyx.id, batch_quantity=Decimal(300)),
+        [Line(catnip.id, Decimal(200)), Line(chamomile.id, Decimal(100))],
+    )
+    await lot(catnip.id, "C1", "1000")
+    await lot(chamomile.id, "H1", "150")
+    await lot(chamomile.id, "H2", "1000", location=shed)
+    made = await runs.make(db, alyx.id, main.id, Decimal(300), date(2026, 11, 4))
+    [row] = await start_stocktake(
+        db, Stocktake(kind=CategoryKind.BASE, location_id=main.id, dated_on=date(2026, 11, 5))
+    )
+    await confirm_row(db, row, Decimal(300))
+    await db.commit()
+    await sign_in(client)
+
+    page = (await client.get(f"/api/v1/bases/{alyx.id}")).json()
+
+    # 800 catnip and 50 chamomile are left at the main location, which make
+    # half a batch; the shed's chamomile has no catnip beside it.
+    assert (page["potential"], page["made"], page["last_stocktake"]) == (
+        "150.000000",
+        "300.000000",
+        "2026-11-05",
+    )
+    assert page["stock"] == [
+        {
+            "location_id": main.id,
+            "quantity": "300.000000",
+            "bin": None,
+            "could_make": "150.000000",
+            "last_stocktake": "2026-11-05",
+        }
+    ]
+    assert (await client.get(f"/api/v1/materials/{catnip.id}")).json()["potential"] is None
+
+    async def codes(**params: int) -> list[str]:
+        runs_of = (await client.get("/api/v1/runs", params=params)).json()["items"]
+        return [run["code"] for run in runs_of]
+
+    assert made is not None
+    assert await codes(item_id=alyx.id) == await codes(used_item_id=catnip.id) == [made.code]
+    assert await codes(used_item_id=alyx.id) == []
+    counted = (await client.get("/api/v1/stocktakes", params={"item_id": alyx.id})).json()
+    assert (counted["total"], counted["items"][0]["count"]) == (
+        1,
+        {"expected": "300.000000", "counted": "300.000000"},
+    )
+    assert (await client.get("/api/v1/stocktakes", params={"item_id": catnip.id})).json()[
+        "total"
+    ] == 0
+    assert (await client.get("/api/v1/stocktakes")).json()["items"][0]["count"] is None

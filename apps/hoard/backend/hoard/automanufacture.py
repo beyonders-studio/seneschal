@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from sqlmodel import col, select
 
-from hoard import orders, runs
+from hoard import orders, runs, summary
 from hoard.records import (
     AutoManufacture,
     Order,
@@ -65,7 +65,7 @@ async def on_claimed(db: WriteSession, order: Order) -> None:
         wanted = sum((orders.selling(line) for line in lines), Decimal(0))
         if rule is AutoManufacture.OUT_OF_STOCK:
             # What is available for this order: what others do not commit.
-            free = await orders.available(db, item_id, order.location_id)
+            free = (await summary.stock_at(db, item_id, order.location_id)).available
             if order.status is OrderStatus.OPEN:
                 free += wanted
             wanted -= min(wanted, max(free, Decimal(0)))

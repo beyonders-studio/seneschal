@@ -8,7 +8,7 @@ log (:class:`hoard.records.StockPush`).
   (:func:`note`, through ``hoard.listings.note_changed``). Once the session
   commits, the running :func:`push_forever` queues a push for each of the
   item's listings at each of its store's mapped locations (:func:`queue`), in
-  whole units of what is available there (``hoard.orders.available``), unless
+  whole units of what is available there (``hoard.summary``), unless
   the store was last pushed that already. One push waits per listing and
   location at a time: a newer change sets the waiting one's quantity.
 * **Sending** (:func:`send`): each due push is sent with what is available
@@ -51,7 +51,7 @@ from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.orm import Session
 from sqlmodel import col, select
 
-from hoard import channels, orders
+from hoard import channels, summary
 from hoard.channels import ConnectError, Connector, ConnectRefused, StockSet
 from hoard.records import Listing, PushStatus, StockPush, Store, StoreLocation
 from seneschal_core import organizations
@@ -220,7 +220,7 @@ async def queue(
             assert store_location.location_id is not None
             where = (listing.item_id, store_location.location_id)
             if where not in available:
-                available[where] = whole(await orders.available(db, *where))
+                available[where] = whole((await summary.stock_at(db, *where)).available)
             made = await _queue_one(db, listing.id, store_location.id, available[where])
             if made is not None:
                 queued.append(made)
@@ -288,7 +288,7 @@ async def _ready(db: WriteSession, due: list[_Due]) -> list[_Due]:
             _give_up(stock_push, PushError.LOCATION_UNMAPPED)
         else:
             quantity = whole(
-                await orders.available(db, listing.item_id, store_location.location_id)
+                (await summary.stock_at(db, listing.item_id, store_location.location_id)).available
             )
             if quantity != stock_push.quantity:
                 _set_quantity(stock_push, quantity)
@@ -464,7 +464,7 @@ async def baseline(db: WriteSession, store: Store) -> int:
             assert store_location.location_id is not None
             where = (listing.item_id, store_location.location_id)
             if where not in available:
-                available[where] = whole(await orders.available(db, *where))
+                available[where] = whole((await summary.stock_at(db, *where)).available)
             last = await _last_pushed(db, listing.id, store_location.id)
             if last is not None and last.quantity == available[where]:
                 continue

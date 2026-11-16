@@ -11,7 +11,7 @@ import pytest
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import holds, plugin_manifest, shipments, trace
+from hoard import holds, plugin_manifest, shipments, summary, trace
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
@@ -46,8 +46,8 @@ async def test_only_open_holds_keep_a_lot_and_its_balance(
 
     assert await holds.held_lot_ids(db) == {held.id, away.id}
     assert await holds.held_lot_ids(db, flour.id, main.id) == {held.id}
-    assert await holds.on_hold(db, flour.id) == 7
-    assert await holds.on_hold(db, flour.id, shed.id) == 3
+    assert (await summary.stock_at(db, flour.id)).on_hold == 7
+    assert (await summary.stock_at(db, flour.id, shed.id)).on_hold == 3
 
 
 async def test_starting_or_ending_a_hold_notes_its_item_for_its_listings(db: WriteSession, lot):
@@ -57,7 +57,7 @@ async def test_starting_or_ending_a_hold_notes_its_item_for_its_listings(db: Wri
     await holds.note(db, made.id)
 
     assert db.info["hoard.noted_items"] == {db.organization_id: {chai.id}}
-    assert await holds.on_hold(db, chai.id) == Decimal(0)
+    assert (await summary.stock_at(db, chai.id)).on_hold == Decimal(0)
 
 
 async def _events(db: WriteSession, name: str) -> list[dict]:

@@ -68,7 +68,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import channels, listings, orders, push, stock, store_fields, sync
+from hoard import channels, listings, push, stock, store_fields, summary, sync
 from hoard.channels import Connector, ConnectRefused, StoreStock
 from hoard.push import PushError
 from hoard.records import (
@@ -337,7 +337,7 @@ async def _set(
 ) -> None:
     """Set an item's stock at a location so that what is available there is
     ``target``."""
-    change = Decimal(target) - await orders.available(db, item_id, location_id)
+    change = Decimal(target) - (await summary.stock_at(db, item_id, location_id)).available
     if change == 0:
         return
     held = await db.exec(

@@ -7,11 +7,18 @@ was written in, its ratio, its quantity in its item's tracking unit and its
 share of the batch by weight. A draft is worked out the same way without
 saving it (``POST /recipes/preview``), so a page shows what Hoard would make
 of it and converts nothing itself.
+
+Each line shows what is on hand of its item. To a member who sees costs, it
+shows what it costs too, and the recipe what its batches cost with their
+labour and what one unit of what they make costs (``hoard.summary``): at each
+line's last known cost while its item is out of stock, and marked incomplete
+while a line's item never had a cost.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated, Any
@@ -21,13 +28,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, or_
 from sqlmodel import col, select
 
-from hoard import recipes, units
+from hoard import recipes, summary, units
 from hoard.api import items
 from hoard.api.adjustments import AdjustmentItem, describe_items
+from hoard.api.deps import SeesCostsDep
 from hoard.api.settings import found, require_references
 from hoard.api.shapes import Page, PageDep
 from hoard.recipes import RecipeError, RecipeRefused
-from hoard.records import Base, CategoryKind, Product, Recipe, Variation
+from hoard.records import Base, CategoryKind, OrganizationSettings, Product, Recipe, Variation
 from hoard.units import UnitRefused
 from seneschal_core.api import ErrorCode, OrganizationSessionDep, WriteSessionDep, refuse
 from seneschal_core.db import OrganizationSession
@@ -66,6 +74,15 @@ class RecipeOutput(StrEnum):
     BUNDLE = "bundle"
 
 
+class RecipeLineCost(BaseModel):
+    """What a line costs."""
+
+    #: Its quantity times its item's cost; null for an item that never had a cost.
+    amount: Decimal | None
+    #: Whether that is its item's last known cost, its stock having run out.
+    last_known: bool
+
+
 class RecipeLineRead(BaseModel):
     item: AdjustmentItem
     #: The unit it was written in; none for a variation, which counts in
@@ -84,6 +101,23 @@ class RecipeLineRead(BaseModel):
     #: Its share of the batch by weight, as a percentage; none for a line
     #: that isn't measured by weight.
     percent: Decimal | None
+    #: What is on hand of its item at every location.
+    on_hand: Decimal
+    #: What it costs; null without ``costs``.
+    cost: RecipeLineCost | None
+
+
+class RecipeCost(BaseModel):
+    """What a recipe's batches cost."""
+
+    #: Its minutes times the labour rate; null without either.
+    labour: Decimal | None
+    #: The lines' costs and the labour.
+    total: Decimal
+    #: Whether a line's item never had a cost, so the total leaves it out.
+    incomplete: bool
+    #: What one unit of what the batches make costs: the total over it.
+    unit_cost: Decimal
 
 
 class RecipeFigures(BaseModel):
@@ -99,6 +133,8 @@ class RecipeFigures(BaseModel):
     #: How many batches the lines are: one, unless it was scaled.
     batches: Decimal
     lines: list[RecipeLineRead]
+    #: What the batches cost; null without ``costs``.
+    cost: RecipeCost | None
 
 
 class RecipeRead(RecipeFigures):
@@ -182,17 +218,49 @@ async def _require_units(db: OrganizationSession, body: RecipeWrite) -> None:
     )
 
 
+@dataclass(frozen=True)
+class _Held:
+    """What recipes' lines' items hold and cost, read once for all of them."""
+
+    on_hand: dict[int, Decimal]
+    #: Each item's cost; None for a member who doesn't see costs.
+    costs: dict[int, summary.Cost] | None
+    #: What an hour of labour costs.
+    rate: Decimal | None
+
+
+async def _held(db: OrganizationSession, item_ids: Iterable[int], sees_costs: bool) -> _Held:
+    ids = list(item_ids)
+    stock = await summary.stock(db, ids)
+    if not sees_costs:
+        return _Held(_on_hand(stock), None, None)
+    settings = (await db.exec(select(OrganizationSettings))).first()
+    return _Held(
+        _on_hand(stock),
+        await summary.costs(db, ids),
+        None if settings is None else settings.labour_rate,
+    )
+
+
+def _on_hand(stock: dict[int, dict[int, summary.Stock]]) -> dict[int, Decimal]:
+    return {
+        item_id: sum((at.on_hand for at in locations.values()), Decimal(0))
+        for item_id, locations in stock.items()
+    }
+
+
 async def _figures(
     db: OrganizationSession,
     recipe: Recipe,
     lines: Sequence[recipes.Line],
+    held: _Held,
     scale: Decimal | units.Use = Decimal(1),
     known: recipes.Known | None = None,
     described: dict[int, AdjustmentItem] | None = None,
 ) -> dict[str, Any]:
     """``lines`` of ``recipe`` worked out, over ``scale`` batches or as an
-    amount of one line uses (``hoard.units.use``), from the units and items
-    read already when given."""
+    amount of one line uses (``hoard.units.use``), beside what their items
+    hold and cost, from the units and items read already when given."""
     try:
         worked = await recipes.work_out(db, recipe, lines, known)
     except RecipeRefused as refused:
@@ -206,13 +274,27 @@ async def _figures(
     )
     if described is None:
         described = await describe_items(db, [line.item_id for line in lines])
+    makes = units.scaled(recipe.batch_quantity, batches)
+    costed = (
+        None
+        if held.costs is None
+        else summary.recipe_cost(
+            [line.item_id for line in lines],
+            quantities,
+            held.costs,
+            makes=makes,
+            batches=batches,
+            minutes=recipe.minutes,
+            rate=held.rate,
+        )
+    )
     return {
         "by_ratio": recipe.by_ratio,
         "total": None
         if recipe.total is None or not recipe.by_ratio
         else units.scaled(recipe.total, batches),
         "total_unit_id": recipe.total_unit_id if recipe.by_ratio else None,
-        "batch_quantity": units.scaled(recipe.batch_quantity, batches),
+        "batch_quantity": makes,
         "batches": batches,
         "lines": [
             RecipeLineRead(
@@ -224,18 +306,34 @@ async def _figures(
                 tracking_unit_id=None if tracking is None else tracking.id,
                 quantity=quantity,
                 percent=percent,
+                on_hand=held.on_hand.get(line.item_id, Decimal(0)),
+                cost=None
+                if costed is None
+                else RecipeLineCost(
+                    amount=costed.lines[index], last_known=costed.last_known[index]
+                ),
             )
-            for line, unit, tracking, amount, ratio, quantity, percent in zip(
-                lines,
-                worked.units,
-                worked.tracking,
-                figures.amounts,
-                figures.ratios,
-                quantities,
-                worked.percents,
-                strict=True,
+            for index, (line, unit, tracking, amount, ratio, quantity, percent) in enumerate(
+                zip(
+                    lines,
+                    worked.units,
+                    worked.tracking,
+                    figures.amounts,
+                    figures.ratios,
+                    quantities,
+                    worked.percents,
+                    strict=True,
+                )
             )
         ],
+        "cost": None
+        if costed is None
+        else RecipeCost(
+            labour=costed.labour,
+            total=costed.total,
+            incomplete=costed.incomplete,
+            unit_cost=costed.unit_cost,
+        ),
     }
 
 
@@ -268,6 +366,7 @@ async def _scale(
 async def _read(
     db: OrganizationSession,
     found_recipes: list[Recipe],
+    sees_costs: bool,
     quantity: Decimal | None = None,
     use: tuple[int, Decimal, int | None] | None = None,
 ) -> list[RecipeRead]:
@@ -276,6 +375,7 @@ async def _read(
     lines = await recipes.lines_of(db, [recipe.id for recipe in found_recipes])
     ingredients = {line.item_id for held in lines.values() for line in held}
     known = await recipes.know(db, ingredients)
+    held_by = await _held(db, ingredients, sees_costs)
     described_lines = await describe_items(db, ingredients)
     outputs = [recipe.variation_id or recipe.base_id or 0 for recipe in found_recipes]
     described = await describe_items(db, outputs)
@@ -320,7 +420,7 @@ async def _read(
                 unit_id=counted.get(recipe.base_id or 0),
                 minutes=recipe.minutes,
                 notes=recipe.notes,
-                **await _figures(db, recipe, held, scale, known, described_lines),
+                **await _figures(db, recipe, held, held_by, scale, known, described_lines),
             )
         )
     return read
@@ -329,11 +429,12 @@ async def _read(
 async def _read_one(
     db: OrganizationSession,
     recipe_id: int,
+    sees_costs: bool,
     quantity: Decimal | None = None,
     use: tuple[int, Decimal, int | None] | None = None,
 ) -> RecipeRead:
     db.expunge_all()
-    return (await _read(db, [await found(db, Recipe, recipe_id)], quantity, use))[0]
+    return (await _read(db, [await found(db, Recipe, recipe_id)], sees_costs, quantity, use))[0]
 
 
 def _recipe(body: RecipeWrite, recipe: Recipe) -> Recipe:
@@ -351,6 +452,7 @@ def _recipe(body: RecipeWrite, recipe: Recipe) -> Recipe:
 async def list_recipes(
     db: OrganizationSessionDep,
     page: PageDep,
+    sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
     product_id: Annotated[int | None, Query()] = None,
     base_id: Annotated[int | None, Query()] = None,
@@ -383,13 +485,14 @@ async def list_recipes(
             query.order_by(func.lower(name), col(Recipe.id)).offset(page.offset).limit(page.limit)
         )
     ).all()
-    return Page(items=await _read(db, list(found_recipes)), total=total)
+    return Page(items=await _read(db, list(found_recipes), sees_costs), total=total)
 
 
 @router.get("/{recipe_id}", responses=_WORKED)
 async def read_recipe(
     recipe_id: int,
     db: OrganizationSessionDep,
+    sees_costs: SeesCostsDep,
     quantity: Annotated[items.Positive | None, Query()] = None,
     ingredient_id: Annotated[int | None, Query()] = None,
     amount: Annotated[items.Positive | None, Query()] = None,
@@ -399,18 +502,22 @@ async def read_recipe(
     scaled to use ``amount`` of its line of ``ingredient_id``, in ``unit_id``
     or that item's tracking unit. That line then takes exactly the amount."""
     use = None if ingredient_id is None or amount is None else (ingredient_id, amount, unit_id)
-    return await _read_one(db, recipe_id, quantity, use)
+    return await _read_one(db, recipe_id, sees_costs, quantity, use)
 
 
 @router.post("/preview", responses=_WORKED)
-async def preview_recipe(body: RecipeCreate, db: OrganizationSessionDep) -> RecipePreview:
+async def preview_recipe(
+    body: RecipeCreate, db: OrganizationSessionDep, sees_costs: SeesCostsDep
+) -> RecipePreview:
     """A draft recipe worked out for one batch, and written the other way,
     saving nothing. Its output, when sent, is what a switch to a ratio totals
     the lines measured like."""
     await _require_units(db, body)
     draft = _recipe(body, Recipe(product_id=body.product_id))
     lines = _lines(body)
-    figures = await _figures(db, draft, lines)
+    figures = await _figures(
+        db, draft, lines, await _held(db, [line.item_id for line in lines], sees_costs)
+    )
     return RecipePreview(
         **figures, switched=None if body.product_id else await _switched(db, body, figures)
     )
@@ -463,7 +570,9 @@ async def _switched(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
-async def create_recipe(body: RecipeCreate, db: WriteSessionDep) -> RecipeRead:
+async def create_recipe(
+    body: RecipeCreate, db: WriteSessionDep, sees_costs: SeesCostsDep
+) -> RecipeRead:
     outputs = [body.variation_id, body.base_id, body.product_id]
     if sum(output is not None for output in outputs) != 1:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ErrorCode.REQUEST_INVALID)
@@ -483,11 +592,13 @@ async def create_recipe(body: RecipeCreate, db: WriteSessionDep) -> RecipeRead:
     except RecipeRefused as refused:
         raise _refused(refused) from None
     await db.commit()
-    return await _read_one(db, recipe.id)
+    return await _read_one(db, recipe.id, sees_costs)
 
 
 @router.put("/{recipe_id}", responses=_CHANGE)
-async def update_recipe(recipe_id: int, body: RecipeWrite, db: WriteSessionDep) -> RecipeRead:
+async def update_recipe(
+    recipe_id: int, body: RecipeWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
+) -> RecipeRead:
     await _require_units(db, body)
     recipe = _recipe(body, await found(db, Recipe, recipe_id))
     try:
@@ -495,7 +606,7 @@ async def update_recipe(recipe_id: int, body: RecipeWrite, db: WriteSessionDep) 
     except RecipeRefused as refused:
         raise _refused(refused) from None
     await db.commit()
-    return await _read_one(db, recipe_id)
+    return await _read_one(db, recipe_id, sees_costs)
 
 
 @router.delete("/{recipe_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
