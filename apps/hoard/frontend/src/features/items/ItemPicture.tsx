@@ -22,6 +22,10 @@ export const pictureRefused = (file: File, t: TFunction): string | null => {
   return null;
 };
 
+/** Where a material's or a base's picture is read from. */
+export const pictureUrl = (itemId: number, pictureId: number) =>
+  `/api/v1/items/${itemId}/picture/${pictureId}`;
+
 /** Keep `file` as a material's or a base's picture, in place of any it had. */
 const savePicture = (itemId: number, file: File) =>
   setItemPicture(itemId, file, { headers: { "Content-Type": file.type } });
@@ -77,7 +81,7 @@ export function ItemPicture({
       {item.picture_id !== null && (
         <div className="relative w-48 overflow-hidden rounded-md border">
           <img
-            src={`/api/v1/items/${item.id}/picture/${item.picture_id}`}
+            src={pictureUrl(item.id, item.picture_id)}
             alt={t("items.pictureOf", { name: item.name })}
             className="aspect-square w-full object-cover"
           />

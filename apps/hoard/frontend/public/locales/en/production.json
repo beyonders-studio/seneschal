@@ -27,6 +27,22 @@
     "completed": "Completed",
     "expires": "Expires",
     "labour": "Labour minutes",
+    "labourCost": "Labour cost",
+    "madeFor": "Made for order",
+    "method": "Method, from its {{recipe}}",
+    "figures": {
+      "notMade": "Not made yet",
+      "unknown": "Unknown",
+      "noLabour": "Needs labour minutes and a labour rate"
+    },
+    "shipped": {
+      "title": "Orders from this batch",
+      "empty": "Nothing from this batch has shipped yet.",
+      "order": "Order",
+      "orderedOn": "Ordered",
+      "shippedOn": "Shipped",
+      "item": "Variation"
+    },
     "outputLot": "Lot made",
     "startNow": "Start it now",
     "filter": "Show runs",
@@ -47,7 +63,7 @@
     "reopen": "Reopen",
     "reopenTitle": "Reopen run {{code}}?",
     "reopenBody": "What it consumed goes back into stock and lot {{code}} is removed. Lots Hoard assumed are assumed again when it is completed.",
-    "cost": "Cost of what it consumed",
+    "cost": "Materials cost",
     "unitCost": "Cost per unit made",
     "lines": {
       "item": "Consumes",
@@ -57,7 +73,8 @@
       "lotOption": "{{number}} ({{balance}} left)",
       "lotExpires": "{{number}}, expires {{date}} ({{balance}} left)",
       "empty": "This run consumes nothing.",
-      "short": "{{quantity}} short"
+      "short": "{{quantity}} short",
+      "perUnit": "{{cost}} / {{unit}}"
     },
     "statusLabel": "Status",
     "recipeChangedTitle": "Its {{recipe}} has changed",

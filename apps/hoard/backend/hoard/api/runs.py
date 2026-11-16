@@ -8,7 +8,13 @@ it consumes, or one is assumed when the run is completed.
 Completing a run moves stock and costs it; reopening takes that back. A run
 keeps the initiative it was opened from.
 
-Without :data:`~hoard.api.deps.SeesCostsDep` no cost is sent. Whether a run is
+A run is read with its own notes and its recipe's method, the order whose
+auto-manufacture made it (the order whose lines name it), and the orders that
+shipped what it made: from its output lot, or a lot it was moved into, as
+``hoard.trace.shipped`` finds them.
+
+Without :data:`~hoard.api.deps.SeesCostsDep` no cost or price is sent: not
+what it consumed, its labour or an order line's total. Whether a run is
 uncosted is sent to everyone: it says a cost is missing, not what one is.
 """
 
@@ -24,9 +30,10 @@ from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
 from sqlmodel import col, exists, or_, select
 
-from hoard import runs, summary, units
+from hoard import runs, summary, trace, units
 from hoard.api.adjustments import (
     NOT_FOUND,
+    NOTES,
     AdjustmentItem,
     Responses,
     changes,
@@ -40,14 +47,21 @@ from hoard.events import item_name
 from hoard.records import (
     PLACES,
     Adjustment,
+    Base,
+    Image,
     Item,
     Location,
     Lot,
+    Material,
+    Order,
+    OrderLine,
+    OrganizationSettings,
     ProductionRun,
     ProductionRunLine,
     Recipe,
     RecipeLine,
     RunStatus,
+    ShipmentLine,
 )
 from hoard.units import UnitRefused
 from seneschal_core.api import (
@@ -85,6 +99,12 @@ class RunLot(BaseModel):
 class RunLineRead(BaseModel):
     id: int
     item: AdjustmentItem
+    #: The material's or the base's SKU.
+    sku: str | None
+    #: Its picture's id, which reads it (``/items/{id}/picture/{picture_id}``).
+    picture_id: int | None
+    #: The unit its quantity and its unit cost are in: its item's tracking unit.
+    unit_id: int | None
     quantity: Decimal
     #: The lot it consumes: recorded, or assumed when the run was completed.
     lot: RunLot | None
@@ -126,15 +146,54 @@ class RunSummary(BaseModel):
     unit_cost: Decimal | None = None
 
 
+class RunOrder(BaseModel):
+    """An order a run names."""
+
+    id: int
+    code: str
+
+
+class RunShipped(BaseModel):
+    """What an order shipped of what a run made, on one of its lines."""
+
+    #: The shipment line it went out on.
+    id: int
+    order: RunOrder
+    ordered_on: date
+    #: The store's number for its customer, for a store's order.
+    store_customer: str | None
+    shipped_on: date
+    #: What the line sells: the variation.
+    item: AdjustmentItem
+    #: How much of the run's lot it shipped.
+    quantity: Decimal
+    #: Whether its lot was assumed rather than recorded.
+    assumed: bool
+    #: That quantity at the line's price; sent only to a member who sees costs,
+    #: and never for a bundle's part, whose bundle's line carries the price.
+    total: Decimal | None = None
+
+
 class RunRead(RunSummary):
     recipe_id: int | None
     #: Whether its recipe changed since the run was opened: its lines stay as
     #: they were filled.
     recipe_changed: bool
+    #: Its recipe's method, as the recipe stands now; null once it is deleted.
+    recipe_notes: str | None
+    notes: str | None
     labour_minutes: int | None
+    #: Its labour minutes at the labour rate (``hoard.summary.recipe_cost``):
+    #: null without either, and sent only to a member who sees costs. Its lot's
+    #: cost leaves it out, as pricing adds labour on top.
+    labour_cost: Decimal | None = None
+    #: The order whose auto-manufacture made it.
+    made_for: RunOrder | None
     expires_on: date | None
     output_lot: RunLot | None
     lines: list[RunLineRead]
+    #: What orders shipped of what it made, once it is completed.
+    shipped: list[RunShipped]
     created_at: datetime
     created_by: str | None
     updated_at: datetime
@@ -233,6 +292,7 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
     run = row[0]
     [fields] = await _summary(db, [row], sees_costs)
+    recipe = None if run.recipe_id is None else await db.get_one(Recipe, run.recipe_id)
     lines = (
         await db.exec(
             select(ProductionRunLine)
@@ -241,7 +301,18 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
             .execution_options(populate_existing=True)
         )
     ).all()
-    items = await _describe(db, [line.item_id for line in lines])
+    item_ids = [line.item_id for line in lines]
+    items = await _describe(db, item_ids)
+    materials = await db.exec(
+        select(Material.id, Material.sku).where(col(Material.id).in_(item_ids))
+    )
+    bases = await db.exec(select(Base.id, Base.sku).where(col(Base.id).in_(item_ids)))
+    skus = dict([*materials.all(), *bases.all()])
+    pictures = await db.exec(
+        select(Image.item_id, Image.id).where(col(Image.item_id).in_(item_ids))
+    )
+    pictured = {item_id: picture_id for item_id, picture_id in pictures.all() if item_id}
+    counted = await units.tracking_units(db, item_ids)
     held = (
         await db.exec(
             select(Lot)
@@ -283,17 +354,40 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
             )
         )
         consumed = {line_id: cost for line_id, cost in found.all() if line_id is not None}
+        settings = (await db.exec(select(OrganizationSettings))).first()
+        fields["labour_cost"] = summary.recipe_cost(
+            [],
+            [],
+            {},
+            makes=Decimal(1),
+            batches=Decimal(1),
+            minutes=run.labour_minutes,
+            rate=None if settings is None else settings.labour_rate,
+        ).labour
+    made_for = (
+        await db.exec(
+            select(Order.id, Order.code)
+            .join(OrderLine, col(OrderLine.order_id) == Order.id)
+            .where(OrderLine.production_run_id == run.id)
+        )
+    ).first()
     return RunRead(
         **fields,
         recipe_id=run.recipe_id,
-        recipe_changed=await _recipe_changed(db, run),
+        recipe_changed=await _recipe_changed(db, run, recipe),
+        recipe_notes=None if recipe is None else recipe.notes,
+        notes=run.notes,
         labour_minutes=run.labour_minutes,
+        made_for=None if made_for is None else RunOrder(id=made_for[0], code=made_for[1]),
         expires_on=run.expires_on,
         output_lot=_lot(lots[run.output_lot_id]) if run.output_lot_id in lots else None,
         lines=[
             RunLineRead(
                 id=line.id,
                 item=items[line.item_id],
+                sku=skus.get(line.item_id),
+                picture_id=pictured.get(line.item_id),
+                unit_id=counted.get(line.item_id),
                 quantity=line.quantity,
                 lot=_lot(lots[line.lot_id]) if line.lot_id in lots else None,
                 assumed=line.assumed,
@@ -310,6 +404,9 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
             )
             for line in lines
         ],
+        shipped=[]
+        if run.output_lot_id is None
+        else await _shipped(db, run.output_lot_id, sees_costs),
         created_at=run.created_at,
         created_by=run.created_by,
         updated_at=run.updated_at,
@@ -317,13 +414,50 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
     )
 
 
-async def _recipe_changed(db: OrganizationSession, run: ProductionRun) -> bool:
+async def _shipped(db: OrganizationSession, lot_id: int, sees_costs: bool) -> list[RunShipped]:
+    """What orders shipped of a run's output lot, or of a lot it was moved
+    into, in the order the trace finds them."""
+    sent = await trace.shipped(db, lot_id)
+    found = await db.exec(
+        select(ShipmentLine.id, OrderLine, Order)
+        .join(OrderLine, col(OrderLine.id) == ShipmentLine.order_line_id)
+        .join(Order, col(Order.id) == OrderLine.order_id)
+        .where(col(ShipmentLine.id).in_([step.line_id for step in sent]))
+    )
+    lines = {line_id: (line, order) for line_id, line, order in found.all()}
+    items = await _describe(db, [step.item_id for step in sent])
+    shipped = []
+    for step in sent:
+        line_id = step.line_id or 0
+        line, order = lines[line_id]
+        shipped.append(
+            RunShipped(
+                id=line_id,
+                order=RunOrder(id=order.id, code=order.code),
+                ordered_on=order.ordered_on,
+                store_customer=order.store_customer,
+                shipped_on=step.dated_on,
+                item=items[step.item_id],
+                quantity=step.quantity,
+                assumed=step.assumed,
+                **(
+                    {"total": (line.price * step.quantity).quantize(PLACES)}
+                    if sees_costs and line.bundle_line_id is None
+                    else {}
+                ),
+            )
+        )
+    return shipped
+
+
+async def _recipe_changed(
+    db: OrganizationSession, run: ProductionRun, recipe: Recipe | None
+) -> bool:
     """Whether the recipe a run was filled from was saved since it was opened."""
-    if run.recipe_id is None:
+    if recipe is None:
         return False
-    recipe = await db.get_one(Recipe, run.recipe_id)
     lines = await db.exec(
-        select(func.max(RecipeLine.created_at)).where(RecipeLine.recipe_id == run.recipe_id)
+        select(func.max(RecipeLine.created_at)).where(RecipeLine.recipe_id == recipe.id)
     )
     return any(
         saved is not None and saved > run.created_at for saved in (recipe.updated_at, lines.one())
@@ -478,6 +612,7 @@ class RunCreate(RunPlan):
     expires_on: date | None = None
     assignee_ref: Member | None = None
     labour_minutes: Minutes | None = None
+    notes: str | None = NOTES
 
 
 @router.post(
@@ -516,6 +651,7 @@ async def create_run(
         expires_on=body.expires_on,
         assignee_ref=body.assignee_ref,
         labour_minutes=body.labour_minutes,
+        notes=body.notes or None,
     )
     try:
         await runs.open_run(db, run, use=use)
@@ -616,12 +752,13 @@ class RunUpdate(BaseModel):
     code: Code | None = None
     planned_batches: Positive | None = None
     location_id: int | None = None
-    #: Null, as the four below may be, takes it off.
+    #: Null, as the four below and the notes may be, takes it off.
     deadline_on: date | None = None
     expires_on: date | None = None
     assignee_ref: Member | None = None
     labour_minutes: Minutes | None = None
     started_on: date | None = None
+    notes: str | None = NOTES
 
 
 @router.patch(
@@ -633,7 +770,9 @@ async def update_run(
     db: WriteSessionDep, sees_costs: SeesCostsDep, run_id: int, body: RunUpdate
 ) -> RunRead:
     """Change a run. A completed run's code and expiry carry to the lot it made."""
-    sent = changes(body, nullable={"deadline_on", "expires_on", "assignee_ref", "labour_minutes"})
+    sent = changes(
+        body, nullable={"deadline_on", "expires_on", "assignee_ref", "labour_minutes", "notes"}
+    )
     run = await known(db, ProductionRun, run_id)
     if "code" in sent:
         await _free_code(db, sent["code"], run.id)

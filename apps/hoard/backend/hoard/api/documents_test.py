@@ -6,7 +6,7 @@ from __future__ import annotations
 import httpx2
 
 from hoard import documents
-from hoard.records import OrganizationSettings
+from hoard.records import OrganizationSettings, ProductionRun
 from seneschal_core.db import WriteSession
 from seneschal_core.testing import InitiativeStandIn
 
@@ -58,9 +58,13 @@ async def test_a_lot_lists_its_files_by_the_names_the_member_may_see(
 
 
 async def test_a_member_links_a_file_they_may_open_and_unlinks_it(
-    client, sign_in, db: WriteSession, base, initiative_stand_in, community_ref
+    client, sign_in, db: WriteSession, main, base, initiative_stand_in, community_ref
 ):
     batter = await base("Batter")
+    run = ProductionRun(
+        organization_id=db.organization_id, code="R-1", item_id=batter.id, location_id=main.id
+    )
+    db.add(run)
     await db.commit()
     _files(initiative_stand_in, {40: "Traceability plan"})
     initiative_stand_in.consents.add((community_ref, "member-ref"))
@@ -77,6 +81,13 @@ async def test_a_member_links_a_file_they_may_open_and_unlinks_it(
     assert (hidden.status_code, hidden.json()) == (404, {"detail": "FILE_NOT_FOUND"})
     assert (nowhere.status_code, nowhere.json()) == (404, {"detail": "NOT_FOUND"})
     assert (unnamed.status_code, unnamed.json()) == (422, {"detail": "ONE_RECORD_REQUIRED"})
+    # A production run takes files as the other records do.
+    to_run = await client.post("/api/v1/documents", json={"file_id": 40, "run_id": run.id})
+    assert to_run.status_code == 201
+    assert [
+        each["name"]
+        for each in (await client.get("/api/v1/documents", params={"run_id": run.id})).json()
+    ] == ["Traceability plan"]
 
     unlinked = await client.delete(f"/api/v1/documents/{linked.json()['id']}")
     gone = await client.delete(f"/api/v1/documents/{linked.json()['id']}")

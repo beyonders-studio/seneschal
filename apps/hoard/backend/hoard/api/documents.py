@@ -1,5 +1,5 @@
-"""Initiative files linked to lots, products, materials and bases
-(``hoard.documents``), and the backup period the organization's rules ask for
+"""Initiative files linked to lots, products, materials, bases and
+production runs (``hoard.documents``), and the backup period the organization's rules ask for
 (``hoard.backups``).
 
 A linked file's name is read from Initiative acting for the member viewing
@@ -21,7 +21,16 @@ from hoard import backups, documents
 from hoard.api.adjustments import Responses
 from hoard.api.files import MEMBER_READ, FileFound, file_found, read_for_member, unavailable
 from hoard.api.settings import found
-from hoard.records import Base, DocumentLink, Lot, Material, OrganizationSettings, Product, Regime
+from hoard.records import (
+    Base,
+    DocumentLink,
+    Lot,
+    Material,
+    OrganizationSettings,
+    Product,
+    ProductionRun,
+    Regime,
+)
 from seneschal_core.api import (
     OrganizationSessionDep,
     PluginDep,
@@ -40,27 +49,29 @@ _RECORDS: dict[str, type[SQLModel]] = {
     "product_id": Product,
     "material_id": Material,
     "base_id": Base,
+    "run_id": ProductionRun,
 }
 
 
 class DocumentError(StrEnum):
     """Why a document was refused."""
 
-    #: A document is linked to exactly one lot, product, material or base.
+    #: A document is linked to exactly one lot, product, material, base or run.
     ONE_RECORD_REQUIRED = "ONE_RECORD_REQUIRED"
     #: No file the member may open has that id.
     FILE_NOT_FOUND = "FILE_NOT_FOUND"
 
 
 class DocumentCreate(BaseModel):
-    """A file to link, and the one lot, product, material or base it is
-    linked to."""
+    """A file to link, and the one lot, product, material, base or production
+    run it is linked to."""
 
     file_id: int
     lot_id: int | None = None
     product_id: int | None = None
     material_id: int | None = None
     base_id: int | None = None
+    run_id: int | None = None
 
 
 def _one_record(**named: int | None) -> tuple[str, int]:
@@ -121,11 +132,16 @@ async def list_documents(
     product_id: int | None = None,
     material_id: int | None = None,
     base_id: int | None = None,
+    run_id: int | None = None,
 ) -> list[DocumentRead]:
-    """The files linked to one lot, product, material or base, in the order
-    they were linked, each named as the member may see it."""
+    """The files linked to one lot, product, material, base or production run,
+    in the order they were linked, each named as the member may see it."""
     name, record_id = _one_record(
-        lot_id=lot_id, product_id=product_id, material_id=material_id, base_id=base_id
+        lot_id=lot_id,
+        product_id=product_id,
+        material_id=material_id,
+        base_id=base_id,
+        run_id=run_id,
     )
     linked = await documents.links(db, **{name: record_id})
     files = await asyncio.gather(*(_file(plugin, session, link.file_id) for link in linked))
@@ -144,8 +160,8 @@ async def list_documents(
 async def link_document(
     body: DocumentCreate, db: WriteSessionDep, plugin: PluginDep, session: SessionDep
 ) -> DocumentRead:
-    """Link a file the member may open to one lot, product, material or base;
-    linking it again answers the link."""
+    """Link a file the member may open to one lot, product, material, base or
+    production run; linking it again answers the link."""
     name, record_id = _one_record(**body.model_dump(exclude={"file_id"}))
     await found(db, _RECORDS[name], record_id)
     file = await _file(plugin, session, body.file_id)

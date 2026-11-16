@@ -1,15 +1,29 @@
 """Production runs through the API: opening, recording lots, completing and
-reopening, costs only for who sees them, nothing while Hoard is read-only, and
-making as much as one ingredient allows."""
+reopening, costs only for who sees them, nothing while Hoard is read-only,
+making as much as one ingredient allows, and what a run shows beside: its
+notes, its labour, its lines' items and the orders that shipped what it made."""
 
 from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
 
-from hoard import plugin_manifest, recipes
-from hoard.records import Base, Material, Recipe, RecipeLine
-from hoard.stock import on_hand
+from sqlmodel import select
+
+from hoard import plugin_manifest, recipes, shipments
+from hoard.records import (
+    Base,
+    Image,
+    Lot,
+    Material,
+    OrderLine,
+    OrganizationSettings,
+    Product,
+    Recipe,
+    RecipeLine,
+)
+from hoard.shipments import Pick
+from hoard.stock import add_product, on_hand
 from seneschal_core.db import WriteSession
 
 RUNS = "/api/v1/runs"
@@ -246,3 +260,89 @@ async def test_a_run_makes_as_much_as_one_ingredient_allows(
         RUNS, json={"item_id": alyx.id, "use": {"item_id": alyx.id, "amount": "1"}}
     )
     assert (missing.status_code, missing.json()) == (422, {"detail": "RUN_NOT_IN_RECIPE"})
+
+
+async def test_a_run_shows_its_notes_labour_items_and_the_orders_it_shipped_to(
+    client, sign_in, db: WriteSession, main, unit, material, buy, product, sell
+):
+    flour = await material("Flour", sku="FL-1")
+    await buy((flour, "10", "2"))
+    db.add(
+        Image(
+            organization_id=db.organization_id,
+            item_id=flour.id,
+            content_type="image/png",
+            content=b"png",
+        )
+    )
+    db.add(OrganizationSettings(organization_id=db.organization_id, labour_rate=Decimal(30)))
+    bread = await product("Bread")
+    await recipes.save(
+        db,
+        Recipe(variation_id=bread.id, batch_quantity=Decimal(4), notes="Knead, then rest."),
+        [recipes.Line(flour.id, Decimal(2), unit.id)],
+    )
+    _, box = await add_product(db, Product(name="Gift box", bundle=True))
+    await db.commit()
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+
+    opened = await client.post(
+        RUNS,
+        json={"item_id": bread.id, "planned_batches": "2", "labour_minutes": 90, "notes": "Oven 2"},
+    )
+    run_id = opened.json()["id"]
+    done = (await client.post(f"{RUNS}/{run_id}/complete", json={"actual_quantity": "8"})).json()
+    assert (done["notes"], done["recipe_notes"], done["labour_cost"], done["cost"]) == (
+        "Oven 2",
+        "Knead, then rest.",
+        "45.000000",
+        "8.000000",
+    )
+    [line] = done["lines"]
+    picture = (await db.exec(select(Image.id).where(Image.item_id == flour.id))).one()
+    assert (line["sku"], line["picture_id"], line["unit_id"], line["unit_cost"]) == (
+        "FL-1",
+        picture,
+        unit.id,
+        "2.000000",
+    )
+    assert (done["made_for"], done["shipped"]) == (None, [])
+
+    # One order sells bread on its own line, another holds it in a bundle,
+    # whose part carries no price; the first is the one its run was made for.
+    made = await db.get_one(Lot, done["output_lot"]["id"])
+    alone = await sell((bread.id, "3", "5"), store_customer="C-77")
+    boxed = await sell((box.id, "1", "20"))
+    box_line = (await db.exec(select(OrderLine).where(OrderLine.order_id == boxed.id))).one()
+    part = OrderLine(
+        organization_id=db.organization_id,
+        order_id=boxed.id,
+        item_id=bread.id,
+        quantity=Decimal(2),
+        price=Decimal(0),
+        bundle_line_id=box_line.id,
+    )
+    db.add(part)
+    await db.flush()
+    for order, line_id in (
+        (alone, (await db.exec(select(OrderLine.id).where(OrderLine.order_id == alone.id))).one()),
+        (boxed, part.id),
+    ):
+        shipment = await shipments.add(db, order, main.id, [Pick(line_id, lot_id=made.id)])
+        await shipments.ship(db, shipment, date(2026, 11, 5))
+    sold = (await db.exec(select(OrderLine).where(OrderLine.order_id == alone.id))).one()
+    sold.production_run_id = run_id
+    await db.commit()
+
+    read = (await client.get(f"{RUNS}/{run_id}")).json()
+    assert read["made_for"] == {"id": alone.id, "code": alone.code}
+    assert [
+        (row["order"]["code"], row["store_customer"], row["quantity"], row.get("total"))
+        for row in read["shipped"]
+    ] == [(alone.code, "C-77", "3.000000", "15.000000"), (boxed.code, None, "2.000000", None)]
+    assert read["shipped"][0]["shipped_on"] == "2026-11-05"
+
+    await sign_in(client)
+    unseen = (await client.get(f"{RUNS}/{run_id}")).json()
+    assert "labour_cost" not in unseen
+    assert all("total" not in row for row in unseen["shipped"])
