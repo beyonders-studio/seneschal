@@ -11,7 +11,7 @@ keeps the initiative it was opened from.
 A run is read with its own notes and its recipe's method, the order whose
 auto-manufacture made it (the order whose lines name it), and the orders that
 shipped what it made: from its output lot, or a lot it was moved into, as
-the lot's forward trace finds them (``hoard.trace``).
+``hoard.trace.shipped`` finds them.
 
 Without :data:`~hoard.api.deps.SeesCostsDep` no cost or price is sent: not
 what it consumed, its labour or an order line's total. Whether a run is
@@ -416,8 +416,8 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
 
 async def _shipped(db: OrganizationSession, lot_id: int, sees_costs: bool) -> list[RunShipped]:
     """What orders shipped of a run's output lot, or of a lot it was moved
-    into, in the order its forward trace finds them."""
-    sent = (await trace.forward(db, lot_id)).shipped()
+    into, in the order the trace finds them."""
+    sent = await trace.shipped(db, lot_id)
     found = await db.exec(
         select(ShipmentLine.id, OrderLine, Order)
         .join(OrderLine, col(OrderLine.id) == ShipmentLine.order_line_id)

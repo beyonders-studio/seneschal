@@ -186,8 +186,8 @@ async def test_forward_follows_what_was_made_from_a_lot_to_who_it_was_shipped_to
     )
     assert found.lot_ids(assumed=False) == {made.spice.id, made.chai.id}
     # What was made from the cinnamon shipped; the cinnamon itself didn't.
-    assert found.shipped() == []
-    [own] = (await trace.forward(db, made.chai.id)).shipped()
+    assert await trace.shipped(db, made.cinnamon.id) == []
+    [own] = await trace.shipped(db, made.chai.id)
     assert (
         own.line_id
         == (
@@ -305,7 +305,7 @@ async def test_a_lot_moved_to_a_consignee_is_followed_there_and_back(
     ]
     assert (forward.steps[0].location_id, forward.steps[0].quantity) == (shop.id, 3)
     # What shipped from the lot it was moved into shipped from it.
-    assert forward.shipped() == [forward.steps[1]]
+    assert await trace.shipped(db, made.chai.id) == [forward.steps[1]]
     assert _steps(back)[:2] == [
         (1, StepKind.TRANSFER, made.chai.id, moved.id, None, False),
         (2, StepKind.RUN, made.spice.id, made.chai.id, None, False),

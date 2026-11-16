@@ -105,20 +105,6 @@ class Trace:
             if lot_id is not None and lot_id != self.lot_id
         }
 
-    def shipped(self) -> list[TraceStep]:
-        """The shipments, of a forward trace, that sent its own lot, or a lot
-        it was moved into: not those of what was made from it."""
-        moved = {self.lot_id}
-        sent = []
-        for step in self.steps:
-            if step.from_lot_id not in moved:
-                continue
-            if step.kind is StepKind.TRANSFER and step.made_lot_id is not None:
-                moved.add(step.made_lot_id)
-            elif step.kind is StepKind.SHIPMENT:
-                sent.append(step)
-        return sent
-
 
 #: What a trace reaches from one lot: each step, its own lot unset, and the
 #: lot it leads on to.
@@ -395,6 +381,19 @@ async def forward(db: AsyncSession, lot_id: int) -> Trace:
     recorded and assumed, and on from each lot those runs made and those
     transfers moved it into, at every level."""
     return await _walk(db, lot_id, _drawn_from)
+
+
+async def _sent_on(db: AsyncSession, lot: Lot) -> Moves:
+    """The shipments and transfers that draw on ``lot``: where it went
+    without being made into something else."""
+    return [move for move in await _drawn_from(db, lot) if move[0].kind is not StepKind.RUN]
+
+
+async def shipped(db: AsyncSession, lot_id: int) -> list[TraceStep]:
+    """The shipments that sent a lot, or a lot it was moved into, not those
+    of what was made from it."""
+    walked = await _walk(db, lot_id, _sent_on)
+    return [step for step in walked.steps if step.kind is StepKind.SHIPMENT]
 
 
 async def back(db: AsyncSession, lot_id: int) -> Trace:
