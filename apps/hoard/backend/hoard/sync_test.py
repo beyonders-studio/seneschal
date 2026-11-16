@@ -485,14 +485,14 @@ async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
         "o-3": None,
         "o-4": None,
     }
-    # The segment is read once for every order the import copied.
-    assert (fake.member_reads, fake.membership_reads) == (["seg-1"], [])
+    # The store is asked once, after the customers of the orders no company bought.
+    assert fake.membership_reads == [("seg-1", ["7", "8"])]
 
     # An order arriving alone asks after its one customer.
     await sync.copy_order(
         db, store, fake, _order(_line("l-5", "v-tea", "1"), order_id="o-5", customer="7")
     )
-    assert fake.membership_reads == [("seg-1", "7")]
+    assert fake.membership_reads[1:] == [("seg-1", ["7"])]
     # Each keeps what it was marked when it arrived, but a company is a company.
     fake.members = {}
     for at, fields in ((1, {"customer": "7"}), (3, {"customer": "8", "company": True})):
@@ -506,7 +506,7 @@ async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
         "o-4": None,
         "o-5": WholesaleBuyer.SEGMENT,
     }
-    assert len(fake.membership_reads) == 1
+    assert len(fake.membership_reads) == 2
 
 
 async def test_the_worker_refetches_what_each_nudge_names(

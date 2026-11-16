@@ -29,7 +29,7 @@ from hoard.channels import (
     StoreVariant,
     connector_for,
 )
-from hoard.channels.shopify import queries
+from hoard.channels.shopify import queries, store
 from hoard.channels.shopify.fake import FakeShop
 from hoard.channels.shopify.store import REQUIRED_SCOPES, TOPICS, ShopifyConnector
 from hoard.records import Channel
@@ -411,52 +411,43 @@ async def test_locations_are_read_page_by_page():
 # Customer segments.
 
 
-async def test_segments_are_listed_and_their_members_read_page_by_page():
+async def test_segments_are_listed_and_customers_asked_after_in_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(store, "MEMBERSHIPS_AT_ONCE", 2)
     shop = FakeShop()
     shop.answer(
         "HoardSegments",
         {"segments": _page([{"id": "gid://shopify/Segment/1", "name": "Wholesale"}])},
     )
-    pages = [
-        {
-            "customerSegmentMembers": {
-                "edges": [{"node": {"id": "gid://shopify/CustomerSegmentMember/7"}}],
-                "pageInfo": {"hasNextPage": True, "endCursor": "m1"},
-            }
-        },
-        {
-            "customerSegmentMembers": {
-                "edges": [{"node": {"id": "gid://shopify/CustomerSegmentMember/8"}}],
-                "pageInfo": {"hasNextPage": False, "endCursor": None},
-            }
-        },
-    ]
-    shop.answer("HoardSegmentMembers", lambda variables: pages.pop(0))
-    shop.answer(
-        "HoardSegmentMembership",
-        lambda variables: {
-            "customerSegmentMembership": {
+
+    def memberships(variables: dict[str, Any]) -> dict[str, Any]:
+        return {
+            alias: {
                 "memberships": [
-                    {"segmentId": segment, "isMember": variables["customerId"].endswith("/7")}
+                    {"segmentId": segment, "isMember": customer.endswith(("/7", "/9"))}
                     for segment in variables["segmentIds"]
                 ]
             }
-        },
-    )
+            for alias, customer in variables.items()
+            if alias != "segmentIds"
+        }
+
+    shop.answer("HoardSegmentMembership", memberships)
     connector = shop.connector()
 
     assert await connector.segments() == {"gid://shopify/Segment/1": "Wholesale"}
-    assert await connector.segment_members("gid://shopify/Segment/1") == {"7", "8"}
-    assert [variables["after"] for variables in shop.variables("HoardSegmentMembers")] == [
-        None,
-        "m1",
+    assert await connector.in_segment("gid://shopify/Segment/1", ["9", "7", "8"]) == {"7", "9"}
+    # Two customers a call, each by their customer id under an alias of its own.
+    assert shop.variables("HoardSegmentMembership") == [
+        {
+            "segmentIds": ["gid://shopify/Segment/1"],
+            "c0": "gid://shopify/Customer/7",
+            "c1": "gid://shopify/Customer/8",
+        },
+        {"segmentIds": ["gid://shopify/Segment/1"], "c0": "gid://shopify/Customer/9"},
     ]
-    assert await connector.in_segment("gid://shopify/Segment/1", "7")
-    assert not await connector.in_segment("gid://shopify/Segment/1", "9")
-    assert shop.variables("HoardSegmentMembership")[0] == {
-        "customerId": "gid://shopify/Customer/7",
-        "segmentIds": ["gid://shopify/Segment/1"],
-    }
+    assert "c1: customerSegmentMembership(customerId: $c1" in queries.segment_membership(2)
 
 
 def _stock_set(key: str, compare: int | None = 4, item: str | None = "gid://i/1") -> StockSet:

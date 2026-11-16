@@ -22,8 +22,7 @@ A connector:
 * reads the store's orders, with their fulfillments and whether a company
   bought them, and pushes a shipment back as a fulfillment;
 * lists the store's customer segments (:meth:`Connector.segments`), and
-  reads who is in one: all its members at once, for a batch of orders, or
-  whether one customer is, for one order;
+  answers which of some customers are in one (:meth:`Connector.in_segment`);
 * reads a webhook delivery Initiative checked and forwarded as a
   :class:`Nudge`: which record changed, which Hoard refetches, with the body
   of an order's delivery, and reads that body as the order it describes, for
@@ -41,7 +40,7 @@ pages translate.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -406,12 +405,9 @@ class Connector(Protocol):
         """The store's customer segments: each one's name, by the store's id."""
         ...
 
-    async def segment_members(self, segment_id: str) -> set[str]:
-        """The store's numbers for the customers in a segment now."""
-        ...
-
-    async def in_segment(self, segment_id: str, customer: str) -> bool:
-        """Whether the customer the store numbers ``customer`` is in a segment now."""
+    async def in_segment(self, segment_id: str, customers: Collection[str]) -> set[str]:
+        """Those of ``customers``, by the store's numbers for them, in a
+        segment now."""
         ...
 
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:

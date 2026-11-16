@@ -26,9 +26,9 @@
   send: a scheduled part carries the fulfillment order's id and the day it is
   due. An order's refunds are read only where a line sells fewer than were
   ordered.
-* **Customer segments** are listed by name, under ``read_customers``. A
-  segment's members are read a page at a time, each by the number at the end
-  of its member id; one customer's membership is asked for by their number.
+* **Customer segments** are listed by name, under ``read_customers``. Which
+  customers are in one is asked of each customer by their number,
+  :data:`MEMBERSHIPS_AT_ONCE` to a call.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
 * **Fields** are the store's metafields. Their definitions are read for
@@ -47,7 +47,7 @@ from __future__ import annotations
 import json
 import logging
 from collections import defaultdict
-from collections.abc import AsyncIterator, Iterable, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Iterable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any
@@ -139,6 +139,12 @@ CAPABILITIES = Capabilities(
 
 #: The most items one input list carries.
 INPUT_LIMIT = 250
+
+#: How many customers one call asks segment membership of: each alias costs
+#: about two points (its answer and its one membership, an object each), so a
+#: call stays well under the store's limit for one call even where the store
+#: prices the field higher.
+MEMBERSHIPS_AT_ONCE = 100
 
 #: The most field values one write carries.
 FIELDS_AT_ONCE = 25
@@ -610,30 +616,26 @@ class ShopifyConnector:
         nodes = await self._pages(queries.SEGMENTS, {}, ("segments",))
         return {str(node["id"]): str(node.get("name") or "") for node in nodes}
 
-    async def segment_members(self, segment_id: str) -> set[str]:
-        members: set[str] = set()
-        after: str | None = None
-        while True:
+    async def in_segment(self, segment_id: str, customers: Collection[str]) -> set[str]:
+        found: set[str] = set()
+        for chunk in _chunks(sorted(set(customers)), MEMBERSHIPS_AT_ONCE):
             data = await self.client.query(
-                queries.SEGMENT_MEMBERS, {"segmentId": segment_id, "after": after}
+                queries.segment_membership(len(chunk)),
+                {
+                    "segmentIds": [segment_id],
+                    **{
+                        f"c{at}": f"gid://shopify/Customer/{customer}"
+                        for at, customer in enumerate(chunk)
+                    },
+                },
             )
-            page = data.get("customerSegmentMembers") or {}
-            for edge in page.get("edges") or []:
-                member = _id(edge.get("node"))
-                if member is not None:
-                    # The number at the end of the member's id: the customer's.
-                    members.add(member.rsplit("/", 1)[-1])
-            after = _next(page)
-            if after is None:
-                return members
-
-    async def in_segment(self, segment_id: str, customer: str) -> bool:
-        data = await self.client.query(
-            queries.SEGMENT_MEMBERSHIP,
-            {"customerId": f"gid://shopify/Customer/{customer}", "segmentIds": [segment_id]},
-        )
-        found = (data.get("customerSegmentMembership") or {}).get("memberships") or []
-        return any(each.get("segmentId") == segment_id and each.get("isMember") for each in found)
+            for at, customer in enumerate(chunk):
+                held = (data.get(f"c{at}") or {}).get("memberships") or []
+                if any(
+                    each.get("segmentId") == segment_id and each.get("isMember") for each in held
+                ):
+                    found.add(customer)
+        return found
 
     # Webhooks and the history import.
 

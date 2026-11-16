@@ -23,8 +23,8 @@ first claims its stock makes what it sells where auto-manufacture says so
 A store's order is **wholesale** when the store says a company bought it, or
 when it first arrives and its customer is in the store's wholesale segment
 (:attr:`hoard.records.Store.wholesale_segment`): asked of the store for the
-one customer of an order a nudge refetches, and read whole once for a batch
-of orders. Hoard keeps why on the order, never who is in the segment; an
+one customer of an order a nudge refetches, and for a batch of orders, once
+for all their customers. Hoard keeps why on the order, never who is in the segment; an
 order keeps the segment's answer from when it arrived until the segment is
 chosen again (``hoard.store_sync``).
 
@@ -155,27 +155,28 @@ async def _location(db: WriteSession, mapped: dict[str, int], found: StoreOrder)
 class _Items:
     """The item each of a store's lines sells, through its listing: a product
     with no listing linked yet is read from the store and matched, once. And
-    whether a customer is in the store's wholesale segment: asked of the store
-    for one order, or, for a ``batch`` of them, read once for them all."""
+    whether a customer is in the store's wholesale segment: among ``members``,
+    the customers of a batch of orders the store answered were in it, or else
+    asked of the store."""
 
     def __init__(
-        self, db: WriteSession, store: Store, connector: Connector, *, batch: bool = False
+        self,
+        db: WriteSession,
+        store: Store,
+        connector: Connector,
+        members: set[str] | None = None,
     ) -> None:
         self.db, self.store, self.connector = db, store, connector
         self.read: set[str] = set()
-        self.batch = batch
-        #: The segment's members, once a batch read them.
-        self.members: set[str] | None = None
+        self.members = members
 
     async def in_segment(self, customer: str | None) -> bool:
         segment = self.store.wholesale_segment
         if segment is None or customer is None:
             return False
-        if not self.batch:
-            return await self.connector.in_segment(segment, customer)
-        if self.members is None:
-            self.members = await self.connector.segment_members(segment)
-        return customer in self.members
+        if self.members is not None:
+            return customer in self.members
+        return customer in await self.connector.in_segment(segment, [customer])
 
     async def _linked(self, line: StoreLine) -> int | None:
         found = await self.db.exec(
@@ -706,8 +707,17 @@ async def _copy_all(
     """Copy in each order of ``found``, each committed on its own, telling
     ``progress`` every :data:`PRODUCTS_AT_ONCE`. One that fails is left for
     the next reconcile. Answers the store, as read again after a failure, and
-    whether every order was copied."""
-    items = _Items(db, store, connector, batch=True)
+    whether every order was copied. The store is asked once which of the
+    orders' customers are in its wholesale segment."""
+    segment = store.wholesale_segment
+    members = (
+        None
+        if segment is None
+        else await connector.in_segment(
+            segment, {order.customer for order in found if order.customer and not order.company}
+        )
+    )
+    items = _Items(db, store, connector, members)
     copied = True
     for done, order in enumerate(found, 1):
         try:

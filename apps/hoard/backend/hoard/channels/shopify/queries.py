@@ -363,7 +363,7 @@ mutation HoardFulfillmentCreate($fulfillment: FulfillmentInput!) {
 }
 """
 
-# Customer segments, and who is in one: only the members' ids.
+# Customer segments, and whether customers are in one.
 
 SEGMENTS = f"""
 query HoardSegments($after: String) {{
@@ -371,22 +371,18 @@ query HoardSegments($after: String) {{
 }}
 """
 
-SEGMENT_MEMBERS = f"""
-query HoardSegmentMembers($segmentId: ID!, $after: String) {{
-  customerSegmentMembers(segmentId: $segmentId, first: 250, after: $after) {{
-    edges {{ node {{ id }} }}
-    {PAGE_INFO}
-  }}
-}}
-"""
 
-SEGMENT_MEMBERSHIP = """
-query HoardSegmentMembership($customerId: ID!, $segmentIds: [ID!]!) {
-  customerSegmentMembership(customerId: $customerId, segmentIds: $segmentIds) {
-    memberships { segmentId isMember }
-  }
-}
-"""
+def segment_membership(count: int) -> str:
+    """Whether each of ``count`` customers, ``$c0`` on, is in the segments
+    ``$segmentIds`` names, each answered under its own alias."""
+    customers = ", ".join(f"$c{at}: ID!" for at in range(count))
+    asked = "\n".join(
+        f"  c{at}: customerSegmentMembership(customerId: $c{at}, segmentIds: $segmentIds) "
+        "{ memberships { segmentId isMember } }"
+        for at in range(count)
+    )
+    return f"query HoardSegmentMembership($segmentIds: [ID!]!, {customers}) {{\n{asked}\n}}"
+
 
 # The history import, in bulk.
 

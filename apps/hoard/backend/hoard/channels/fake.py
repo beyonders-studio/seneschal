@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import AsyncIterator, Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -82,9 +82,8 @@ class FakeConnector:
     shop_segments: dict[str, str] = field(default_factory=dict)
     #: The customers in each segment, by the segment's id.
     members: dict[str, set[str]] = field(default_factory=dict)
-    #: The segments read whole, and the customers asked after one at a time.
-    member_reads: list[str] = field(default_factory=list)
-    membership_reads: list[tuple[str, str]] = field(default_factory=list)
+    #: Each segment asked after, with the customers asked about, in order.
+    membership_reads: list[tuple[str, list[str]]] = field(default_factory=list)
 
     def _checked(self) -> None:
         if self.refuse is not None:
@@ -186,15 +185,10 @@ class FakeConnector:
         self._checked()
         return dict(self.shop_segments)
 
-    async def segment_members(self, segment_id: str) -> set[str]:
+    async def in_segment(self, segment_id: str, customers: Collection[str]) -> set[str]:
         self._checked()
-        self.member_reads.append(segment_id)
-        return set(self.members.get(segment_id, set()))
-
-    async def in_segment(self, segment_id: str, customer: str) -> bool:
-        self._checked()
-        self.membership_reads.append((segment_id, customer))
-        return customer in self.members.get(segment_id, set())
+        self.membership_reads.append((segment_id, sorted(customers)))
+        return set(customers) & self.members.get(segment_id, set())
 
     def order_webhook(self, order: StoreOrder) -> tuple[dict[str, str], str]:
         """The headers and body of the webhook the store sends about

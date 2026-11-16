@@ -257,12 +257,13 @@ async def test_an_admin_chooses_the_wholesale_segment_and_the_orders_are_marked_
         "o-3": None,
         "o-4": None,
     }
-    assert shop.member_reads == ["seg-b"]
+    # The store is asked once, after the customers of the orders no company bought.
+    assert shop.membership_reads == [("seg-b", ["7", "9"])]
 
     await client.put(path, json={"segment_id": None})
 
     assert await marked() == {"o-1": WholesaleBuyer.COMPANY, "o-2": None, "o-3": None, "o-4": None}
-    assert shop.member_reads == ["seg-b"]
+    assert len(shop.membership_reads) == 1
 
 
 async def test_a_consignees_location_is_never_mapped_to_a_stores(

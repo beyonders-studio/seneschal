@@ -53,7 +53,8 @@ and sends what Hoard works out where it differs from the store
 **A wholesale job** (:data:`WHOLESALE_JOB`, run by :func:`run_wholesale`)
 marks each of a store's orders again once its wholesale segment is chosen:
 an order a company bought stays wholesale, and every other is wholesale
-while its customer is in the segment now, read from the store once.
+while its customer is in the segment now, as the store answers for the
+customers of those orders.
 """
 
 from __future__ import annotations
@@ -497,7 +498,7 @@ async def queue_wholesale(db: WriteSession, store: Store, started_by: str | None
 
 async def run_wholesale(job: JobContext) -> None:
     """Mark each of the store's orders by who is in its wholesale segment now,
-    again for a segment chosen while the members were read."""
+    again for a segment chosen while the store was asked."""
     store_id = int(job.args["store_id"])
     async with job.plugin.database.organization_session(job.organization_id) as db:
         store = await db.get(Store, store_id)
@@ -507,8 +508,20 @@ async def run_wholesale(job: JobContext) -> None:
         segment, members = store.wholesale_segment, set[str]()
         if segment is not None:
             connector = await _connector(job, store, synced=True)
+            async with job.plugin.database.organization_session(job.organization_id) as db:
+                # The customers of the store's orders no company bought.
+                found = await db.exec(
+                    select(Order.store_customer)
+                    .where(
+                        Order.store_id == store_id,
+                        col(Order.store_customer).is_not(None),
+                        col(Order.wholesale).is_distinct_from(WholesaleBuyer.COMPANY),
+                    )
+                    .distinct()
+                )
+                customers = {customer for customer in found.all() if customer is not None}
             try:
-                members = await connector.segment_members(segment)
+                members = await connector.in_segment(segment, customers)
             except ConnectRefused as refused:
                 raise JobError(refused.code.value) from None
         async with job.plugin.database.write_session(
