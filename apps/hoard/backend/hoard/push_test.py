@@ -448,7 +448,12 @@ async def test_a_committed_change_is_pushed_by_the_worker(
         await db.commit()
 
         async def pushed() -> bool:
-            return shop.stock.get(("i1", "loc-1")) == 7
+            # The store hears the count before the push is marked sent, so
+            # wait for both.
+            sent = await _pushes(serving_database, db.organization_id)
+            return shop.stock.get(("i1", "loc-1")) == 7 and any(
+                push.status is PushStatus.PUSHED for push in sent
+            )
 
         await _until(pushed)
     finally:
