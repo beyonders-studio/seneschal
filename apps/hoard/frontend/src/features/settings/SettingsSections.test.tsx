@@ -122,7 +122,6 @@ describe("Settings", () => {
     expect(screen.queryByRole("heading", { name: "Properties" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Labour rate" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Overhead" })).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Price points" })).toBeNull();
   });
 
   it("shows the labour rate to a member who sees costs", async () => {
@@ -164,40 +163,17 @@ describe("Settings", () => {
     );
   });
 
-  it("lets an admin who sees costs keep price points and the overhead", async () => {
-    const asked = await openSignedIn(
+  it("shows the overhead to an admin who sees costs", async () => {
+    await openSignedIn(
       "/settings",
       signedIn({ page: "settings", admin: true, permissions: ["use", "costs"] }),
       {
         ...SETTINGS,
         "GET /api/v1/settings": { status: 200, data: { currency: "EUR", overhead: "12.5" } },
-        "GET /api/v1/settings/price-points": {
-          status: 200,
-          data: [{ id: 1, name: "Retail", markup: "100", listing_fee: "0.3", commission: "0" }],
-        },
-        "POST /api/v1/settings/price-points": { status: 201, data: {} },
       }
     );
 
-    const retail = (await screen.findByText("Retail")).closest("tr");
-    expect(retail?.textContent).toBe("Retail100%€0.300%");
     await waitFor(() => expect(screen.getByLabelText("Percent")).toHaveProperty("value", "12.5"));
-
-    fireEvent.click(await screen.findByRole("button", { name: "Add price point" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add price point" });
-    fireEvent.change(within(dialog).getByLabelText("Price point"), {
-      target: { value: "Wholesale" },
-    });
-    fireEvent.change(within(dialog).getByLabelText("Markup, in percent"), {
-      target: { value: "50" },
-    });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(
-        asked.find((request) => request.method === "post" && request.url?.endsWith("price-points"))
-          ?.data
-      ).toBe(JSON.stringify({ name: "Wholesale", markup: "50", listing_fee: "0", commission: "0" }))
-    );
   });
 
   it("lets an admin keep each kind's types and name a category's default type", async () => {

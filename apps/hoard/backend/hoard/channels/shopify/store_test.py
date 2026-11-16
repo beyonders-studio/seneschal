@@ -503,6 +503,7 @@ def _order_node(lines: dict[str, Any]) -> dict[str, Any]:
         "totalDiscountsSet": None,
         "totalRefundedSet": _money("12.50"),
         "customer": {"id": "gid://shopify/Customer/99"},
+        "purchasingEntity": {"__typename": "Customer"},
         "lineItems": lines,
     }
 
@@ -659,6 +660,9 @@ async def test_an_order_carries_its_lines_and_fulfillments():
     assert order.customer == "99"
     assert "customer { id }" in queries.ORDER_FIELDS
     assert queries.ORDER_FIELDS.count("customer") == 1
+    # Of the buyer, only whether it is a company.
+    assert not order.company
+    assert "purchasingEntity { __typename }" in queries.ORDER_FIELDS
     first, second = order.lines
     assert (first.id, first.quantity, first.price, first.sku) == (
         "gid://shopify/LineItem/1",
@@ -787,11 +791,19 @@ async def test_the_history_import_reads_a_bulk_query():
     shop.files["https://files.example/1.jsonl"] = [
         json.dumps(order),
         json.dumps({**_line(1, 3, currentQuantity=2), "__parentId": ORDER}),
-        json.dumps({**order, "id": "gid://shopify/Order/8", "name": "#1008"}),
+        json.dumps(
+            {
+                **order,
+                "id": "gid://shopify/Order/8",
+                "name": "#1008",
+                "purchasingEntity": {"__typename": "PurchasingCompany"},
+            }
+        ),
         json.dumps({**_line(2, 1), "__parentId": ORDER}),
     ]
     orders = [order async for order in shop.connector().import_history()]
     assert [(order.number, len(order.lines)) for order in orders] == [("#1007", 2), ("#1008", 0)]
+    assert [order.company for order in orders] == [False, True]
     assert [
         (line.quantity, line.current_quantity, line.refunded_quantity) for line in orders[0].lines
     ] == [(3, 2, 1), (1, 1, 0)]
@@ -1238,4 +1250,7 @@ def test_an_order_webhook_body_reads_as_the_order():
         ],
         updated_at=datetime(2026, 11, 20, 15, tzinfo=UTC),
     )
+    # The REST order names the company that bought it.
+    bought = connector.webhook_order({**body, "company": {"id": 182772, "location_id": 753095}})
+    assert bought is not None and bought.company
     assert connector.webhook_order({"name": "#1007"}) is None

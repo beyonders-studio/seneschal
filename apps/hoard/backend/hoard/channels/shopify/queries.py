@@ -234,7 +234,7 @@ query HoardAvailable($item: ID!, $location: ID!) {
 
 # Orders.
 
-# Of the customer, only their id.
+# Of the customer, only their id; of the buyer, only whether it is a company.
 ORDER_FIELDS = """
 id name processedAt updatedAt cancelledAt fullyPaid displayFulfillmentStatus currencyCode
 totalShippingPriceSet { shopMoney { amount } }
@@ -242,6 +242,7 @@ totalTaxSet { shopMoney { amount } }
 totalDiscountsSet { shopMoney { amount } }
 totalRefundedSet { shopMoney { amount } }
 customer { id }
+purchasingEntity { __typename }
 """
 
 LINE_FIELDS = """

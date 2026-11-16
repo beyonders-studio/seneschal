@@ -19,8 +19,8 @@ A connector:
 * lists the store's locations, and sets what is available at each;
 * reads, in bulk, what each inventory item cost and what is available of it
   at each location (:meth:`Connector.stock_levels`), for a store's sync;
-* reads the store's orders, with their fulfillments, and pushes a shipment
-  back as a fulfillment;
+* reads the store's orders, with their fulfillments and whether a company
+  bought them, and pushes a shipment back as a fulfillment;
 * reads a webhook delivery Initiative checked and forwarded as a
   :class:`Nudge`: which record changed, which Hoard refetches, with the body
   of an order's delivery, and reads that body as the order it describes, for
@@ -246,6 +246,8 @@ class StoreOrder:
     refunded: Decimal = Decimal(0)
     #: The store's number for its customer; None for an order with none.
     customer: str | None = None
+    #: Whether the store's buyer is a company, which buys wholesale.
+    company: bool = False
     fulfillments: Sequence[StoreFulfillment] = ()
     updated_at: datetime | None = None
 

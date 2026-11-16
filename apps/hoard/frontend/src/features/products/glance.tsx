@@ -1,12 +1,13 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ProductDetail } from "@/api/generated/hoard.schemas";
+import type { ProductDetail, SalesGroupRead } from "@/api/generated/hoard.schemas";
 import { useQuantity, useShare } from "@/features/items/format";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
 import { Badge } from "@/ui/badge";
 import { cn } from "@/ui/lib/utils";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
 /** One figure: its label over its value. */
 export function Tile({ label, children }: { label: string; children: ReactNode }) {
@@ -73,35 +74,65 @@ export function Glance({ product }: { product: ProductDetail }) {
 
 /**
  * What a product's order lines earned and what what they shipped cost, its
- * variations added up, to a member who sees costs: its revenue, the cost of
- * what shipped, and the gross profit left, marked when it is a loss. It says
- * when a shipment went out with no cost, and how many orders in another
- * currency it leaves out.
+ * variations added up, to a member who sees costs: what sold, the revenue,
+ * the gross profit left and its share of the revenue, marked when it is a
+ * loss, for retail and wholesale customers apart, or in one row while nobody
+ * bought wholesale. It says when a shipment went out with no cost, and how
+ * many orders in another currency it leaves out.
  */
 export function Profitability({ product }: { product: ProductDetail }) {
   const { t } = useTranslation("catalog");
+  const quantity = useQuantity();
   const money = useMoney();
   const share = useShare();
-  const profit = product.totals.profit;
+  const { totals } = product;
+  const profit = totals.profit;
   if (!useSeesCosts() || !profit) return null;
-  const loss = Number(profit.profit) < 0;
+  const groups: [string, SalesGroupRead][] = totals.wholesale
+    ? [
+        [t("products.profit.retail"), totals.retail],
+        [t("products.profit.wholesale"), totals.wholesale],
+      ]
+    : [[t("products.profit.all"), totals.retail]];
   return (
     <div className="flex flex-col gap-3">
       <p className="text-sm text-muted-foreground">{t("products.profit.hint")}</p>
-      <dl className="grid grid-cols-fill-32/4 gap-3">
-        <Tile label={t("products.profit.revenue")}>{money(profit.revenue)}</Tile>
-        <Tile label={t("products.profit.cost")}>{money(profit.cost)}</Tile>
-        <Tile label={t("products.profit.profit")}>
-          <span className={cn(loss && "text-destructive")}>{money(profit.profit)}</span>
-        </Tile>
-        <Tile label={t("products.profit.share")}>
-          {profit.share === null ? (
-            <span className="text-muted-foreground">{t("products.pricing.unknown")}</span>
-          ) : (
-            <span className={cn(loss && "text-destructive")}>{share(profit.share)}</span>
-          )}
-        </Tile>
-      </dl>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("products.profit.group")}</TableHead>
+            <TableHead className="text-right">{t("products.glance.sold")}</TableHead>
+            <TableHead className="text-right">{t("products.profit.revenue")}</TableHead>
+            <TableHead className="text-right">{t("products.profit.profit")}</TableHead>
+            <TableHead className="text-right">{t("products.profit.share")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {groups.map(([label, group]) => {
+            const earned = group.profit;
+            const loss = earned !== null && Number(earned.profit) < 0;
+            return (
+              <TableRow key={label}>
+                <TableCell>{label}</TableCell>
+                <TableCell className="text-right tabular-nums">{quantity(group.sold)}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {earned && money(earned.revenue)}
+                </TableCell>
+                <TableCell className={cn("text-right tabular-nums", loss && "text-destructive")}>
+                  {earned && money(earned.profit)}
+                </TableCell>
+                <TableCell className={cn("text-right tabular-nums", loss && "text-destructive")}>
+                  {earned?.share == null ? (
+                    <span className="text-muted-foreground">{t("products.pricing.unknown")}</span>
+                  ) : (
+                    share(earned.share)
+                  )}
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
       {profit.uncosted > 0 && (
         <p className="inline-flex items-center gap-2 text-sm">
           <Badge variant="warning">{t("products.profit.uncostedMark")}</Badge>

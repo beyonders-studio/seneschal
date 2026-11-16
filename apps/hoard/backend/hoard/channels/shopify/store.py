@@ -20,10 +20,12 @@
   for a store's sync.
 * **Orders** carry their lines, each with how many it sells now and how
   many were refunded, the total refunded, the customer's number and nothing
-  else about them, the fulfillments sent, and, where the store granted a
-  fulfillment order permission, the parts still to send: a scheduled part
-  carries the fulfillment order's id and the day it is due. An order's
-  refunds are read only where a line sells fewer than were ordered.
+  else about them, whether a company bought them (the order's purchasing
+  entity, or its webhook body's ``company``), the fulfillments sent, and,
+  where the store granted a fulfillment order permission, the parts still to
+  send: a scheduled part carries the fulfillment order's id and the day it is
+  due. An order's refunds are read only where a line sells fewer than were
+  ordered.
 * **The history import** reads the window the store keeps through a bulk
   query: each order with its lines, not its fulfillments.
 * **Fields** are the store's metafields. Their definitions are read for
@@ -1049,6 +1051,7 @@ def _store_order(
         refunded=_money(node.get("totalRefundedSet")),
         # The number at the end of the customer's id.
         customer=None if customer is None else customer.rsplit("/", 1)[-1],
+        company=(node.get("purchasingEntity") or {}).get("__typename") == "PurchasingCompany",
         fulfillments=list(fulfillments),
         updated_at=_datetime(node.get("updatedAt")),
     )
@@ -1140,6 +1143,8 @@ def _webhook_order(body: Mapping[str, Any]) -> StoreOrder | None:
         discount=_money(body.get("total_discounts_set")),
         refunded=refunded,
         customer=str(number) if _count(number) else None,
+        # The REST order's purchasing company: null when none bought it.
+        company=isinstance(body.get("company"), dict),
         fulfillments=fulfillments,
         updated_at=_datetime(body.get("updated_at")),
     )

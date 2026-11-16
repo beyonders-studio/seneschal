@@ -13,12 +13,15 @@ product the store no longer has loses its listings and copy.
 A store's order is copied in whole each time (:func:`copy_order`): its lines
 by the store's line ids, each sold item found through its listing, with how
 many each sells now and how many were refunded; its refunded total, its
-currency and its customer's number; and its status from the store's: cancelled, shipped once
-the store fulfilled every line, pending until it is paid, and open,
-committing what its lines sell, once it is. A copy older than the one Hoard
-holds, by the store's ``updated_at``, is skipped. An order that first claims
-its stock makes what it sells where auto-manufacture says so
+currency and its customer's number; and its status from the store's:
+cancelled, shipped once the store fulfilled every line, pending until it is
+paid, and open, committing what its lines sell, once it is. A copy older than
+the one Hoard holds, by the store's ``updated_at``, is skipped. An order that
+first claims its stock makes what it sells where auto-manufacture says so
 (``hoard.automanufacture``).
+
+A store's order is **wholesale** once the store says a company bought it
+(its B2B), and Hoard keeps nothing else about the buyer.
 
 A nudge refetches its order from the store. An order the store no longer
 returns, one older than the window it keeps, is copied from the webhook's own
@@ -435,6 +438,7 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
         currency if len(currency) == 3 and currency.isascii() and currency.isalpha() else None
     )
     order.store_updated_at = found.updated_at or order.store_updated_at
+    order.wholesale = order.wholesale or found.company
     await db.flush()
     selling_changed = await _copy_lines(db, items, order, found)
 
@@ -710,11 +714,14 @@ async def reconcile(
     since: datetime | None,
 ) -> None:
     """Copy in the store's orders and products changed since ``since``, when
-    the reconcile last succeeded, or since the store's own stamps."""
+    the reconcile last succeeded, or since the store's own stamps. A store
+    whose orders were never stamped as read has every order it lets Hoard read
+    copied in again."""
     started = _now()
     async with plugin.database.write_session(organization_id, actor=None) as db:
         kept = await db.get_one(Store, store.id, populate_existing=True)
-        products_since, orders_since = since or kept.products_since, since or kept.orders_since
+        products_since = since or kept.products_since
+        orders_since = None if kept.orders_since is None else since or kept.orders_since
         batch = []
         async for product in connector.products(products_since):
             batch.append(product)

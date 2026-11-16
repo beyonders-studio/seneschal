@@ -451,6 +451,39 @@ async def test_the_history_import_copies_orders_moving_no_stock_but_what_is_open
     assert store.orders_since is not None
 
 
+async def test_a_store_order_a_company_bought_is_wholesale(
+    db: WriteSession,
+    store: Store,
+    fake: FakeConnector,
+    sold: Sold,
+    plugin: Plugin,
+    organization_id: int,
+):
+    await sold("Tea", "v-tea")
+    await db.commit()
+    fake.history = [
+        _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", number=f"#{at}", **fields)
+        for at, fields in enumerate([{"customer": "8", "company": True}, {"customer": "8"}], 1)
+    ]
+
+    async def marks() -> dict[str | None, bool]:
+        found = await db.exec(
+            select(Order.external_id, Order.wholesale).execution_options(populate_existing=True)
+        )
+        return dict(found.all())
+
+    await sync.import_history(plugin, organization_id, store, fake)
+
+    assert await marks() == {"o-1": True, "o-2": False}
+
+    # A copy that no longer names the company keeps the order wholesale.
+    for at, company in ((1, False), (2, True)):
+        found = _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", company=company)
+        await sync.copy_order(db, store, fake, found)
+    await db.commit()
+    assert await marks() == {"o-1": True, "o-2": True}
+
+
 async def test_the_worker_refetches_what_each_nudge_names(
     db: WriteSession,
     store: Store,
@@ -649,8 +682,9 @@ async def test_the_reconcile_copies_in_what_changed(
 
     monkeypatch.setattr(listings, "adopt", adopt)
     await sold("Tea", "v-tea")
-    await db.commit()
     since = datetime(2026, 11, 1, tzinfo=UTC)
+    store.orders_since = since - timedelta(days=7)
+    await db.commit()
     for number in range(3):
         fake.shop_products[f"p-{number}"] = StoreProduct(
             id=f"p-{number}", title="Tea", updated_at=since + timedelta(days=number - 1)
@@ -671,6 +705,13 @@ async def test_the_reconcile_copies_in_what_changed(
     await db.refresh(store)
     assert store.orders_since is not None and store.orders_since > since
     assert store.products_since == store.orders_since
+
+    # A store whose orders were never stamped as read reads every one again.
+    store.orders_since = None
+    await db.commit()
+    await sync.reconcile(plugin, organization_id, store, fake, since)
+    found = await db.exec(select(Order.external_id).order_by(col(Order.external_id)))
+    assert found.all() == ["o-1", "o-2"]
 
 
 async def test_a_nudge_left_wakes_the_worker_for_its_organization(

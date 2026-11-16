@@ -9,7 +9,6 @@ import { CostSettingSection } from "@/features/settings/CostSettingSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { HoldReasonsSection } from "@/features/settings/HoldReasonsSection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
-import { PricePointsSection } from "@/features/settings/PricePointsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
 import { TypesSection } from "@/features/settings/TypesSection";
@@ -31,7 +30,6 @@ function SettingsPage() {
         <WordsSection />
         <CostSettingSection setting="labour_rate" />
         <CostSettingSection setting="overhead" />
-        <PricePointsSection />
         <UnitsSection />
         <CategoriesSection />
         <TypesSection />

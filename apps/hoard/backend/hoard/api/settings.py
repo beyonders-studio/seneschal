@@ -2,15 +2,10 @@
 what it calls a base and a recipe, what an hour of work costs and the overhead
 on what goods cost, units,
 categories with their picking rules and default types, the types of
-material, base and product, locations, adjustment reasons and price points.
-Every member reads them, but for the labour rate, the overhead and a price
-point's markup, fee and commission, which only a member who sees costs reads;
-only a community admin changes them (:data:`~hoard.api.deps.AdminDep`), and
-those only one who sees costs.
-
-An organization starts with no price points. Removing one leaves the orders
-priced at it as they are, and its contacts' new orders start at the default
-price.
+material, base and product, locations and adjustment reasons. Every member
+reads them, but for the labour rate and the overhead, which only a member who
+sees costs reads; only a community admin changes them
+(:data:`~hoard.api.deps.AdminDep`), and those only one who sees costs.
 
 An organization starts with its main location, the default adjustment reasons,
 Hoard's standard units (``hoard.units``) and each kind's default type, which
@@ -51,7 +46,6 @@ from hoard.records import (
     Location,
     OrganizationSettings,
     Picking,
-    PricePoint,
     Regime,
     StoreLocation,
     TypeShape,
@@ -163,26 +157,6 @@ class SettingsUpdate(BaseModel):
     regimes: list[Regime] | None = None
     labour_rate: NonNegative | None = None
     overhead: NonNegative | None = None
-
-
-class SettingsPricePointRead(BaseModel):
-    id: int
-    name: str
-    #: The percentage its suggested prices add to cost; null without ``costs``.
-    markup: Decimal | None
-    #: What one unit sold there pays to list it; null without ``costs``.
-    listing_fee: Decimal | None
-    #: The percentage of its price a sale there pays; null without ``costs``.
-    commission: Decimal | None
-
-
-class SettingsPricePointWrite(BaseModel):
-    name: Name
-    markup: NonNegative = Decimal(0)
-    listing_fee: NonNegative = Decimal(0)
-    commission: Annotated[Decimal, Field(ge=0, lt=100, max_digits=20, decimal_places=6)] = Decimal(
-        0
-    )
 
 
 class SettingsUnitRead(BaseModel):
@@ -743,60 +717,7 @@ async def delete_settings_reason(reason_id: int, _admin: AdminDep, db: WriteSess
     await _remove(db, await found(db, AdjustmentReason, reason_id))
 
 
-def _price_point(point: PricePoint, sees_costs: bool) -> SettingsPricePointRead:
-    read = SettingsPricePointRead.model_validate(point, from_attributes=True)
-    hidden = dict.fromkeys(("markup", "listing_fee", "commission"))
-    return read if sees_costs else read.model_copy(update=hidden)
-
-
 def _sees_costs(sees_costs: bool) -> None:
     """Refuse (403 ``COSTS_HIDDEN``) a member who doesn't see costs."""
     if not sees_costs:
         raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
-
-
-@router.get("/price-points", responses=_READ)
-async def list_settings_price_points(
-    db: OrganizationSessionDep, sees_costs: SeesCostsDep
-) -> list[SettingsPricePointRead]:
-    """The price points the organization sells at, by name."""
-    found = await db.exec(select(PricePoint).order_by(col(PricePoint.name)))
-    return [_price_point(point, sees_costs) for point in found]
-
-
-@router.post("/price-points", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
-async def create_settings_price_point(
-    body: SettingsPricePointWrite, _admin: AdminDep, db: WriteSessionDep, sees_costs: SeesCostsDep
-) -> SettingsPricePointRead:
-    _sees_costs(sees_costs)
-    point = PricePoint(organization_id=db.organization_id, **body.model_dump())
-    await _save(db, point)
-    await db.refresh(point)
-    return _price_point(point, sees_costs)
-
-
-@router.put("/price-points/{price_point_id}", responses=_CHANGE)
-async def update_settings_price_point(
-    price_point_id: int,
-    body: SettingsPricePointWrite,
-    _admin: AdminDep,
-    db: WriteSessionDep,
-    sees_costs: SeesCostsDep,
-) -> SettingsPricePointRead:
-    _sees_costs(sees_costs)
-    point = await found(db, PricePoint, price_point_id)
-    await _save(db, point, **body.model_dump())
-    await db.refresh(point)
-    return _price_point(point, sees_costs)
-
-
-@router.delete(
-    "/price-points/{price_point_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE
-)
-async def delete_settings_price_point(
-    price_point_id: int, _admin: AdminDep, db: WriteSessionDep, sees_costs: SeesCostsDep
-) -> None:
-    """Remove a price point, with the variations' prices there; the contacts
-    buying at it buy at the default price again."""
-    _sees_costs(sees_costs)
-    await _remove(db, await found(db, PricePoint, price_point_id))
