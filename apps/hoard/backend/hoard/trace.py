@@ -83,6 +83,8 @@ class TraceStep:
     from_lot_id: int | None = None
     #: The location a transfer moved it to.
     location_id: int | None = None
+    #: The shipment's line it went out on, for a shipment.
+    line_id: int | None = None
 
 
 @dataclass
@@ -102,6 +104,20 @@ class Trace:
             for lot_id in (step.made_lot_id, step.lot_id)
             if lot_id is not None and lot_id != self.lot_id
         }
+
+    def shipped(self) -> list[TraceStep]:
+        """The shipments, of a forward trace, that sent its own lot, or a lot
+        it was moved into: not those of what was made from it."""
+        moved = {self.lot_id}
+        sent = []
+        for step in self.steps:
+            if step.from_lot_id not in moved:
+                continue
+            if step.kind is StepKind.TRANSFER and step.made_lot_id is not None:
+                moved.add(step.made_lot_id)
+            elif step.kind is StepKind.SHIPMENT:
+                sent.append(step)
+        return sent
 
 
 #: What a trace reaches from one lot: each step, its own lot unset, and the
@@ -128,6 +144,7 @@ def _step(
     contact_id: int | None = None,
     assumed: bool,
     location_id: int | None = None,
+    line_id: int | None = None,
 ) -> TraceStep:
     return TraceStep(
         kind=kind,
@@ -141,6 +158,7 @@ def _step(
         assumed=assumed,
         level=0,
         location_id=location_id,
+        line_id=line_id,
     )
 
 
@@ -277,6 +295,7 @@ async def _drawn_from(db: AsyncSession, lot: Lot) -> Moves:
             dated_on=day,
             contact_id=order.customer_contact_id,
             assumed=line.assumed or line.lot_id is None,
+            line_id=line.id,
         )
         moves.append((step, None))
     moves += [
