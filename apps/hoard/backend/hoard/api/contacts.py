@@ -5,6 +5,10 @@ Hoard keeps no contacts: a purchase names its supplier by the contact's id.
 Pages read the community's own contacts, those that belong to no initiative,
 and add one there (``contacts:write``). Initiative keeps those in its
 Community contacts plug-in, so adding one needs it installed.
+
+Hoard keeps the price point each contact buys at, by the contact's id, which
+a hand order's lines start at (``hoard.orders``). Only a member who sees
+costs sets it.
 """
 
 from __future__ import annotations
@@ -14,10 +18,20 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, StringConstraints
+from sqlmodel import select
 
-from hoard.api.adjustments import Responses
-from hoard.api.deps import HoardError
-from seneschal_core.api import OrganizationDep, PluginDep, WriteSessionDep, refuse
+from hoard.api.adjustments import AdjustmentError, Responses
+from hoard.api.deps import HoardError, SeesCostsDep
+from hoard.api.settings import found
+from hoard.records import ContactPricePoint, PricePoint
+from seneschal_core.api import (
+    OrganizationDep,
+    OrganizationSessionDep,
+    PluginDep,
+    WriteSessionDep,
+    refuse,
+)
+from seneschal_core.db import OrganizationSession
 from seneschal_core.initiative_api import InitiativeRefused, InitiativeUnavailable
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -124,3 +138,50 @@ async def create_contact(
     if contact is None:
         raise _unavailable()
     return contact
+
+
+class ContactPricePointWrite(BaseModel):
+    #: The price point it buys at; null for none, buying at the default price.
+    price_point_id: int | None
+
+
+async def _held(db: OrganizationSession, contact_id: int) -> ContactPricePoint | None:
+    return (
+        await db.exec(select(ContactPricePoint).where(ContactPricePoint.contact_id == contact_id))
+    ).first()
+
+
+@router.get("/{contact_id}/price-point")
+async def read_contact_price_point(
+    contact_id: int, db: OrganizationSessionDep
+) -> ContactPricePointWrite:
+    """The price point a contact buys at."""
+    held = await _held(db, contact_id)
+    return ContactPricePointWrite(price_point_id=None if held is None else held.price_point_id)
+
+
+@router.put(
+    "/{contact_id}/price-point",
+    responses={403: {"description": "READ_ONLY, COSTS_HIDDEN"}, 404: {"description": "NOT_FOUND"}},
+)
+async def set_contact_price_point(
+    contact_id: int, body: ContactPricePointWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
+) -> ContactPricePointWrite:
+    """Set the price point a contact buys at, or none."""
+    if not sees_costs:
+        raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
+    held = await _held(db, contact_id)
+    if body.price_point_id is None:
+        if held is not None:
+            await db.delete(held)
+    else:
+        await found(db, PricePoint, body.price_point_id)
+        held = held or ContactPricePoint(
+            organization_id=db.organization_id,
+            contact_id=contact_id,
+            price_point_id=body.price_point_id,
+        )
+        held.price_point_id = body.price_point_id
+        db.add(held)
+    await db.commit()
+    return body
