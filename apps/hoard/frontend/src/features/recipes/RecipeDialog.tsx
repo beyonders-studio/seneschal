@@ -334,6 +334,11 @@ function RecipeForm({
           <legend className="mb-2 text-sm font-medium">
             {bundle ? t("dialog.holds") : t("dialog.lines")}
           </legend>
+          {(bundle || outputOf.variation_id != null) && (
+            <p className="text-xs text-muted-foreground">
+              {t(bundle ? "dialog.holdsHint" : "dialog.linesHint")}
+            </p>
+          )}
           <IncludeArchived checked={archived} onCheckedChange={setArchived} />
           {lines.map((line, index) => {
             const figures = line.itemId === null ? undefined : worked.get(line.itemId);

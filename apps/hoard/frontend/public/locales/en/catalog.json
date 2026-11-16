@@ -163,7 +163,7 @@
     },
     "types": {
       "title": "Types",
-      "hint": "A type decides the page its records are shown on: which fields it shows, and where. It never changes what a record does, and a field its page hides still counts. Lay out a type's page from the page of one of its records.",
+      "hint": "A type decides the page its records are shown on: which fields it shows, and where. It never changes what a record does, and a field its page hides still counts. Lay out a type's page from the page of one of its records. The Bundle shape is for a product sold as other products together, with no stock of its own; a gift box with packaging, or made ahead and kept, is Made, from its {{recipe}}.",
       "material": "Material types",
       "base": "{{Base}} types",
       "product": "Product types",
