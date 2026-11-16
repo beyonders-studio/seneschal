@@ -16,8 +16,9 @@ Everything that converts or scales goes through this module:
 * ratio parts from amounts (:func:`parts`) and amounts relative to the
   smallest (:func:`relative`);
 * scaling by batches, by an output quantity (:func:`scale`, :func:`scaled`) or
-  by an amount of one ingredient (:func:`use`), and the most batches the
-  amounts at hand cover (:func:`covered`, :func:`most_batches`);
+  by an amount of one ingredient (:func:`use`), a line's share of one unit of
+  what its batch makes (:func:`each`), and the most batches the amounts at
+  hand cover (:func:`covered`, :func:`most_batches`);
 * splitting a quantity in proportion, as receiving part of a purchase line
   does (:func:`split`);
 * shares by weight (:func:`percents`), and the weight a declaration counts
@@ -394,10 +395,21 @@ def scale(batch_quantity: Decimal, quantity: Decimal | None) -> Decimal:
     return Decimal(1) if quantity is None else quantity / batch_quantity
 
 
-def scaled(quantity: Decimal, batches: Decimal, *, down: bool = False) -> Decimal:
-    """``quantity`` of a line, ``batches`` over, kept to six places: rounded
-    down when ``down``, so it never asks for more than there is."""
-    return (quantity * batches).quantize(PLACES, rounding=ROUND_DOWN if down else None)
+def scaled(
+    quantity: Decimal, batches: Decimal, *, down: bool = False, exact: bool = False
+) -> Decimal:
+    """``quantity`` of a line, or what a batch makes, ``batches`` over, kept to
+    six places: rounded down when ``down``, so it never asks for more than
+    there is; or not rounded at all when ``exact``, for a figure only added up
+    or compared."""
+    found = quantity * batches
+    return found if exact else found.quantize(PLACES, rounding=ROUND_DOWN if down else None)
+
+
+def each(quantity: Decimal, makes: Decimal) -> Decimal:
+    """What one of what a batch makes takes of a line of ``quantity``, when
+    the batch makes ``makes``, exactly."""
+    return quantity / makes
 
 
 def covered(quantities: Sequence[Decimal], at_hand: Sequence[Decimal]) -> Decimal | None:

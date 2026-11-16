@@ -264,7 +264,7 @@ async def _summary(
             "item": items[run.item_id],
             "planned_quantity": None
             if batch_quantity is None
-            else (batch_quantity * run.planned_batches).quantize(PLACES),
+            else units.scaled(batch_quantity, run.planned_batches),
         }
         if sees_costs and run.status is RunStatus.COMPLETED:
             cost = costs.get(run.id, Decimal(0))
