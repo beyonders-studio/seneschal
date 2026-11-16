@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import update
 from sqlmodel import col, select
 
-from hoard import channels, push
+from hoard import channels, orders, push, recipes, runs
 from hoard.channels import ConnectError
 from hoard.channels.fake import FakeConnector
 from hoard.records import (
@@ -20,13 +20,15 @@ from hoard.records import (
     Location,
     MatchedBy,
     Product,
+    ProductionRun,
     PushStatus,
+    Recipe,
     StockPush,
     Store,
     StoreLocation,
     Variation,
 )
-from hoard.stock import add_product
+from hoard.stock import add_product, on_hand
 from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
@@ -190,6 +192,49 @@ async def test_receiving_a_listed_variation_pushes_its_count_where_the_store_map
         shop_location.id,
         3,
     )
+
+
+async def test_a_run_using_a_listed_variation_pushes_its_count_and_leaves_orders_short(
+    db: WriteSession,
+    store: Store,
+    listing: Listing,
+    shop_location: StoreLocation,
+    main: Location,
+    chai,
+    material,
+    buy,
+    sell,
+):
+    box = await material("Gift box")
+    await buy((chai, "3", "2"), (box, "5", "1"))
+    order = await sell((chai.id, "2", "4"))
+    _, gift = await add_product(db, Product(name="Chai gift box"))
+    await recipes.save(
+        db,
+        Recipe(variation_id=gift.id),
+        [recipes.Line(chai.id, Decimal(1)), recipes.Line(box.id, Decimal(1))],
+    )
+    await push.baseline(db, store)
+    push.forget_noted(db)
+
+    run = ProductionRun(
+        code="R-1", item_id=gift.id, location_id=main.id, planned_batches=Decimal(2)
+    )
+    await runs.open_run(db, run)
+    await runs.complete(db, run, Decimal(2), date(2026, 11, 3))
+
+    # Of the three, two went into gift boxes: one is left, which the open
+    # order's two commit, so the store is told none and the order is short.
+    assert await on_hand(db, chai.id) == 1
+    assert db.info["hoard.noted_items"] == {db.organization_id: {chai.id, box.id, gift.id}}
+    [queued] = await push.queue(db, [chai.id])
+    assert (queued.listing_id, queued.store_location_id, queued.quantity) == (
+        listing.id,
+        shop_location.id,
+        0,
+    )
+    [line] = (await orders.short(db, order)).values()
+    assert line == 1
 
 
 async def test_nothing_is_queued_for_unmapped_locations_cleared_or_pending_stores(

@@ -1,10 +1,12 @@
 """Recipes: what one batch of a variation or a base is made from, and how much
 a batch makes; and what a bundle holds.
 
-An ordinary recipe's lines are materials that carry stock, and bases. A bundle
-is a product whose recipe holds variations, of other products or other
-bundles, and whose own variations take no recipe of their own. Nothing is made,
-at any depth, from itself.
+An ordinary recipe's lines are materials that carry stock, bases, and
+variations of products that are not bundles, so a gift box holds an infuser
+sold on its own too, from the same stock. A bundle is a product whose recipe
+holds variations, of other products or other bundles, and whose own variations
+take no recipe of their own and are no ordinary recipe's lines, a bundle
+having no stock of its own. Nothing is made, at any depth, from itself.
 
 A line is written by amount or as parts of a ratio, in any unit that converts
 to its item's tracking unit, and keeps its quantity in the tracking unit,
@@ -42,17 +44,27 @@ class RecipeError(StrEnum):
     """Why a recipe was refused: codes pages translate."""
 
     #: A line holds what its recipe may not: an ordinary recipe holds materials
-    #: that carry stock, and bases; a bundle's holds variations.
+    #: that carry stock, bases, and variations of products that are not
+    #: bundles; a bundle's holds variations.
     RECIPE_LINE_KIND = "RECIPE_LINE_KIND"
     #: Two lines hold the same item.
     RECIPE_LINE_REPEATED = "RECIPE_LINE_REPEATED"
     #: Its output would be made, at some depth, from itself.
     RECIPE_CYCLE = "RECIPE_CYCLE"
-    #: A bundle's variations take no recipe of their own, and a product whose
-    #: variations have one is not a bundle.
+    #: A bundle's variations take no recipe of their own and are no ordinary
+    #: recipe's lines, and a product whose variations are either is not a bundle.
     RECIPE_BUNDLE = "RECIPE_BUNDLE"
     #: Its output already has a recipe.
     RECIPE_EXISTS = "RECIPE_EXISTS"
+
+
+class RecipeOutput(StrEnum):
+    """What a recipe makes."""
+
+    VARIATION = "variation"
+    BASE = "base"
+    #: A bundle product, which holds the variations its lines name.
+    BUNDLE = "bundle"
 
 
 class RecipeRefused(Exception):
@@ -116,17 +128,21 @@ async def _check_kinds(db: AsyncSession, recipe: Recipe, lines: Sequence[Line]) 
     if not ids:
         return
     found = await db.exec(
-        select(Item.kind, Material.inventoriable)
+        select(Item.kind, Material.inventoriable, Product.bundle)
         .outerjoin(Material, col(Material.id) == col(Item.id))
+        .outerjoin(Variation, col(Variation.id) == col(Item.id))
+        .outerjoin(Product, col(Product.id) == col(Variation.product_id))
         .where(col(Item.id).in_(ids))
     )
     kinds = found.all()
     if recipe.product_id is not None:
-        allowed = all(kind is ItemKind.VARIATION for kind, _ in kinds)
+        allowed = all(kind is ItemKind.VARIATION for kind, _, _ in kinds)
     else:
         allowed = all(
-            kind is ItemKind.BASE or (kind is ItemKind.MATERIAL and inventoriable)
-            for kind, inventoriable in kinds
+            kind is ItemKind.BASE
+            or (kind is ItemKind.MATERIAL and inventoriable)
+            or (kind is ItemKind.VARIATION and not bundle)
+            for kind, inventoriable, bundle in kinds
         )
     if len(kinds) != len(ids) or not allowed:
         raise RecipeRefused(RecipeError.RECIPE_LINE_KIND)
@@ -140,7 +156,12 @@ async def _check_bundle(db: AsyncSession, recipe: Recipe) -> None:
     elif recipe.product_id is not None:
         variations = select(Variation.id).where(Variation.product_id == recipe.product_id)
         made = await db.exec(select(Recipe.id).where(col(Recipe.variation_id).in_(variations)))
-        clash = made.first() is not None
+        held = await db.exec(
+            select(RecipeLine.id)
+            .join(Recipe, col(Recipe.id) == col(RecipeLine.recipe_id))
+            .where(col(RecipeLine.item_id).in_(variations), col(Recipe.product_id).is_(None))
+        )
+        clash = made.first() is not None or held.first() is not None
     else:
         clash = False
     if clash:

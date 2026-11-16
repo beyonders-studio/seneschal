@@ -20,7 +20,6 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
-from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
@@ -34,7 +33,7 @@ from hoard.api.adjustments import AdjustmentItem, describe_items
 from hoard.api.deps import SeesCostsDep
 from hoard.api.settings import found, require_references
 from hoard.api.shapes import Page, PageDep
-from hoard.recipes import RecipeError, RecipeRefused
+from hoard.recipes import RecipeError, RecipeOutput, RecipeRefused
 from hoard.records import Base, CategoryKind, OrganizationSettings, Product, Recipe, Variation
 from hoard.units import UnitRefused
 from seneschal_core.api import ErrorCode, OrganizationSessionDep, WriteSessionDep, refuse
@@ -63,15 +62,6 @@ _WORKED: dict[int | str, dict[str, Any]] = {
     **_READ,
     422: {"description": "RECIPE_RATIO_TOTAL, UNIT_NOT_CONVERTIBLE, AMOUNT_TOO_SMALL"},
 }
-
-
-class RecipeOutput(StrEnum):
-    """What a recipe makes."""
-
-    VARIATION = "variation"
-    BASE = "base"
-    #: A bundle product, which holds the variations its lines name.
-    BUNDLE = "bundle"
 
 
 class RecipeLineCost(BaseModel):

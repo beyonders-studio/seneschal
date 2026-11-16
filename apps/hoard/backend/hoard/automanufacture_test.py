@@ -133,3 +133,26 @@ async def test_a_claimed_order_makes_what_it_sells_as_each_variation_says(
     # Claimed again, nothing more is made.
     await automanufacture.on_claimed(db, order)
     assert len(await _runs(db)) == 2
+
+
+async def test_a_made_product_held_by_what_is_sold_is_not_made_in_turn(
+    db: WriteSession, material, sell
+):
+    steel = await material("Steel")
+    _, infuser = await add_product(
+        db, Product(name="Tea infuser", auto_manufacture=AutoManufacture.ALWAYS)
+    )
+    _, gift = await add_product(
+        db, Product(name="Gift box", auto_manufacture=AutoManufacture.OUT_OF_STOCK)
+    )
+    await _made_from(db, infuser, steel, "5")
+    await _made_from(db, gift, infuser, "1")
+
+    order = await sell((gift.id, "2", "20"))
+    await automanufacture.on_claimed(db, order)
+
+    # Only the gift boxes are made, of infusers there are none of: the
+    # infuser goes negative and isn't made, though it has a recipe.
+    assert await _runs(db) == [(gift.id, 2, RunStatus.COMPLETED)]
+    assert (await on_hand(db, gift.id), await on_hand(db, infuser.id)) == (2, -2)
+    assert await on_hand(db, steel.id) == 0
