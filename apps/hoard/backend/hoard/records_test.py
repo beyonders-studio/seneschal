@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from sqlmodel import col, select
 
+from hoard.codes import next_code
 from hoard.records import (
     MAX_IMAGE_BYTES,
     Adjustment,
@@ -34,6 +35,7 @@ from hoard.records import (
     PropertyDefinition,
     PropertyType,
     PropertyValue,
+    Purchase,
     Recipe,
     RecordKind,
     Stocktake,
@@ -73,6 +75,27 @@ async def test_an_organization_reaches_and_references_none_of_anothers_materials
                 text("INSERT INTO units (organization_id, name) VALUES (:org, 'stray')"),
                 {"org": db.organization_id},
             )
+
+
+async def test_each_organization_numbers_its_own_codes(
+    serving_database: Database, db: WriteSession, main, community_ref: str
+):
+    for code in ("P-0041", "P-ODD", "P-7"):
+        db.add(
+            Purchase(
+                organization_id=db.organization_id,
+                code=code,
+                dated_on=date(2026, 11, 1),
+                location_id=main.id,
+            )
+        )
+    await db.commit()
+    other = await _another_organization(serving_database, community_ref)
+
+    # The highest number in the same shape is counted on from; another shape isn't.
+    assert await next_code(db, Purchase, "P") == "P-0042"
+    async with serving_database.write_session(other, actor=None) as theirs:
+        assert await next_code(theirs, Purchase, "P") == "P-0001"
 
 
 async def test_records_say_who_made_and_last_changed_them(

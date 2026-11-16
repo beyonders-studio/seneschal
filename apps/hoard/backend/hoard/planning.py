@@ -53,7 +53,7 @@ import statistics
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -68,7 +68,6 @@ from hoard.holds import held_lots
 from hoard.records import (
     PLACES,
     Adjustment,
-    AdjustmentKind,
     DefaultHoldReason,
     Hold,
     HoldReason,
@@ -347,25 +346,19 @@ class MaterialShort:
 async def lead_days(db: AsyncSession) -> dict[int, int]:
     """Each supplier's median days from ordering to receiving, over its
     purchases received in full, rounded up. A purchase is received on the day
-    its last line was."""
-    received = func.max(Adjustment.created_at)
+    its last line arrived, as its receipt says."""
+    received = func.max(PurchaseLine.received_on)
     rows = await db.exec(
         select(col(Purchase.supplier_contact_id), col(Purchase.dated_on), received)
         .join(PurchaseLine, col(PurchaseLine.purchase_id) == Purchase.id)
-        .outerjoin(
-            Adjustment,
-            and_(
-                col(Adjustment.purchase_line_id) == PurchaseLine.id,
-                col(Adjustment.kind) == AdjustmentKind.PURCHASE,
-            ),
-        )
         .where(col(Purchase.supplier_contact_id).is_not(None))
         .group_by(col(Purchase.id), col(Purchase.supplier_contact_id), col(Purchase.dated_on))
-        .having(func.bool_and(col(PurchaseLine.received_on).is_not(None)), received.is_not(None))
+        .having(func.bool_and(col(PurchaseLine.received_on).is_not(None)))
     )
     days: dict[int | None, list[int]] = defaultdict(list)
-    for supplier_id, ordered_on, received_at in rows.all():
-        days[supplier_id].append(max((received_at.astimezone(UTC).date() - ordered_on).days, 0))
+    for supplier_id, ordered_on, received_on in rows.all():
+        if received_on is not None:
+            days[supplier_id].append(max((received_on - ordered_on).days, 0))
     return {
         supplier_id: math.ceil(statistics.median(each))
         for supplier_id, each in days.items()

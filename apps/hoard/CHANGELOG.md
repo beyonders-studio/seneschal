@@ -64,6 +64,8 @@ All notable changes to Hoard are recorded here. The format follows
 ### Fixed
 
 - **Ingredient lists and fragrance allergens weigh what they list.** A material tracked in kilograms now outweighs one tracked in grams as it should, and one tracked by volume or by count is no longer counted as that many grams: it's listed as unweighed, at the end, and its fragrance shares are marked incomplete, until you record what one of its units weighs.
+- **Run, order and purchase codes count from your own.** A new code follows your highest, starting at `R-0001`, `O-0001` and `P-0001`, rather than jumping ahead.
+- **A supplier's lead time counts to the day goods arrived,** as the receipt says, not the day it was entered.
 
 ## [0.2.0] - 2026-11-15
 

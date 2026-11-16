@@ -44,7 +44,7 @@ from enum import StrEnum
 from sqlalchemy import delete, func
 from sqlmodel import col, or_, select
 
-from hoard import costing, events, holds, recipes, summary, units
+from hoard import codes, costing, events, holds, recipes, summary, units
 from hoard.holds import HoldError
 from hoard.records import (
     PLACES,
@@ -110,8 +110,7 @@ async def lines(db: WriteSession, run_id: int) -> list[ProductionRunLine]:
 
 async def next_code(db: WriteSession) -> str:
     """The next free ``R-`` code."""
-    latest = (await db.exec(select(func.max(ProductionRun.id)))).one()
-    return f"R-{(latest or 0) + 1:04d}"
+    return await codes.next_code(db, ProductionRun, "R")
 
 
 async def _recipe_lines(db: OrganizationSession, recipe: Recipe) -> list[RecipeLine]:
