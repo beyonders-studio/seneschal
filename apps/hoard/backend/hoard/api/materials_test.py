@@ -2,22 +2,28 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
-from hoard import plugin_manifest
+from hoard import plugin_manifest, recipes, runs
+from hoard.recipes import Line
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
     Category,
     CategoryKind,
+    ItemStatus,
     ItemType,
     Location,
     Material,
+    Product,
+    Purchase,
+    PurchaseLine,
+    Recipe,
     TypeShape,
     Unit,
 )
-from hoard.stock import adjust
+from hoard.stock import add_product, adjust
 from seneschal_core.db import WriteSession
 
 #: A material's stock row's figures that only a recipe or a stocktake gives.
@@ -281,3 +287,69 @@ async def test_an_archived_material_leaves_pickers_and_comes_back_as_it_was(
         "Keep sealed",
         "4.000000",
     )
+
+
+async def test_a_material_page_shows_what_is_on_order_its_usage_and_what_uses_it(
+    client, sign_in, db: WriteSession, main: Location, unit: Unit, material, base, buy
+):
+    chamomile = await material("Chamomile")
+    blend = await base("Sleepy blend", status=ItemStatus.ARCHIVED)
+    await recipes.save(
+        db,
+        Recipe(base_id=blend.id, batch_quantity=Decimal(100)),
+        [Line(chamomile.id, Decimal(100))],
+    )
+    product, tin = await add_product(db, Product(name="Chamomile tin"))
+    await recipes.save(db, Recipe(variation_id=tin.id), [Line(chamomile.id, Decimal(50))])
+    today = date.today()
+    await buy((chamomile, "500", "1"), dated_on=today)
+    await runs.make(db, blend.id, main.id, Decimal(200), today)
+    late = Purchase(
+        organization_id=db.organization_id,
+        code="P-LATE",
+        dated_on=today - timedelta(days=10),
+        expected_on=today - timedelta(days=1),
+        location_id=main.id,
+    )
+    db.add(late)
+    await db.flush()
+    db.add(
+        PurchaseLine(
+            organization_id=db.organization_id,
+            purchase_id=late.id,
+            item_id=chamomile.id,
+            purchase_quantity=Decimal(250),
+            tracking_quantity=Decimal(250),
+            unit_cost=Decimal(1),
+        )
+    )
+    await db.commit()
+    await sign_in(client)
+
+    page = (await client.get(f"/api/v1/materials/{chamomile.id}")).json()
+
+    assert (page["on_order"], page["overdue"]) == ("250.000000", True)
+    assert page["usage"][0] == {"window": "week", "received": "500.000000", "used": "200.000000"}
+    assert [usage["window"] for usage in page["usage"]] == [
+        "week",
+        "month",
+        "months_3",
+        "months_6",
+        "months_12",
+        "all",
+    ]
+    # By what each makes, the archived blend marked so.
+    assert [
+        (used["output"], used["output_id"], used["product_id"], used["archived"])
+        for used in page["used_in"]
+    ] == [
+        ("variation", tin.id, product.id, False),
+        ("base", blend.id, None, True),
+    ]
+    assert {
+        (used["amount"], used["unit_id"], used["batch_quantity"], used["batch_unit_id"])
+        for used in page["used_in"]
+    } == {
+        ("50.000000", unit.id, "1.000000", None),
+        ("100.000000", unit.id, "100.000000", unit.id),
+    }

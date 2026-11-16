@@ -288,7 +288,11 @@ async def delete_purchase(db: WriteSession, purchase: Purchase) -> None:
     await db.flush()
 
 
-def overdue(purchase: Purchase, on_order: bool) -> bool:
-    """Whether ``purchase`` is past the day it was expected with lines still
-    ``on_order``."""
-    return on_order and purchase.expected_on is not None and purchase.expected_on < date.today()
+def overdue(purchase: Purchase, on_order: bool, today: date | None = None) -> bool:
+    """Whether ``purchase`` is past the day it was expected, as it stands
+    ``today``, with lines still ``on_order``."""
+    return (
+        on_order
+        and purchase.expected_on is not None
+        and purchase.expected_on < (today or date.today())
+    )

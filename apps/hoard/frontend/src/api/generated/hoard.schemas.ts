@@ -178,6 +178,61 @@ export interface BaseCreate {
 }
 
 /**
+ * A span of days ending today that usage is read over: the last week,
+ * the last 1, 3, 6 and 12 months, or all time.
+ */
+export type UsageWindow = (typeof UsageWindow)[keyof typeof UsageWindow];
+
+export const UsageWindow = {
+  week: "week",
+  month: "month",
+  months_3: "months_3",
+  months_6: "months_6",
+  months_12: "months_12",
+  all: "all",
+} as const;
+
+/**
+ * What an item received by purchases and what production runs used of
+ * it, over one window ending today (``hoard.summary``).
+ */
+export interface ItemUsage {
+  window: UsageWindow;
+  received: string;
+  used: string;
+}
+
+/**
+ * What a recipe makes.
+ */
+export type RecipeOutput = (typeof RecipeOutput)[keyof typeof RecipeOutput];
+
+export const RecipeOutput = {
+  variation: "variation",
+  base: "base",
+  bundle: "bundle",
+} as const;
+
+export type ItemUsedInAttributes = { [key: string]: string };
+
+/**
+ * A recipe holding an item, and what it makes: a base or a variation.
+ */
+export interface ItemUsedIn {
+  recipe_id: number;
+  output: RecipeOutput;
+  output_id: number;
+  product_id: number | null;
+  name: string;
+  attributes: ItemUsedInAttributes;
+  archived: boolean;
+  batch_quantity: string;
+  batch_unit_id: number | null;
+  amount: string;
+  unit_id: number | null;
+}
+
+/**
  * An item's stock at one location, and its bin there (``hoard.summary``).
  */
 export interface ItemStockRead {
@@ -454,6 +509,10 @@ export interface BaseDetail {
   potential: string | null;
   made: string;
   last_stocktake: string | null;
+  on_order: string;
+  overdue: boolean;
+  usage: ItemUsage[];
+  used_in: ItemUsedIn[];
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;
@@ -1418,6 +1477,10 @@ export interface MaterialDetail {
   potential: string | null;
   made: string;
   last_stocktake: string | null;
+  on_order: string;
+  overdue: boolean;
+  usage: ItemUsage[];
+  used_in: ItemUsedIn[];
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;
@@ -1797,17 +1860,6 @@ export interface RecipeCost {
   unit_cost: string;
 }
 
-/**
- * What a recipe makes.
- */
-export type RecipeOutput = (typeof RecipeOutput)[keyof typeof RecipeOutput];
-
-export const RecipeOutput = {
-  variation: "variation",
-  base: "base",
-  bundle: "bundle",
-} as const;
-
 export type RecipeReadAttributes = { [key: string]: string };
 
 export interface RecipeRead {
@@ -1953,6 +2005,10 @@ export interface ProductVariationRead {
   potential: string | null;
   made: string;
   last_stocktake: string | null;
+  on_order: string;
+  overdue: boolean;
+  usage: ItemUsage[];
+  used_in: ItemUsedIn[];
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;

@@ -142,6 +142,24 @@ async def test_a_product_without_a_recipe_declares_what_it_records(db: WriteSess
     assert (await Declarations(db).product(infuser)).unweighed == []
 
 
+async def test_a_made_product_declares_the_variations_its_recipe_holds(db: WriteSession, material):
+    chamomile = await material("Chamomile", allergens=[])
+    _, tin = await add_product(db, Product(name="Chamomile tin"))
+    await _recipe(db, [(chamomile.id, "50")], variation_id=tin.id)
+    _, infuser = await add_product(
+        db, Product(name="Tea infuser", ingredient_name="Steel infuser", allergens=[])
+    )
+    gift, box = await add_product(db, Product(name="Gift box"))
+    await _recipe(db, [(tin.id, "1"), (infuser.id, "1")], variation_id=box.id)
+
+    declared = await Declarations(db).product(gift)
+
+    # The tin rolls up through its recipe, weighed; the infuser bought as it
+    # is sold is counted by what it records, unweighed.
+    assert declared.ingredients == ["Chamomile", "Steel infuser"]
+    assert (declared.unweighed, declared.undeclared) == (["Steel infuser"], [])
+
+
 async def test_a_run_declares_its_lots_and_its_output_lot_the_run(
     db: WriteSession, material, base, main: Location
 ):

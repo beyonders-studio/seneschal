@@ -63,7 +63,9 @@ const BOUGHT_KINDS: readonly ItemKind[] = ["material", "variation"];
 /**
  * An item to move: a material, a base or a product's variation, of `kinds`;
  * or, with `bought`, what a purchase buys: any material, one that keeps no
- * stock included, or a variation of a product that is not a bundle. A product
+ * stock included, or a variation of a product that is not a bundle. Without
+ * `bundles`, a bundle's variations are left out, a bundle having no stock of
+ * its own; they are offered unless `bought`. A product
  * with several variations is picked first, then one of them; a product with
  * one is that one. `chosen` names `value` when the field opens with it set;
  * `clearLabel` offers picking none, as that button's name.
@@ -75,6 +77,7 @@ export function ItemField({
   chosen = null,
   bought = false,
   kinds = bought ? BOUGHT_KINDS : EVERY_KIND,
+  bundles = !bought,
   clearLabel,
 }: {
   label: string;
@@ -83,6 +86,7 @@ export function ItemField({
   chosen?: string | null;
   bought?: boolean;
   kinds?: readonly ItemKind[];
+  bundles?: boolean;
   clearLabel?: string;
 }) {
   const { t } = useTranslation("movements");
@@ -115,7 +119,7 @@ export function ItemField({
       hint: t("item.kinds.base"),
     })),
     ...(products.data?.items ?? [])
-      .filter((one) => !bought || !one.bundle)
+      .filter((one) => bundles || !one.bundle)
       .map((one) => ({
         value: `p${one.id}`,
         label: one.name,

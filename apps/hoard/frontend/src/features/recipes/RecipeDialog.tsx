@@ -67,8 +67,9 @@ const isPositive = (text: string) => text.trim() !== "" && Number(text) > 0;
  * Adding a recipe for `output`, or editing `recipe`, in a dialog titled
  * `title`: how much a batch makes and how long it takes, and its lines in
  * order, written by amount or by ratio. Hoard works the draft out as it is
- * typed, so each line shows its other column and its share by weight. A
- * bundle's lines are variations, and it makes one of itself.
+ * typed, so each line shows its other column and its share by weight. Its
+ * lines are materials, bases and variations of products that are not
+ * bundles; a bundle's are variations, and it makes one of itself.
  */
 export function RecipeDialog({
   recipe,
@@ -301,7 +302,8 @@ function RecipeForm({
               <div key={line.key} className="flex flex-wrap items-end gap-2">
                 <div className="min-w-48 flex-1">
                   <ItemField
-                    kinds={bundle ? ["variation"] : ["material", "base"]}
+                    kinds={bundle ? ["variation"] : ["material", "base", "variation"]}
+                    bundles={bundle}
                     label={t("dialog.item", { number: index + 1 })}
                     value={line.itemId}
                     chosen={line.name}

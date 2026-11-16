@@ -387,22 +387,14 @@ async def materials_short(db: AsyncSession, runs: Iterable[Run]) -> list[Materia
             select(Material).where(col(Material.id).in_(needed), col(Material.inventoriable))
         )
     ).all()
-    on_order = dict(
-        (
-            await db.exec(
-                select(PurchaseLine.item_id, func.sum(PurchaseLine.tracking_quantity))
-                .where(col(PurchaseLine.received_on).is_(None))
-                .group_by(col(PurchaseLine.item_id))
-            )
-        ).all()
-    )
+    on_order = await summary.on_order(db, [material.id for material in materials])
     lead = await lead_days(db)
     found: list[tuple[str, MaterialShort]] = []
     for material in materials:
         short = (
             needed[material.id]
             - (await summary.stock_at(db, material.id)).available
-            - Decimal(on_order.get(material.id, 0))
+            - on_order.get(material.id, summary.OnOrder()).quantity
         )
         if short <= 0:
             continue

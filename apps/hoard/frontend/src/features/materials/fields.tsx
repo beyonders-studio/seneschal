@@ -22,6 +22,7 @@ import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { ItemPicture } from "@/features/items/ItemPicture";
 import { LotsTable } from "@/features/items/lots";
+import { OnOrder, UsageTable, UsedInTable } from "@/features/items/usage";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
@@ -107,6 +108,14 @@ const Picture = ({ item }: { item: MaterialDetail }) => (
   <ItemPicture item={item} onChanged={useRefetch(item)} />
 );
 
+const OnOrderOf = ({ item }: { item: MaterialDetail }) => (
+  <OnOrder item={item} unit={useSettingsNames().unit(item.tracking_unit_id)} />
+);
+
+const Usage = ({ item }: { item: MaterialDetail }) => (
+  <UsageTable usage={item.usage} unit={useSettingsNames().unit(item.tracking_unit_id)} />
+);
+
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
 /** What a material records of its own and declares, each a field of its page. */
@@ -127,6 +136,7 @@ const INGREDIENT = {
       type: "section",
       children: [
         "on_hand",
+        "on_order",
         "last_stocktake",
         "low_stock_limit",
         "sku",
@@ -147,12 +157,14 @@ const INGREDIENT = {
     at(4, field("notes")),
     at(5, field("stock")),
     at(6, field("lots")),
-    at(7, field("declarations")),
-    at(8, field("runs")),
-    at(9, field("adjustments")),
-    at(10, field("stocktakes")),
-    at(11, field("documents")),
-    at(12, { type: "byline" }),
+    at(7, field("usage")),
+    at(8, field("used_in")),
+    at(9, field("declarations")),
+    at(10, field("runs")),
+    at(11, field("adjustments")),
+    at(12, field("stocktakes")),
+    at(13, field("documents")),
+    at(14, { type: "byline" }),
   ],
   side: [at(2, { type: "section", children: [{ type: "properties" }] })],
 };
@@ -242,6 +254,7 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
     ),
   ],
   pageFields: [
+    builtin("on_order", "catalog:items.onOrder", (material) => material.on_order, OnOrderOf),
     builtin(
       "last_stocktake",
       "catalog:items.lastStocktake",
@@ -264,6 +277,13 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       "catalog:items.lots",
       (material) => material.id,
       ({ item }) => <LotsTable lots={item.lots} />
+    ),
+    builtin("usage", "catalog:items.usage.title", (material) => material.id, Usage),
+    builtin(
+      "used_in",
+      "catalog:items.usedIn.title",
+      (material) => material.id,
+      ({ item }) => <UsedInTable usedIn={item.used_in} />
     ),
     builtin(
       "runs",

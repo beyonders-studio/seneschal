@@ -21,6 +21,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func
 from sqlmodel import col, select
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import costing
 from hoard.api.deps import HoardError, SeesCostsDep
@@ -85,9 +86,7 @@ class AdjustmentItem(BaseModel):
     archived: bool
 
 
-async def describe_items(
-    db: OrganizationSession, item_ids: Collection[int]
-) -> dict[int, AdjustmentItem]:
+async def describe_items(db: AsyncSession, item_ids: Collection[int]) -> dict[int, AdjustmentItem]:
     """Each of ``item_ids`` that names an item, described, by id."""
     ids = sorted(set(item_ids))
     if not ids:

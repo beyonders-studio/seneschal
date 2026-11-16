@@ -64,6 +64,72 @@ describe("MaterialPage", () => {
     expect(screen.queryByText("Average cost")).toBeNull();
   });
 
+  it("shows what is on order, its usage and the recipes it goes into", async () => {
+    const usage = (received: string, used: string) => ({ received, used });
+    await openSignedIn("/stock/materials/5", signedIn(), {
+      ...SETTINGS,
+      "GET /api/v1/materials/5": {
+        status: 200,
+        data: {
+          ...OOLONG,
+          on_order: "253.592000",
+          overdue: true,
+          usage: OOLONG.usage.map((row) => ({
+            ...row,
+            ...(row.window === "week" ? usage("100", "20") : usage("180", "30")),
+          })),
+          used_in: [
+            {
+              recipe_id: 3,
+              output: "variation",
+              output_id: 20,
+              product_id: 7,
+              name: "Oolong tin",
+              attributes: {},
+              archived: false,
+              batch_quantity: "1.000000",
+              batch_unit_id: null,
+              amount: "50.000000",
+              unit_id: 1,
+            },
+            {
+              recipe_id: 4,
+              output: "base",
+              output_id: 8,
+              product_id: null,
+              name: "Sleepy blend",
+              attributes: {},
+              archived: true,
+              batch_quantity: "300.000000",
+              batch_unit_id: 1,
+              amount: "100.000000",
+              unit_id: 1,
+            },
+          ],
+        },
+      },
+    });
+
+    const onOrder = (await screen.findByText("253.592 g")).closest("span");
+    if (!onOrder) throw new Error("no on order");
+    within(onOrder).getByText("Overdue");
+    const week = screen.getByText("The last week").closest("tr");
+    if (!week) throw new Error("no week");
+    within(week).getByText("100 g");
+    within(week).getByText("20 g");
+    const all = screen.getByText("All time").closest("tr");
+    if (!all) throw new Error("no all time");
+    within(all).getByText("180 g");
+    expect(screen.getByRole("link", { name: "Oolong tin" }).getAttribute("href")).toContain(
+      "/stock/products/7"
+    );
+    const blend = screen.getByRole("link", { name: "Sleepy blend" }).closest("tr");
+    if (!blend) throw new Error("no blend");
+    within(blend).getByText("Archived");
+    within(blend).getByText("100 g");
+    within(blend).getByText("300 g");
+  });
+
   it("shows its average cost to a member who sees costs", async () => {
     await openSignedIn("/stock/materials/5", signedIn({ permissions: ["use", SEE_COSTS] }), opened);
 

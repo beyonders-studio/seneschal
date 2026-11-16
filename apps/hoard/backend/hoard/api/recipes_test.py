@@ -71,11 +71,11 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
         json={"base_id": syrup.id, "lines": [{"item_id": spice.id, "written": "1"}]},
     )
     assert (cycle.status_code, cycle.json()) == (422, {"detail": "RECIPE_CYCLE"})
-    product = await client.post(
+    itself = await client.post(
         "/api/v1/recipes",
         json={"variation_id": latte_one.id, "lines": [{"item_id": latte_one.id, "written": "1"}]},
     )
-    assert (product.status_code, product.json()) == (422, {"detail": "RECIPE_LINE_KIND"})
+    assert (itself.status_code, itself.json()) == (422, {"detail": "RECIPE_CYCLE"})
     await client.post(
         "/api/v1/recipes",
         json={"variation_id": latte_one.id, "lines": [{"item_id": spice.id, "written": "5"}]},
@@ -101,8 +101,9 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
 async def test_a_bundle_s_recipe_holds_variations_and_marks_its_product(
     client, sign_in, db: WriteSession, material
 ):
-    box, _ = await add_product(db, Product(name="Tea box"))
+    box, box_one = await add_product(db, Product(name="Tea box"))
     _, tin = await add_product(db, Product(name="Tin of oolong"))
+    _, gift = await add_product(db, Product(name="Gift box"))
     tea = await material("Oolong")
     await db.commit()
     await sign_in(client)
@@ -124,6 +125,19 @@ async def test_a_bundle_s_recipe_holds_variations_and_marks_its_product(
     ]
     await db.refresh(box)
     assert box.bundle
+
+    # A recipe making a product holds another's variation, but not a bundle's.
+    def gift_box(*lines: int) -> dict:
+        return {
+            "variation_id": gift.id,
+            "lines": [{"item_id": item_id, "written": "1"} for item_id in lines],
+        }
+
+    held = await client.post("/api/v1/recipes", json=gift_box(box_one.id, tea.id))
+    assert (held.status_code, held.json()) == (422, {"detail": "RECIPE_LINE_KIND"})
+    made = await client.post("/api/v1/recipes", json=gift_box(tin.id, tea.id))
+    assert made.status_code == 201
+    assert [line["item"]["id"] for line in made.json()["lines"]] == [tin.id, tea.id]
 
 
 async def test_a_ratio_reads_beside_its_amounts_and_a_draft_switches_both_ways(

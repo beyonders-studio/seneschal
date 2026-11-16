@@ -16,6 +16,7 @@ import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { ItemPicture } from "@/features/items/ItemPicture";
 import { LotsTable } from "@/features/items/lots";
+import { UsageTable, UsedInTable } from "@/features/items/usage";
 import { BaseRecipe } from "@/features/recipes/BaseRecipe";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMoney } from "@/lib/money";
@@ -96,6 +97,10 @@ const Picture = ({ item }: { item: BaseDetail }) => (
   <ItemPicture item={item} onChanged={useRefetch(item)} />
 );
 
+const Usage = ({ item }: { item: BaseDetail }) => (
+  <UsageTable usage={item.usage} unit={useSettingsNames().unit(item.tracking_unit_id)} />
+);
+
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
 /** A base's page, as the Base shape draws it. */
@@ -123,11 +128,13 @@ const BASE = {
     at(5, field("recipe")),
     at(6, field("stock")),
     at(7, field("lots")),
-    at(8, field("runs")),
-    at(9, field("adjustments")),
-    at(10, field("stocktakes")),
-    at(11, field("documents")),
-    at(12, { type: "byline" }),
+    at(8, field("usage")),
+    at(9, field("used_in")),
+    at(10, field("runs")),
+    at(11, field("adjustments")),
+    at(12, field("stocktakes")),
+    at(13, field("documents")),
+    at(14, { type: "byline" }),
   ],
   side: [at(2, { type: "section", children: [{ type: "properties" }] })],
 };
@@ -210,6 +217,13 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       "catalog:items.lots",
       (base) => base.id,
       ({ item }) => <LotsTable lots={item.lots} />
+    ),
+    builtin("usage", "catalog:items.usage.title", (base) => base.id, Usage),
+    builtin(
+      "used_in",
+      "catalog:items.usedIn.title",
+      (base) => base.id,
+      ({ item }) => <UsedInTable usedIn={item.used_in} />
     ),
     builtin(
       "runs",

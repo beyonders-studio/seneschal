@@ -2,6 +2,7 @@ import type {
   BaseDetail,
   BaseRead,
   ItemStockRead,
+  ItemUsage,
   MaterialDetail,
   MaterialRead,
   ProductDetail,
@@ -53,8 +54,21 @@ export const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/members": { status: 200, data: [{ member_ref: "member-ref", name: "Ada" }] },
 };
 
-/** An item's figures with no recipe, run or stocktake behind them. */
-const FIGURES = { potential: null, made: "0", last_stocktake: null };
+/** The windows usage is read over, each with nothing received or used. */
+const NO_USAGE: ItemUsage[] = (
+  ["week", "month", "months_3", "months_6", "months_12", "all"] as const
+).map((window) => ({ window, received: "0", used: "0" }));
+
+/** An item's figures with no recipe, run, stocktake or purchase behind them. */
+const FIGURES = {
+  potential: null,
+  made: "0",
+  last_stocktake: null,
+  on_order: "0",
+  overdue: false,
+  usage: NO_USAGE,
+  used_in: [],
+};
 
 /** A row of an item's stock table: what is on hand at a location. */
 export const stockRow = (
