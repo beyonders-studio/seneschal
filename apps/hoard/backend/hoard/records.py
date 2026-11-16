@@ -1442,6 +1442,8 @@ class ProductionRun(OrganizationRow, Stamped, table=True):
     #: Whether a material it consumed had no cost on its date, which
     #: ``hoard.costing`` keeps.
     uncosted: bool = False
+    #: Its own notes, beside its recipe's method.
+    notes: str | None = None
 
 
 class ProductionRunLine(OrganizationRow, Stamped, table=True):
@@ -1531,9 +1533,9 @@ class Hold(OrganizationRow, Stamped, table=True):
 
 
 class DocumentLink(OrganizationRow, Stamped, table=True):
-    """An Initiative file linked to one lot, product, material or base, such
-    as a supplier's certificate or a report of a problem. Hoard keeps only the
-    file's id."""
+    """An Initiative file linked to one lot, product, material, base or
+    production run, such as a supplier's certificate or a report of a problem.
+    Hoard keeps only the file's id."""
 
     __tablename__ = "document_links"
     __table_args__ = (
@@ -1541,6 +1543,7 @@ class DocumentLink(OrganizationRow, Stamped, table=True):
         reference("document_links", "product_id", "products", ondelete="CASCADE"),
         reference("document_links", "material_id", "materials", ondelete="CASCADE"),
         reference("document_links", "base_id", "bases", ondelete="CASCADE"),
+        reference("document_links", "run_id", "production_runs", ondelete="CASCADE"),
         UniqueConstraint("organization_id", "lot_id", "file_id", name="uq_document_links_lot"),
         UniqueConstraint(
             "organization_id", "product_id", "file_id", name="uq_document_links_product"
@@ -1549,8 +1552,9 @@ class DocumentLink(OrganizationRow, Stamped, table=True):
             "organization_id", "material_id", "file_id", name="uq_document_links_material"
         ),
         UniqueConstraint("organization_id", "base_id", "file_id", name="uq_document_links_base"),
+        UniqueConstraint("organization_id", "run_id", "file_id", name="uq_document_links_run"),
         CheckConstraint(
-            "num_nonnulls(lot_id, product_id, material_id, base_id) = 1",
+            "num_nonnulls(lot_id, product_id, material_id, base_id, run_id) = 1",
             name="ck_document_links_record",
         ),
     )
@@ -1562,6 +1566,7 @@ class DocumentLink(OrganizationRow, Stamped, table=True):
     product_id: int | None = Field(default=None, sa_type=BigInteger)
     material_id: int | None = Field(default=None, sa_type=BigInteger)
     base_id: int | None = Field(default=None, sa_type=BigInteger)
+    run_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class TaskLink(OrganizationRow, Stamped, table=True):

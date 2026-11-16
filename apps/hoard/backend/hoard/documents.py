@@ -1,5 +1,5 @@
-"""Documents: Initiative files linked by id to lots, products, materials and
-bases, such as a supplier's certificate, a traceability plan or a report of a
+"""Documents: Initiative files linked by id to lots, products, materials,
+bases and production runs, such as a supplier's certificate, a traceability plan or a report of a
 problem. Hoard keeps the link, never the file; several reports on one lot are
 listed together."""
 
@@ -12,7 +12,7 @@ from hoard.records import DocumentLink
 from seneschal_core.db import WriteSession
 
 #: How a record a file is linked to is named.
-RECORDS = ("lot_id", "product_id", "material_id", "base_id")
+RECORDS = ("lot_id", "product_id", "material_id", "base_id", "run_id")
 
 
 def _named(record: dict[str, int]) -> tuple[str, int]:
@@ -25,7 +25,8 @@ def _named(record: dict[str, int]) -> tuple[str, int]:
 
 async def link(db: WriteSession, file_id: int, **record: int) -> DocumentLink:
     """Link a file to one record, named as ``lot_id``, ``product_id``,
-    ``material_id`` or ``base_id``; linking it again finds the link."""
+    ``material_id``, ``base_id`` or ``run_id``; linking it again finds the
+    link."""
     name, record_id = _named(record)
     existing = (
         await db.exec(

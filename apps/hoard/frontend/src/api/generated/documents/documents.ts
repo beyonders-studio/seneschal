@@ -49,8 +49,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * The files linked to one lot, product, material or base, in the order
- * they were linked, each named as the member may see it.
+ * The files linked to one lot, product, material, base or production run,
+ * in the order they were linked, each named as the member may see it.
  * @summary List Documents
  */
 export const listDocuments = (
@@ -96,8 +96,8 @@ export type ListDocumentsQueryResult = NonNullable<Awaited<ReturnType<typeof lis
 export type ListDocumentsQueryError = ErrorType<void>;
 
 /**
- * The files linked to one lot, product, material or base, in the order
- * they were linked, each named as the member may see it.
+ * The files linked to one lot, product, material, base or production run,
+ * in the order they were linked, each named as the member may see it.
  * @summary List Documents
  */
 export function useListDocuments<
@@ -120,8 +120,8 @@ export function useListDocuments<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The files linked to one lot, product, material or base, in the order
- * they were linked, each named as the member may see it.
+ * The files linked to one lot, product, material, base or production run,
+ * in the order they were linked, each named as the member may see it.
  * @summary List Documents
  */
 export function useListDocuments<
@@ -144,8 +144,8 @@ export function useListDocuments<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The files linked to one lot, product, material or base, in the order
- * they were linked, each named as the member may see it.
+ * The files linked to one lot, product, material, base or production run,
+ * in the order they were linked, each named as the member may see it.
  * @summary List Documents
  */
 export function useListDocuments<
@@ -160,8 +160,8 @@ export function useListDocuments<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * The files linked to one lot, product, material or base, in the order
- * they were linked, each named as the member may see it.
+ * The files linked to one lot, product, material, base or production run,
+ * in the order they were linked, each named as the member may see it.
  * @summary List Documents
  */
 export function useListDocuments<
@@ -185,8 +185,8 @@ export function useListDocuments<
 }
 
 /**
- * Link a file the member may open to one lot, product, material or base;
- * linking it again answers the link.
+ * Link a file the member may open to one lot, product, material, base or
+ * production run; linking it again answers the link.
  * @summary Link Document
  */
 export const linkDocument = (
@@ -250,8 +250,8 @@ export type LinkDocumentMutationError = ErrorType<void>;
 export type LinkDocumentMutationVariables = { data: BodyType<DocumentCreate> };
 
 /**
- * Link a file the member may open to one lot, product, material or base;
- * linking it again answers the link.
+ * Link a file the member may open to one lot, product, material, base or
+ * production run; linking it again answers the link.
  * @summary Link Document
  */
 export const useLinkDocument = <TError = ErrorType<void>, TContext = unknown>(
