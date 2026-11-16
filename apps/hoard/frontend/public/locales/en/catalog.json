@@ -77,12 +77,12 @@
       "shipped": "Shipped"
     },
     "profit": {
-      "title": "Profitability",
+      "title": "Sales",
       "hint": "Revenue is what order lines charged after their discounts, less refunds and returns, without shipping or tax. An order counts once it ships, at what its stock cost when it went out. Wholesale is what a company bought through the store.",
-      "group": "Sales",
+      "group": "Customers",
       "retail": "Retail",
       "wholesale": "Wholesale",
-      "all": "All sales",
+      "all": "All customers",
       "revenue": "Revenue",
       "profit": "Gross profit",
       "share": "Share of revenue",

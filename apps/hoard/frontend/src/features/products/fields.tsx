@@ -340,7 +340,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
     builtin(
       "profit",
       "catalog:products.profit.title",
-      (product) => product.totals.profit,
+      (product) => product.totals.sold,
       ({ item }) => <Profitability product={item} />
     ),
     builtin(
@@ -409,7 +409,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
     ),
   ],
   columns: ["name", "status", "category", "type", "on_hand", "low_stock_limit", "default_price"],
-  costs: new Set(["default_price", "profit", "pricing"]),
+  costs: new Set(["default_price", "pricing"]),
   spec: SHAPES.made,
   shapes: SHAPES,
   parts: { byline: (_node, item) => <RecordStamps record={item} /> },
