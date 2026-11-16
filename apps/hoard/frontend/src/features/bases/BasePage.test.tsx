@@ -2,12 +2,13 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { RecipeRead } from "@/api/generated/hoard.schemas";
-import { base, baseDetail, SETTINGS } from "@/features/items/testing";
+import { base, baseDetail, SETTINGS, stockRow } from "@/features/items/testing";
+import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
 
 const SPICE = baseDetail({
   on_hand: "400.000000",
-  stock: [{ location_id: 10, quantity: "400.000000", bin: null }],
+  stock: [stockRow(10, "400.000000")],
 });
 
 const RECIPE: RecipeRead = {
@@ -23,6 +24,7 @@ const RECIPE: RecipeRead = {
   total_unit_id: null,
   batch_quantity: "500.000000",
   batches: "1",
+  cost: null,
   minutes: 20,
   notes: "Toast the spice first.",
   lines: [
@@ -35,6 +37,8 @@ const RECIPE: RecipeRead = {
       tracking_unit_id: 1,
       quantity: "300.000000",
       percent: "60.00",
+      on_hand: "0",
+      cost: null,
     },
     {
       item: { id: 9, kind: "base", name: "Syrup", attributes: {}, archived: false },
@@ -45,6 +49,8 @@ const RECIPE: RecipeRead = {
       tracking_unit_id: 1,
       quantity: "200.000000",
       percent: "40.00",
+      on_hand: "0",
+      cost: null,
     },
   ],
 };
@@ -82,13 +88,7 @@ describe("BasePage", () => {
           ...SPICE,
           notes: "Keeps a month.",
           picture_id: 4,
-          stock: [
-            {
-              location_id: 10,
-              quantity: "400.000000",
-              bin: { zone: "A", section: "2", position: null },
-            },
-          ],
+          stock: [stockRow(10, "400.000000", { bin: { zone: "A", section: "2", position: null } })],
         },
       },
       "PUT /api/v1/items/8/bins/10": { status: 204 },
@@ -143,6 +143,157 @@ describe("BasePage", () => {
         quantity: "50",
       })
     );
+  });
+
+  it("shows its figures, could make and last stocktake per location, and its history", async () => {
+    const asked = await openSignedIn("/stock/bases/8", signedIn(), {
+      ...SETTINGS,
+      ...recipes(RECIPE),
+      "GET /api/v1/bases/8": {
+        status: 200,
+        data: baseDetail({
+          on_hand: "400.000000",
+          potential: "1050.000000",
+          made: "590.000000",
+          last_stocktake: "2026-11-03",
+          stock: [
+            stockRow(10, "400.000000", { could_make: "450.000000", last_stocktake: "2026-11-01" }),
+            stockRow(11, "0", { could_make: "600.000000", last_stocktake: "2026-11-03" }),
+          ],
+        }),
+      },
+      "GET /api/v1/runs": {
+        status: 200,
+        data: {
+          items: [
+            {
+              id: 4,
+              code: "R-0004",
+              item: { id: 8, kind: "base", name: "Chai spice", attributes: {}, archived: false },
+              status: "completed",
+              location_id: 10,
+              initiative_id: null,
+              planned_batches: "1",
+              planned_quantity: "300.000000",
+              actual_quantity: "290.000000",
+              assignee_ref: null,
+              started_on: "2026-11-04",
+              deadline_on: null,
+              completed_on: "2026-11-04",
+              uncosted: false,
+            },
+          ],
+          total: 1,
+        },
+      },
+      "GET /api/v1/stocktakes": {
+        status: 200,
+        data: {
+          items: [
+            {
+              id: 6,
+              kind: "base",
+              location_id: 11,
+              category_id: null,
+              sample_size: null,
+              dated_on: "2026-11-03",
+              notes: null,
+              row_count: 1,
+              confirmed_count: 1,
+              accuracy: "0",
+              finished: true,
+              created_at: "2026-11-03T10:00:00Z",
+              created_by: null,
+              count: { expected: "10.000000", counted: "0.000000" },
+            },
+          ],
+          total: 1,
+        },
+      },
+      "GET /api/v1/adjustments": { status: 200, data: { items: [], total: 0 } },
+    });
+
+    await screen.findByText("1,050 g");
+    screen.getByText("590 g");
+    const back = (await screen.findByText("600 g")).closest("tr");
+    if (!back) throw new Error("no row");
+    within(back).getByText("Back room");
+    within(back).getByText("Nov 3, 2026");
+    expect(await screen.findAllByRole("link", { name: "R-0004" })).toHaveLength(2);
+    await screen.findByText("Nothing has moved its stock yet.");
+    const counted = (await screen.findByRole("link", { name: "Nov 3, 2026" })).closest("tr");
+    if (!counted) throw new Error("no stocktake");
+    within(counted).getByText("10");
+    await waitFor(() =>
+      expect(
+        asked
+          .filter((request) => ["/api/v1/runs", "/api/v1/stocktakes"].includes(request.url ?? ""))
+          .map((request) => request.params)
+      ).toEqual(
+        expect.arrayContaining([
+          { offset: 0, limit: 10, item_id: 8 },
+          { offset: 0, limit: 10, used_item_id: 8 },
+        ])
+      )
+    );
+  });
+
+  it("costs its recipe only for a member who sees costs", async () => {
+    const costed: RecipeRead = {
+      ...RECIPE,
+      lines: [
+        {
+          ...RECIPE.lines[0],
+          on_hand: "1000.000000",
+          cost: { amount: "12.000000", last_known: false },
+        },
+        { ...RECIPE.lines[1], on_hand: "0", cost: { amount: "3.000000", last_known: true } },
+        {
+          ...RECIPE.lines[1],
+          item: { ...RECIPE.lines[1].item, id: 12, name: "Lychee flavor" },
+          on_hand: "40.000000",
+          cost: { amount: null, last_known: false },
+        },
+      ],
+      cost: { labour: "10.000000", total: "25.000000", incomplete: true, unit_cost: "0.05" },
+    };
+    await openSignedIn("/stock/bases/8", signedIn({ permissions: ["use", SEE_COSTS] }), {
+      ...opened,
+      ...recipes(costed),
+    });
+
+    const card = (await screen.findByText("Black tea")).closest("section");
+    if (!card) throw new Error("no card");
+    await within(card).findByText("$12.00");
+    const syrup = within(card).getByText("Syrup").closest("tr");
+    if (!syrup) throw new Error("no line");
+    within(syrup).getByText("Last known");
+    within(syrup).getByText("$3.00");
+    const lychee = within(card).getByText("Lychee flavor").closest("tr");
+    if (!lychee) throw new Error("no line");
+    within(lychee).getByText("No cost yet");
+    within(lychee).getByText("40 g");
+    within(card).getByText("Labour, 20 minutes a batch");
+    within(card).getByText("$10.00");
+    within(card).getByText("A cost is missing");
+    within(card).getByText("Batch cost $25.00");
+    within(card).getByText("Manufacture cost $0.05 a g");
+  });
+
+  it("shows on hand but no cost to a member who doesn't see costs", async () => {
+    await openSignedIn("/stock/bases/8", signedIn(), {
+      ...opened,
+      ...recipes({
+        ...RECIPE,
+        lines: RECIPE.lines.map((line) => ({ ...line, on_hand: "70.000000" })),
+      }),
+    });
+
+    const card = (await screen.findByText("Black tea")).closest("section");
+    if (!card) throw new Error("no card");
+    expect(within(card).getAllByText("70 g")).toHaveLength(2);
+    expect(within(card).queryByRole("columnheader", { name: "Cost" })).toBeNull();
+    expect(within(card).queryByText(/Batch cost/)).toBeNull();
   });
 
   it("offers to add a recipe until it has one", async () => {

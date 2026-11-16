@@ -3,7 +3,7 @@ import { ClipboardList, Plus } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { StocktakeSummary } from "@/api/generated/hoard.schemas";
+import type { StocktakeListed, StocktakeRead } from "@/api/generated/hoard.schemas";
 import { useListStocktakes } from "@/api/generated/stocktakes/stocktakes";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { StocktakeDialog } from "@/features/stocktakes/StocktakeDialog";
@@ -20,7 +20,7 @@ const PAGE_SIZE = 50;
 
 /** How far a stocktake has got, and how accurate it was: "3 of 5 counted ·
  *  67% accurate", in the reader's words. */
-export function useStocktakeProgress(): (stocktake: StocktakeSummary) => string {
+export function useStocktakeProgress(): (stocktake: StocktakeListed | StocktakeRead) => string {
   const { t, i18n } = useTranslation("movements");
   const percent = numberFormat(i18n.resolvedLanguage, {
     style: "percent",

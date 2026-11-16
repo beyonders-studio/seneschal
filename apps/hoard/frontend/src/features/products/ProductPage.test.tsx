@@ -1,24 +1,10 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ProductDetail, ProductVariationRead } from "@/api/generated/hoard.schemas";
-import { productDetail, SETTINGS } from "@/features/items/testing";
+import type { ProductDetail } from "@/api/generated/hoard.schemas";
+import { productDetail, SETTINGS, stockRow, variation } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
-
-const variation = (fields: Partial<ProductVariationRead>): ProductVariationRead => ({
-  id: 20,
-  attributes: {},
-  sku: null,
-  is_default: true,
-  price: null,
-  average_cost: null,
-  auto_manufacture: null,
-  on_hand: "0",
-  stock: [],
-  lots: [],
-  ...fields,
-});
 
 const CHAI = productDetail({
   on_hand: "6.000000",
@@ -26,7 +12,7 @@ const CHAI = productDetail({
   variations: [
     variation({
       on_hand: "4.000000",
-      stock: [{ location_id: 10, quantity: "4.000000", bin: null }],
+      stock: [stockRow(10, "4.000000")],
     }),
     variation({
       id: 21,
@@ -34,7 +20,7 @@ const CHAI = productDetail({
       is_default: false,
       price: "15.000000",
       on_hand: "2.000000",
-      stock: [{ location_id: 11, quantity: "2.000000", bin: null }],
+      stock: [stockRow(11, "2.000000")],
     }),
   ],
 });

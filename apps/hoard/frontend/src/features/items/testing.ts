@@ -1,10 +1,12 @@
 import type {
   BaseDetail,
   BaseRead,
+  ItemStockRead,
   MaterialDetail,
   MaterialRead,
   ProductDetail,
   ProductRead,
+  ProductVariationRead,
 } from "@/api/generated/hoard.schemas";
 import type { Answer } from "@/testing";
 
@@ -43,6 +45,23 @@ export const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/members": { status: 200, data: [{ member_ref: "member-ref", name: "Ada" }] },
 };
 
+/** An item's figures with no recipe, run or stocktake behind them. */
+const FIGURES = { potential: null, made: "0", last_stocktake: null };
+
+/** A row of an item's stock table: what is on hand at a location. */
+export const stockRow = (
+  location_id: number,
+  quantity: string,
+  fields: Partial<ItemStockRead> = {}
+): ItemStockRead => ({
+  location_id,
+  quantity,
+  bin: null,
+  could_make: null,
+  last_stocktake: null,
+  ...fields,
+});
+
 const STAMPS = {
   created_at: "2026-11-01T10:00:00Z",
   created_by: "member-ref",
@@ -74,6 +93,7 @@ export const material = (fields: Partial<MaterialRead> = {}): MaterialRead => ({
 export const materialDetail = (fields: Partial<MaterialDetail> = {}): MaterialDetail => ({
   ...material(),
   ...STAMPS,
+  ...FIGURES,
   stock: [],
   lots: [],
   picture_id: null,
@@ -104,6 +124,21 @@ export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetai
   ...fields,
 });
 
+export const variation = (fields: Partial<ProductVariationRead> = {}): ProductVariationRead => ({
+  id: 20,
+  attributes: {},
+  sku: null,
+  is_default: true,
+  price: null,
+  average_cost: null,
+  auto_manufacture: null,
+  on_hand: "0",
+  ...FIGURES,
+  stock: [],
+  lots: [],
+  ...fields,
+});
+
 export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
   id: 8,
   name: "Chai spice",
@@ -123,6 +158,7 @@ export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
 export const baseDetail = (fields: Partial<BaseDetail> = {}): BaseDetail => ({
   ...base(),
   ...STAMPS,
+  ...FIGURES,
   stock: [],
   lots: [],
   picture_id: null,

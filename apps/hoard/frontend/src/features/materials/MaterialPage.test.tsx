@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { HoardPropertySummary } from "@/api/generated/hoard.schemas";
-import { materialDetail, SETTINGS } from "@/features/items/testing";
+import { materialDetail, SETTINGS, stockRow } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
 
@@ -12,10 +12,7 @@ const OOLONG = materialDetail({
   purchase_unit_id: 1,
   purchase_conversion: "250.000000",
   average_cost: "2.000000",
-  stock: [
-    { location_id: 10, quantity: "10.000000", bin: null },
-    { location_id: 11, quantity: "3.000000", bin: null },
-  ],
+  stock: [stockRow(10, "10.000000"), stockRow(11, "3.000000")],
   lots: [
     {
       id: 1,

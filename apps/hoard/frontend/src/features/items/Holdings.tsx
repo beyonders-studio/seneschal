@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ItemStockRead } from "@/api/generated/hoard.schemas";
+import { useMovementLabels } from "@/features/adjustments/labels";
 import { BinDialog, useBinLabel } from "@/features/items/bins";
 import { useQuantity } from "@/features/items/format";
 import { useSettingsNames } from "@/features/settings/names";
@@ -27,8 +28,9 @@ export function ItemSection({ title, children }: { title: string; children: Reac
 
 /**
  * What is on hand at each location: of one item, or of each of a product's
- * variations. With `bins`, each location's bin for the item too, which is set
- * here while Hoard may change.
+ * variations, with when a stocktake last counted it there and, for an item
+ * with a recipe, what it could make there. With `bins`, each location's bin
+ * for the item too, which is set here while Hoard may change.
  */
 export function StockTable({
   stock,
@@ -41,6 +43,7 @@ export function StockTable({
 }) {
   const { t } = useTranslation("catalog");
   const quantity = useQuantity();
+  const { date } = useMovementLabels();
   const binLabel = useBinLabel();
   const { read_only } = useSession();
   const { location } = useSettingsNames();
@@ -48,6 +51,8 @@ export function StockTable({
   const [binning, setBinning] = useState<ItemStockRead | null | undefined>(undefined);
   const editsBins = bins !== undefined && !read_only;
   const ofVariations = stock.some((row) => row.variation !== undefined);
+  const makes = stock.some((row) => row.could_make !== null);
+  const withUnit = (amount: string) => [quantity(amount), unit].filter(Boolean).join(" ");
   return (
     <div className="flex flex-col gap-2">
       {stock.length === 0 ? (
@@ -60,6 +65,8 @@ export function StockTable({
               <TableHead>{t("hoard:common.location")}</TableHead>
               {bins && <TableHead>{t("items.bin.title")}</TableHead>}
               <TableHead className="text-right">{t("hoard:common.onHand")}</TableHead>
+              {makes && <TableHead className="text-right">{t("items.couldMake")}</TableHead>}
+              <TableHead>{t("items.lastStocktake")}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -84,9 +91,13 @@ export function StockTable({
                     </span>
                   </TableCell>
                 )}
-                <TableCell className="text-right tabular-nums">
-                  {[quantity(row.quantity), unit].filter(Boolean).join(" ")}
-                </TableCell>
+                <TableCell className="text-right tabular-nums">{withUnit(row.quantity)}</TableCell>
+                {makes && (
+                  <TableCell className="text-right tabular-nums">
+                    {row.could_make !== null && withUnit(row.could_make)}
+                  </TableCell>
+                )}
+                <TableCell>{row.last_stocktake && date(row.last_stocktake)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

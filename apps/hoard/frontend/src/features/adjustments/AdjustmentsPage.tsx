@@ -130,12 +130,14 @@ export function AdjustmentsPage() {
   );
 }
 
-function AdjustmentsTable({
+/** Adjustments, the latest first; with `onEdit`, those made by hand are
+ *  changed and deleted here while Hoard may change. */
+export function AdjustmentsTable({
   adjustments,
   onEdit,
 }: {
   adjustments: AdjustmentRead[];
-  onEdit: (adjustment: AdjustmentRead) => void;
+  onEdit?: (adjustment: AdjustmentRead) => void;
 }) {
   const { t } = useTranslation("movements");
   const queries = useQueryClient();
@@ -235,7 +237,7 @@ function AdjustmentsTable({
               <TableCell>{location(adjustment.location_id)}</TableCell>
               <TableCell>{memberName(adjustment.created_by)}</TableCell>
               <TableCell className="text-right">
-                {editable && !read_only && (
+                {editable && onEdit && !read_only && (
                   <RowActionsMenu subject={item(adjustment.item)}>
                     <DropdownMenuItem onSelect={() => onEdit(adjustment)}>
                       {t("hoard:common.edit")}

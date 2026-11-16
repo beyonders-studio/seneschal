@@ -8,6 +8,12 @@ import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
+import {
+  AdjustmentsHistory,
+  LastStocktake,
+  RunsHistory,
+  StocktakesHistory,
+} from "@/features/items/History";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { ItemPicture } from "@/features/items/ItemPicture";
@@ -170,6 +176,12 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
     ),
   ],
   pageFields: [
+    builtin(
+      "last_stocktake",
+      "catalog:items.lastStocktake",
+      (material) => material.last_stocktake,
+      LastStocktake
+    ),
     builtin("picture", "catalog:items.picture", (material) => material.picture_id, Picture),
     builtin(
       "notes",
@@ -183,6 +195,24 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       "catalog:items.lots",
       (material) => material.id,
       ({ item }) => <LotsTable lots={item.lots} />
+    ),
+    builtin(
+      "runs",
+      "catalog:history.runs",
+      (material) => material.id,
+      ({ item }) => <RunsHistory itemId={item.id} />
+    ),
+    builtin(
+      "adjustments",
+      "catalog:history.adjustments",
+      (material) => material.id,
+      ({ item }) => <AdjustmentsHistory itemId={item.id} />
+    ),
+    builtin(
+      "stocktakes",
+      "catalog:history.stocktakes",
+      (material) => material.id,
+      ({ item }) => <StocktakesHistory itemId={item.id} />
     ),
     builtin(
       "declarations",
@@ -208,6 +238,7 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
           type: "section",
           children: [
             "on_hand",
+            "last_stocktake",
             "low_stock_limit",
             "sku",
             "category",
@@ -224,8 +255,11 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
         at(5, field("stock")),
         at(6, field("lots")),
         at(7, field("declarations")),
-        at(8, field("documents")),
-        at(9, { type: "byline" }),
+        at(8, field("runs")),
+        at(9, field("adjustments")),
+        at(10, field("stocktakes")),
+        at(11, field("documents")),
+        at(12, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },
