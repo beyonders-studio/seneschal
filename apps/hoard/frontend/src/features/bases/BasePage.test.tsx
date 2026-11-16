@@ -320,6 +320,23 @@ describe("BasePage", () => {
 });
 
 describe("RecipeDialog", () => {
+  it("keeps what a base's batch makes with its ingredients total until it's lowered", async () => {
+    await openSignedIn("/stock/bases/8", signedIn(), { ...opened, ...recipes() });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add recipe" }));
+    const dialog = await screen.findByRole("dialog", { name: "Recipe for Chai spice" });
+    fireEvent.click(within(dialog).getByRole("switch", { name: "Written by ratio" }));
+    const total = within(dialog).getByLabelText("Ingredients total");
+    const makes = within(dialog).getByLabelText("One batch makes");
+    expect([total, makes].map((field) => (field as HTMLInputElement).value)).toEqual(["1", "1"]);
+
+    fireEvent.change(total, { target: { value: "931" } });
+    expect(makes).toHaveProperty("value", "931");
+    fireEvent.change(makes, { target: { value: "908" } });
+    fireEvent.change(total, { target: { value: "1000" } });
+    expect(makes).toHaveProperty("value", "908");
+  });
+
   it("switches a recipe to a ratio as Hoard works it out, and back as it was", async () => {
     const preview = (byRatio: boolean) => ({
       ...RECIPE,
