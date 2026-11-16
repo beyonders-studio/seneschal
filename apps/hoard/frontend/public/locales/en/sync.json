@@ -1,7 +1,7 @@
 {
   "autoManufacture": {
     "title": "Auto-manufacture",
-    "description": "When a store order is paid, Hoard can make what it sells at once, from its recipe, by a production run that completes as it opens.",
+    "description": "When a store order is paid, Hoard can make what it sells at once, from its {{recipe}}, by a production run that completes as it opens.",
     "storeOrders": "Store orders",
     "inherit": {
       "settings": "As your settings say: {{choice}}",

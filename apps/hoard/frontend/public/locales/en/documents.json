@@ -17,7 +17,7 @@
   "errors": {
     "FILES_CONSENT_REQUIRED": "Hoard needs your leave to read your files in Initiative.",
     "FILE_NOT_FOUND": "That file isn't one you can open.",
-    "ONE_RECORD_REQUIRED": "A document is linked to one lot, product, material or base."
+    "ONE_RECORD_REQUIRED": "A document is linked to one lot, product, material or {{base}}."
   },
   "backups": {
     "title": "Backups",

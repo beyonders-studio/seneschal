@@ -150,6 +150,6 @@
       "fragrance_allergens": "Edit fragrance allergens it records"
     },
     "share": "{{name}} {{share}}%",
-    "hint": "A product declares these while it has no recipe, whatever its page shows."
+    "hint": "A product declares these while it has no {{recipe}}, whatever its page shows."
   }
 }

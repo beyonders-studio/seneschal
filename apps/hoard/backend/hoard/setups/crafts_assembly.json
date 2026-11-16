@@ -1,0 +1,38 @@
+{
+  "base_word": "sub-assembly",
+  "recipe_word": "bill of materials",
+  "units": ["strand", "spool", "sheet", "pack"],
+  "types": [
+    { "key": "component", "kind": "material", "shape": "packaging" },
+    { "key": "packaging", "kind": "material", "shape": "packaging" },
+    { "key": "jewellery", "kind": "product", "shape": "made" },
+    { "key": "pins", "kind": "product", "shape": "made" },
+    { "key": "games", "kind": "product", "shape": "made" },
+    { "key": "merch", "kind": "product", "shape": "bought" },
+    { "key": "gift_set", "kind": "product", "shape": "bundle" }
+  ],
+  "categories": [
+    { "key": "findings", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "beads_stones", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "metal_wire", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "loose_pins", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "printed_parts", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "game_pieces", "kinds": ["material"], "picking": "first_in", "type": "component" },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in", "type": "packaging" },
+    { "key": "sub_assembly", "kinds": ["base"], "picking": "first_in" },
+    { "key": "jewellery", "kinds": ["product"], "picking": "first_in", "type": "jewellery" },
+    { "key": "pins", "kinds": ["product"], "picking": "first_in", "type": "pins" },
+    { "key": "games", "kinds": ["product"], "picking": "first_in", "type": "games" },
+    { "key": "merch", "kinds": ["product"], "picking": "first_in", "type": "merch" },
+    { "key": "gift_set", "kinds": ["product"], "picking": "first_in", "type": "gift_set" }
+  ],
+  "properties": [
+    { "key": "metal_finish", "kind": "material", "type": "text" },
+    { "key": "nickel_free", "kind": "material", "type": "checkbox" },
+    { "key": "age_grade", "kind": "product", "type": "text" },
+    { "key": "test_report", "kind": "lot", "type": "file" },
+    { "key": "country_of_origin", "kind": "lot", "type": "text" }
+  ],
+  "reasons": ["defective", "misprint", "missing_parts", "sample", "damaged_packaging"],
+  "hold_reasons": ["quality_check"]
+}

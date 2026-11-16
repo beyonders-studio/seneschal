@@ -1,5 +1,6 @@
 """The organization's settings: its currency, the rules it keeps records for,
-what an hour of work costs and the overhead on what goods cost, units,
+what it calls a base and a recipe, what an hour of work costs and the overhead
+on what goods cost, units,
 categories with their picking rules and default types, the types of
 material, base and product, locations, adjustment reasons and price points.
 Every member reads them, but for the labour rate, the overhead and a price
@@ -30,7 +31,7 @@ from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, col, select
@@ -119,6 +120,13 @@ Name = Annotated[str, Field(min_length=1, max_length=200)]
 class SettingsRead(BaseModel):
     #: The ISO 4217 code every cost and price is in.
     currency: str
+    #: What the organization calls a base; null until it is named, when pages
+    #: say the word for a base in the reader's language.
+    base_word: str | None
+    #: What the organization calls a recipe, such as "bill of materials"; null
+    #: until it is named, when pages say the word for a recipe in the reader's
+    #: language.
+    recipe_word: str | None
     #: Whether a store order makes what it sells, where its product says nothing.
     auto_manufacture: AutoManufacture
     #: The rules the organization keeps records for.
@@ -136,13 +144,21 @@ NonNegative = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=6)]
 #: The settings only a member who sees costs reads or changes.
 COST_SETTINGS = ("labour_rate", "overhead")
 
+#: The organization's own words for what pages name, each cleared with null.
+WORDS = ("base_word", "recipe_word")
+
+Word = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
 
 class SettingsUpdate(BaseModel):
-    """The settings to change: each left as it is unless sent. The labour
-    rate and the overhead, which may be cleared with null, are refused from a
-    member who doesn't see costs."""
+    """The settings to change: each left as it is unless sent. The words for
+    a base and a recipe, the labour rate and the overhead may be cleared with
+    null; the labour rate and the overhead are refused from a member who
+    doesn't see costs."""
 
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
+    base_word: Word | None = None
+    recipe_word: Word | None = None
     auto_manufacture: AutoManufacture | None = None
     regimes: list[Regime] | None = None
     labour_rate: NonNegative | None = None
@@ -396,6 +412,8 @@ async def update_settings(
         changes["regimes"] = [regime for regime in Regime if regime in body.regimes]
     for name in body.model_fields_set & set(COST_SETTINGS):
         _sees_costs(sees_costs)
+        changes[name] = getattr(body, name)
+    for name in body.model_fields_set & set(WORDS):
         changes[name] = getattr(body, name)
     settings.sqlmodel_update(changes)
     db.add(settings)

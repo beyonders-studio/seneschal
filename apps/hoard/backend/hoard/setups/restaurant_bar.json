@@ -1,6 +1,14 @@
 {
   "base_word": "base",
+  "recipe_word": "recipe",
   "units": ["case", "bunch", "bottle_375ml", "bottle_750ml", "bottle_1l", "bottle_1750ml"],
+  "types": [
+    { "key": "supplies", "kind": "material", "shape": "packaging" },
+    { "key": "kitchen_prep", "kind": "base", "shape": "base" },
+    { "key": "bar_prep", "kind": "base", "shape": "base" },
+    { "key": "bottled", "kind": "product", "shape": "bought" },
+    { "key": "set_menu", "kind": "product", "shape": "bundle" }
+  ],
   "categories": [
     { "key": "produce", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "meat_poultry", "kinds": ["material"], "picking": "earliest_expiry" },
@@ -11,11 +19,23 @@
     { "key": "spirits", "kinds": ["material"], "picking": "first_in" },
     { "key": "wine", "kinds": ["material"], "picking": "first_in" },
     { "key": "beer", "kinds": ["material"], "picking": "earliest_expiry" },
-    { "key": "syrup_mixer", "kinds": ["material", "base"], "picking": "earliest_expiry" },
-    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "supplies", "kinds": ["material"], "picking": "first_in" },
+    {
+      "key": "syrup_mixer",
+      "kinds": ["material", "base"],
+      "picking": "earliest_expiry",
+      "type": "bar_prep"
+    },
+    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry", "type": "kitchen_prep" },
+    { "key": "supplies", "kinds": ["material"], "picking": "first_in", "type": "supplies" },
     { "key": "dish", "kinds": ["product"], "picking": "earliest_expiry" },
-    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" }
+    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" },
+    {
+      "key": "bottled_drink",
+      "kinds": ["product"],
+      "picking": "earliest_expiry",
+      "type": "bottled"
+    },
+    { "key": "set_menu", "kinds": ["product"], "picking": "first_in", "type": "set_menu" }
   ],
   "properties": [
     { "key": "received_temperature", "kind": "lot", "type": "number" },

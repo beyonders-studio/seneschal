@@ -9,9 +9,10 @@ one kind, in one of its shapes), categories (its kinds of item, each for the
 kinds of record it sorts, with the rule for which of its lots goes first and,
 by key, the type a record made in it takes), properties of records, each with
 its key, adjustment reasons for waste, hold reasons, each with its key, and
-the word for a base. A setup that leaves out ``types`` brings none. Adding one adds what the
-organization does not have and changes nothing it does, so adding it again
-changes nothing. Only an organization that has not yet begun adds one
+the words for a base and a recipe. A setup that leaves out ``types`` brings
+none. Adding one adds what the organization does not have and changes nothing
+it does, so adding it again changes nothing: a word the organization has
+named already stays. Only an organization that has not yet begun adds one
 (:func:`started`): a setup is chosen once, never added later.
 
 Everything a setup adds is named in the words of the member who adds it: the
@@ -19,8 +20,8 @@ page sends the words for each of the setup's keys (:meth:`Setup.words`),
 which its locale holds, and people rename them as they like afterwards. A
 property and a hold reason keep their keys, so adding the setup again finds
 them however they were renamed; a unit, a type, a category or an adjustment
-reason is found by its name. A hold reason that is one of the defaults keeps the name
-the setup gives it.
+reason is found by its name. A hold reason that is one of the defaults keeps
+the name the setup gives it.
 """
 
 from __future__ import annotations
@@ -60,6 +61,12 @@ SETUPS_DIR = Path(__file__).parent / "setups"
 #: The word every setup that keeps it leaves alone: pages say the translated
 #: word for a base until someone names it.
 BASE = "base"
+#: The same for a recipe.
+RECIPE = "recipe"
+
+#: The settings a setup may name a word for, each with the word a setup that
+#: keeps it gives.
+WORDS = {"base_word": BASE, "recipe_word": RECIPE}
 
 
 class SetupError(StrEnum):
@@ -112,6 +119,8 @@ class Setup:
     key: str
     #: What it calls a base: :data:`BASE`, or a word of its own.
     base_word: str
+    #: What it calls a recipe: :data:`RECIPE`, or a word of its own.
+    recipe_word: str
     units: tuple[str, ...]
     types: tuple[SetupType, ...]
     categories: tuple[SetupCategory, ...]
@@ -124,7 +133,7 @@ class Setup:
     def words(self) -> list[str]:
         """The keys whose words the member adding it sends."""
         return [
-            *(["base_word"] if self.base_word != BASE else []),
+            *(word for word, kept in WORDS.items() if getattr(self, word) != kept),
             *(f"units.{unit}" for unit in self.units),
             *(f"types.{each.key}" for each in self.types),
             *(f"categories.{category.key}" for category in self.categories),
@@ -146,6 +155,7 @@ def _setup(path: Path) -> Setup:
     return Setup(
         key=path.stem,
         base_word=data["base_word"],
+        recipe_word=data["recipe_word"],
         units=tuple(data["units"]),
         types=tuple(
             SetupType(
@@ -293,11 +303,12 @@ async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:
                 .values([{**organization, **row} for row in values])
                 .on_conflict_do_nothing()
             )
-    if setup.base_word != BASE:
+    if named := {word: words[word] for word, kept in WORDS.items() if getattr(setup, word) != kept}:
         settings = (await db.exec(select(OrganizationSettings))).first()
         if settings is None:
             settings = OrganizationSettings(organization_id=db.organization_id)
-        if settings.base_word is None:
-            settings.base_word = words["base_word"]
-            db.add(settings)
-            await db.flush()
+        for word, said in named.items():
+            if getattr(settings, word) is None:
+                setattr(settings, word, said)
+        db.add(settings)
+        await db.flush()

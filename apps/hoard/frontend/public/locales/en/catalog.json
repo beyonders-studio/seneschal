@@ -23,12 +23,12 @@
     "loadFailed": "Couldn't load the material."
   },
   "bases": {
-    "emptyTitle": "No bases yet",
-    "emptyBody": "What you make from materials and use in other recipes will be here, such as a spice blend or a syrup.",
-    "add": "Add base",
-    "edit": "Edit base",
-    "saveFailed": "Couldn't save the base.",
-    "loadFailed": "Couldn't load the base."
+    "emptyTitle": "No {{bases}} yet",
+    "emptyBody": "What you make from materials and use in other {{recipes}} will be here, such as a spice blend or a syrup.",
+    "add": "Add {{base}}",
+    "edit": "Edit {{base}}",
+    "saveFailed": "Couldn't save the {{base}}.",
+    "loadFailed": "Couldn't load the {{base}}."
   },
   "products": {
     "emptyTitle": "No products yet",
@@ -126,6 +126,15 @@
       "codeHint": "Three letters, such as USD or EUR.",
       "saved": "Currency saved."
     },
+    "words": {
+      "title": "Words",
+      "description": "What Hoard calls a base and a recipe on every page, such as a blend or a formula. Leave one empty for Hoard's own word.",
+      "base": "Word for a base",
+      "baseHint": "Such as blend or sub-assembly.",
+      "recipe": "Word for a recipe",
+      "recipeHint": "Such as formula or bill of materials.",
+      "saved": "Words saved."
+    },
     "units": {
       "title": "Units",
       "add": "Add unit",
@@ -136,7 +145,7 @@
     "categories": {
       "title": "Categories",
       "material": "Material categories",
-      "base": "Base categories",
+      "base": "{{Base}} categories",
       "product": "Product categories",
       "materials": {
         "add": "Add material category",
@@ -144,8 +153,8 @@
         "name": "Category"
       },
       "bases": {
-        "add": "Add base category",
-        "empty": "No base categories yet.",
+        "add": "Add {{base}} category",
+        "empty": "No {{base}} categories yet.",
         "name": "Category"
       },
       "products": {
@@ -161,7 +170,7 @@
       "title": "Types",
       "hint": "A type decides the page its records are shown on: which fields it shows, and where. It never changes what a record does, and a field its page hides still counts. Lay out a type's page from the page of one of its records.",
       "material": "Material types",
-      "base": "Base types",
+      "base": "{{Base}} types",
       "product": "Product types",
       "materials": {
         "add": "Add material type",
@@ -169,8 +178,8 @@
         "name": "Type"
       },
       "bases": {
-        "add": "Add base type",
-        "empty": "No base types yet.",
+        "add": "Add {{base}} type",
+        "empty": "No {{base}} types yet.",
         "name": "Type"
       },
       "products": {
@@ -180,7 +189,7 @@
       },
       "defaults": {
         "material": "Ingredient",
-        "base": "Base",
+        "base": "{{Base}}",
         "product": "Made"
       },
       "default": "Default",
@@ -188,7 +197,7 @@
       "shapes": {
         "ingredient": "Ingredient",
         "packaging": "Packaging",
-        "base": "Base",
+        "base": "{{Base}}",
         "made": "Made",
         "bought": "Bought",
         "bundle": "Bundle"
@@ -225,7 +234,7 @@
     },
     "labourRate": {
       "title": "Labour rate",
-      "description": "What an hour of work costs. Recipes cost their minutes at this rate.",
+      "description": "What an hour of work costs. {{Recipes}} cost their minutes at this rate.",
       "field": "Per hour",
       "hint": "Leave it blank to cost no labour.",
       "unset": "Not set",
@@ -267,7 +276,7 @@
     "IMAGE_TOO_LARGE": "That picture is larger than 5 MB.",
     "LISTED_IN_STORE": "It's listed in a synced store. Archive the product instead, or delete it in the store first.",
     "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now.",
-    "TRACKING_UNIT_IN_USE": "Stock, purchases, stocktakes, recipes or runs already count in this unit, so it stays. If all it has is its starting stock, delete that adjustment first.",
+    "TRACKING_UNIT_IN_USE": "Stock, purchases, stocktakes, {{recipes}} or runs already count in this unit, so it stays. If all it has is its starting stock, delete that adjustment first.",
     "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted.",
     "NOT_INVENTORIABLE": "That material carries no stock, so it can't start with any.",
     "SHAPE_UNKNOWN": "That page shape isn't one Hoard ships for this kind of record.",
@@ -350,10 +359,10 @@
     },
     "usedIn": {
       "title": "Used in",
-      "recipe": "Recipe for",
+      "recipe": "{{Recipe}} for",
       "takes": "A batch takes",
       "makes": "A batch makes",
-      "none": "No recipe uses it yet."
+      "none": "No {{recipe}} uses it yet."
     },
     "consigned": "Consigned",
     "move": {
