@@ -330,6 +330,8 @@ describe("RecipeDialog", () => {
         ...line,
         written: byRatio ? ["3.000000", "2.000000"][index] : line.written,
         ratio: ["1.5", "1"][index],
+        // The syrup is counted in a unit Hoard can't weigh.
+        percent: ["100.00", null][index],
       })),
       switched: {
         batch_quantity: "500.000000",
@@ -354,6 +356,8 @@ describe("RecipeDialog", () => {
     fireEvent.click(within(card).getByRole("button", { name: "Edit" }));
     const dialog = await screen.findByRole("dialog", { name: "Recipe for Chai spice" });
     await within(dialog).findByText("1.5");
+    const unweighed = within(dialog).getByTitle("Not measured by weight, so it has no share.");
+    expect(unweighed.textContent).toBe("–");
 
     fireEvent.click(within(dialog).getByRole("switch", { name: "Written by ratio" }));
 

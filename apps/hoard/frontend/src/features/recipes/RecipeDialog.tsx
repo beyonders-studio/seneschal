@@ -348,8 +348,11 @@ function RecipeForm({
                     </dl>
                     <dl className="flex min-w-16 flex-col pb-2 text-sm">
                       <dt className="text-muted-foreground">{t("card.share")}</dt>
-                      <dd className="tabular-nums">
-                        {figures?.percent != null && share(figures.percent)}
+                      <dd
+                        className="tabular-nums"
+                        title={figures?.percent === null ? t("card.notWeighed") : undefined}
+                      >
+                        {figures && (figures.percent === null ? "–" : share(figures.percent))}
                       </dd>
                     </dl>
                   </>
