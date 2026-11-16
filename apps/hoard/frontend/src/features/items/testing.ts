@@ -61,6 +61,7 @@ const NO_USAGE: ItemUsage[] = (
 
 /** An item's figures with no recipe, run, stocktake or purchase behind them. */
 const FIGURES = {
+  consigned: "0",
   potential: null,
   made: "0",
   last_stocktake: null,
@@ -78,6 +79,7 @@ export const stockRow = (
 ): ItemStockRead => ({
   location_id,
   quantity,
+  consigned: "0",
   bin: null,
   could_make: null,
   last_stocktake: null,

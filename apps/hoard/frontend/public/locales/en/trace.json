@@ -23,7 +23,8 @@
     "kinds": {
       "run": "Run {{code}}",
       "shipment": "Order {{code}}",
-      "purchase": "Purchase {{code}}"
+      "purchase": "Purchase {{code}}",
+      "transfer": "Moved to {{location}}"
     }
   },
   "recall": {
@@ -48,6 +49,7 @@
     "made": "Lots made from it",
     "madeEmpty": "No lot was made from it.",
     "shipments": "Shipments",
-    "shipmentsEmpty": "It reached no shipment."
+    "shipmentsEmpty": "It reached no shipment.",
+    "moved": "Moved to other locations"
   }
 }

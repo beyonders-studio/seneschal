@@ -54,6 +54,7 @@ export const AdjustmentKind = {
   production: "production",
   shipment: "shipment",
   return: "return",
+  transfer: "transfer",
 } as const;
 
 export interface AdjustmentRead {
@@ -70,6 +71,7 @@ export interface AdjustmentRead {
   purchase_id: number | null;
   stocktake_id: number | null;
   order_id: number | null;
+  transfer_id: number | null;
   created_at: string;
   created_by: string | null;
   updated_at: string;
@@ -238,6 +240,7 @@ export interface ItemUsedIn {
 export interface ItemStockRead {
   location_id: number;
   quantity: string;
+  consigned: string;
   bin: ItemBin | null;
   could_make: string | null;
   last_stocktake: string | null;
@@ -506,6 +509,7 @@ export interface BaseDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  consigned: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -1474,6 +1478,7 @@ export interface MaterialDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  consigned: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -2002,6 +2007,7 @@ export type ProductVariationReadAttributes = { [key: string]: string };
 
 export interface ProductVariationRead {
   on_hand: string;
+  consigned: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -2630,6 +2636,7 @@ export interface SettingsLocationCreate {
    */
   name: string;
   contact_id?: number | null;
+  consignee?: boolean;
 }
 
 export interface SettingsLocationRead {
@@ -2637,11 +2644,13 @@ export interface SettingsLocationRead {
   name: string | null;
   main: boolean;
   contact_id: number | null;
+  consignee: boolean;
 }
 
 export interface SettingsLocationUpdate {
   name: string | null;
   contact_id?: number | null;
+  consignee?: boolean | null;
 }
 
 export interface SettingsRead {
@@ -2808,6 +2817,7 @@ export const StepKind = {
   run: "run",
   shipment: "shipment",
   purchase: "purchase",
+  transfer: "transfer",
 } as const;
 
 export interface StocktakeCreate {
@@ -3113,7 +3123,7 @@ export interface TracePartyRead {
 export interface TraceStepRead {
   kind: StepKind;
   record_id: number;
-  code: string;
+  code: string | null;
   order_id: number | null;
   lot: TraceLotRef | null;
   made_lot: TraceLotRef | null;
@@ -3122,6 +3132,7 @@ export interface TraceStepRead {
   quantity: string;
   dated_on: string;
   party: TracePartyRead | null;
+  location_id: number | null;
   assumed: boolean;
   level: number;
 }
@@ -3171,6 +3182,19 @@ export interface TrackingRead {
   waiting: number;
   failing: number;
   retry_at: string | null;
+}
+
+/**
+ * Stock of an item moved from one of the organization's locations to
+ * another: out of a lot there, or, with none, out of what it holds in no lot.
+ */
+export interface TransferCreate {
+  item_id: number;
+  from_location_id: number;
+  to_location_id: number;
+  lot_id?: number | null;
+  quantity: number | string;
+  dated_on?: string | null;
 }
 
 export interface UnitConversion {

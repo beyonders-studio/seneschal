@@ -96,13 +96,17 @@ const useRefetch = (item: MaterialDetail) => {
   return () => void queryClient.invalidateQueries({ queryKey: getReadMaterialQueryKey(item.id) });
 };
 
-const Stock = ({ item }: { item: MaterialDetail }) => (
-  <StockTable
-    stock={item.stock}
-    unit={useSettingsNames().unit(item.tracking_unit_id)}
-    bins={{ itemId: item.id, onChanged: useRefetch(item) }}
-  />
-);
+const Stock = ({ item }: { item: MaterialDetail }) => {
+  const refetch = useRefetch(item);
+  return (
+    <StockTable
+      stock={item.stock}
+      unit={useSettingsNames().unit(item.tracking_unit_id)}
+      bins={{ itemId: item.id, onChanged: refetch }}
+      moves={{ items: [item], onChanged: refetch }}
+    />
+  );
+};
 
 const Picture = ({ item }: { item: MaterialDetail }) => (
   <ItemPicture item={item} onChanged={useRefetch(item)} />

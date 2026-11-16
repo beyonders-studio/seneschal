@@ -27,6 +27,14 @@ const shipped = traceStep({
   party: { contact_id: 9, name: null },
   level: 2,
 });
+const consigned = traceStep({
+  kind: "transfer",
+  record_id: 5,
+  code: null,
+  made_lot: { id: 9, number: "L-3" },
+  location_id: 11,
+  party: { contact_id: 4, name: "Gift Shop" },
+});
 const consumerSale = traceStep({
   kind: "shipment",
   record_id: 13,
@@ -46,7 +54,7 @@ const open = (back: unknown[], forward: unknown[]) =>
 
 describe("TraceSection", () => {
   it("lists what went into a lot, where it went, and where it may have gone apart", async () => {
-    await open([purchase], [run, shipped, consumerSale]);
+    await open([purchase], [run, shipped, consigned, consumerSale]);
 
     const into = (await screen.findByText("What went into it")).parentElement as HTMLElement;
     const bought = within(into).getByRole("link", { name: "Purchase P-4" });
@@ -61,6 +69,8 @@ describe("TraceSection", () => {
       "/orders/30"
     );
     expect(within(went).getByText("A contact Hoard can't read")).toBeTruthy();
+    const moved = within(went).getByText("Moved to Back room").closest("tr") as HTMLElement;
+    within(moved).getByText("Gift Shop");
     expect(within(went).queryByText("Order O-13")).toBeNull();
 
     const mayHave = screen.getByText("Where it may have gone").parentElement as HTMLElement;
