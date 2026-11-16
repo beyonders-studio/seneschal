@@ -10,7 +10,7 @@ import { cn } from "@/ui/lib/utils";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
 /** One figure: its label over its value. */
-function Tile({ label, children }: { label: string; children: ReactNode }) {
+export function Tile({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border p-3">
       <dt className="text-xs text-muted-foreground">{label}</dt>

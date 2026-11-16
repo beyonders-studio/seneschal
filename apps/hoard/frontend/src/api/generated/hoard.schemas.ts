@@ -756,8 +756,8 @@ export interface DocumentBackupPeriod {
 }
 
 /**
- * A file to link, and the one lot, product, material or base it is
- * linked to.
+ * A file to link, and the one lot, product, material, base or production
+ * run it is linked to.
  */
 export interface DocumentCreate {
   file_id: number;
@@ -765,6 +765,7 @@ export interface DocumentCreate {
   product_id?: number | null;
   material_id?: number | null;
   base_id?: number | null;
+  run_id?: number | null;
 }
 
 /**
@@ -2509,6 +2510,7 @@ export interface RunCreate {
   expires_on?: string | null;
   assignee_ref?: string | null;
   labour_minutes?: number | null;
+  notes?: string | null;
 }
 
 /**
@@ -2524,6 +2526,9 @@ export interface RunLot {
 export interface RunLineRead {
   id: number;
   item: AdjustmentItem;
+  sku: string | null;
+  picture_id: number | null;
+  unit_id: number | null;
   quantity: string;
   lot: RunLot | null;
   assumed: boolean;
@@ -2539,6 +2544,14 @@ export interface RunLineRead {
 export interface RunLineUpdate {
   quantity?: number | string | null;
   lot_id?: number | null;
+}
+
+/**
+ * An order a run names.
+ */
+export interface RunOrder {
+  id: number;
+  code: string;
 }
 
 /**
@@ -2585,6 +2598,21 @@ export interface RunPreview {
   use: RunUseRead | null;
 }
 
+/**
+ * What an order shipped of what a run made, on one of its lines.
+ */
+export interface RunShipped {
+  id: number;
+  order: RunOrder;
+  ordered_on: string;
+  store_customer: string | null;
+  shipped_on: string;
+  item: AdjustmentItem;
+  quantity: string;
+  assumed: boolean;
+  total?: string | null;
+}
+
 export interface RunRead {
   id: number;
   code: string;
@@ -2604,10 +2632,15 @@ export interface RunRead {
   unit_cost?: string | null;
   recipe_id: number | null;
   recipe_changed: boolean;
+  recipe_notes: string | null;
+  notes: string | null;
   labour_minutes: number | null;
+  labour_cost?: string | null;
+  made_for: RunOrder | null;
   expires_on: string | null;
   output_lot: RunLot | null;
   lines: RunLineRead[];
+  shipped: RunShipped[];
   created_at: string;
   created_by: string | null;
   updated_at: string;
@@ -2631,6 +2664,7 @@ export interface RunUpdate {
   assignee_ref?: string | null;
   labour_minutes?: number | null;
   started_on?: string | null;
+  notes?: string | null;
 }
 
 /**
@@ -3531,6 +3565,7 @@ export type ListDocumentsParams = {
   product_id?: number | null;
   material_id?: number | null;
   base_id?: number | null;
+  run_id?: number | null;
 };
 
 export type SearchFilesParams = {

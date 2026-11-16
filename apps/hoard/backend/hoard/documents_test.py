@@ -1,10 +1,12 @@
-"""Initiative files linked by id to lots, products, materials and bases."""
+"""Initiative files linked by id to lots, products, materials, bases and
+production runs."""
 
 from __future__ import annotations
 
 import pytest
 
 from hoard import documents
+from hoard.records import DocumentLink, Location, ProductionRun
 from seneschal_core.db import WriteSession
 
 
@@ -26,6 +28,23 @@ async def test_files_linked_to_a_record_list_together_in_order(
     assert [each.id for each in await documents.links(db, material_id=flour.id)] == [certificate.id]
     assert (plan.base_id, plan.created_by) == (batter.id, "member-ref")
     assert await documents.links(db, product_id=999999) == []
+
+
+async def test_a_runs_files_go_with_it(db: WriteSession, main: Location, base):
+    batter = await base("Batter")
+    run = ProductionRun(
+        organization_id=db.organization_id, code="R-1", item_id=batter.id, location_id=main.id
+    )
+    db.add(run)
+    await db.flush()
+
+    linked = await documents.link(db, 31, run_id=run.id)
+    assert [each.id for each in await documents.links(db, run_id=run.id)] == [linked.id]
+
+    await db.delete(run)
+    await db.flush()
+    db.expunge(linked)
+    assert await db.get(DocumentLink, linked.id) is None
 
 
 async def test_a_link_names_one_record(db: WriteSession):

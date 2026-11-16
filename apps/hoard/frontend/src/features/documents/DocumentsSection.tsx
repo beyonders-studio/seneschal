@@ -19,7 +19,7 @@ import { Button } from "@/ui/button";
 import { FileFieldInput } from "@/ui/properties/FileFieldInput";
 
 /** What a document can be linked to. */
-type Of = "lot" | "product" | "material" | "base";
+type Of = "lot" | "product" | "material" | "base" | "run";
 
 const recordOf = (of: Of, id: number): ListDocumentsParams => {
   switch (of) {
@@ -31,12 +31,15 @@ const recordOf = (of: Of, id: number): ListDocumentsParams => {
       return { material_id: id };
     case "base":
       return { base_id: id };
+    case "run":
+      return { run_id: id };
   }
 };
 
 /**
- * The Initiative files linked to a lot, a product, a material or a base, in
- * the order they were linked, so several reports on one lot read together.
+ * The Initiative files linked to a lot, a product, a material, a base or a
+ * production run, in the order they were linked, so several reports on one
+ * lot read together.
  * Each is named as the member viewing it may see it. While Hoard may change,
  * a member links another file they can open, or unlinks one; the file stays
  * in Initiative.

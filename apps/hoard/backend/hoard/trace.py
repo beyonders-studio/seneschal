@@ -83,6 +83,8 @@ class TraceStep:
     from_lot_id: int | None = None
     #: The location a transfer moved it to.
     location_id: int | None = None
+    #: The shipment's line it went out on, for a shipment.
+    line_id: int | None = None
 
 
 @dataclass
@@ -128,6 +130,7 @@ def _step(
     contact_id: int | None = None,
     assumed: bool,
     location_id: int | None = None,
+    line_id: int | None = None,
 ) -> TraceStep:
     return TraceStep(
         kind=kind,
@@ -141,6 +144,7 @@ def _step(
         assumed=assumed,
         level=0,
         location_id=location_id,
+        line_id=line_id,
     )
 
 
@@ -277,6 +281,7 @@ async def _drawn_from(db: AsyncSession, lot: Lot) -> Moves:
             dated_on=day,
             contact_id=order.customer_contact_id,
             assumed=line.assumed or line.lot_id is None,
+            line_id=line.id,
         )
         moves.append((step, None))
     moves += [
@@ -376,6 +381,19 @@ async def forward(db: AsyncSession, lot_id: int) -> Trace:
     recorded and assumed, and on from each lot those runs made and those
     transfers moved it into, at every level."""
     return await _walk(db, lot_id, _drawn_from)
+
+
+async def _sent_on(db: AsyncSession, lot: Lot) -> Moves:
+    """The shipments and transfers that draw on ``lot``: where it went
+    without being made into something else."""
+    return [move for move in await _drawn_from(db, lot) if move[0].kind is not StepKind.RUN]
+
+
+async def shipped(db: AsyncSession, lot_id: int) -> list[TraceStep]:
+    """The shipments that sent a lot, or a lot it was moved into, not those
+    of what was made from it."""
+    walked = await _walk(db, lot_id, _sent_on)
+    return [step for step in walked.steps if step.kind is StepKind.SHIPMENT]
 
 
 async def back(db: AsyncSession, lot_id: int) -> Trace:

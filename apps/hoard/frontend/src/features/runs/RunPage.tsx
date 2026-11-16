@@ -1,11 +1,11 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleCheck, Pencil, Play, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { getListAdjustmentsQueryKey } from "@/api/generated/adjustments/adjustments";
-import type { RunLineRead, RunLot, RunRead } from "@/api/generated/hoard.schemas";
+import type { RunLineRead, RunLot, RunRead, RunShipped } from "@/api/generated/hoard.schemas";
 import {
   getListRunsQueryKey,
   getReadRunQueryKey,
@@ -18,10 +18,14 @@ import {
 } from "@/api/generated/runs/runs";
 import { toast } from "@/components/Toaster";
 import { today, useMovementLabels } from "@/features/adjustments/labels";
+import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { ItemFacts } from "@/features/items/ItemHeader";
 import { StatusBadge } from "@/features/items/ItemList";
+import { pictureUrl } from "@/features/items/ItemPicture";
+import { Tile } from "@/features/products/glance";
 import { RunDialog } from "@/features/runs/RunDialog";
 import { RunBadges } from "@/features/runs/RunsPage";
+import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useMemberNames } from "@/lib/members";
 import { useMoney } from "@/lib/money";
@@ -48,9 +52,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 /** The lot choice that leaves a line to have one assumed. */
 const ASSUMED = "assumed";
 
-/** One production run, under Production: what it makes and consumes, from
- *  which lots, starting, completing and reopening it, and what it cost for a
- *  member who sees costs. */
+/** One production run, under Production: its figures, what it makes and
+ *  consumes, from which lots, its notes and its recipe's method, its files,
+ *  the order it was made for and the orders that shipped what it made;
+ *  starting, completing and reopening it; and what it cost, its labour and
+ *  what orders paid for a member who sees costs. */
 export function RunPage({ runId }: { runId: number }) {
   const { t } = useTranslation("production");
   const run = useReadRun(runId);
@@ -74,6 +80,7 @@ function Run({ run }: { run: RunRead }) {
   const seesCosts = useSeesCosts();
   const money = useMoney();
   const { date, location, item, quantity } = useMovementLabels();
+  const { unit } = useSettingsNames();
   const memberName = useMemberNames([run.assignee_ref, run.created_by]);
   const [editing, setEditing] = useState(false);
   const [completing, setCompleting] = useState(false);
@@ -110,11 +117,9 @@ function Run({ run }: { run: RunRead }) {
       : t("runs.lines.lotOption", { number: lot.number, balance: quantity(lot.balance) });
 
   const costFacts: [string, ReactNode][] = costed
-    ? [
-        [t("runs.cost"), money(run.cost ?? "0")],
-        [t("runs.unitCost"), run.unit_cost && money(run.unit_cost, { exact: true })],
-      ]
+    ? [[t("runs.unitCost"), run.unit_cost && money(run.unit_cost, { exact: true })]]
     : [];
+  const unknown = (text: string) => <span className="text-muted-foreground">{text}</span>;
 
   return (
     <section className="flex flex-col gap-4">
@@ -124,7 +129,18 @@ function Run({ run }: { run: RunRead }) {
             {t("runs.title", { code: run.code })}
           </h2>
           <p className="text-sm text-muted-foreground">{item(run.item)}</p>
-          <RunBadges run={run} />
+          {run.made_for && (
+            <p className="text-sm">
+              {t("runs.madeFor")}{" "}
+              <Link
+                to="/orders/$orderId"
+                params={{ orderId: String(run.made_for.id) }}
+                className="font-medium underline-offset-4 hover:underline"
+              >
+                {run.made_for.code}
+              </Link>
+            </p>
+          )}
           <p className="text-xs text-muted-foreground">
             {t("hoard:common.createdBy", { name: memberName(run.created_by) })}
           </p>
@@ -179,11 +195,33 @@ function Run({ run }: { run: RunRead }) {
         </Alert>
       )}
 
+      <dl className="grid grid-cols-fill-32/5 gap-3">
+        <Tile label={t("runs.statusLabel")}>
+          <RunBadges run={run} />
+        </Tile>
+        <Tile label={t("runs.actual")}>
+          {run.actual_quantity ? quantity(run.actual_quantity) : unknown(t("runs.figures.notMade"))}
+        </Tile>
+        <Tile label={t("runs.planned")}>
+          {run.planned_quantity
+            ? quantity(run.planned_quantity)
+            : unknown(t("runs.figures.unknown"))}
+        </Tile>
+        {seesCosts && (
+          <>
+            <Tile label={t("runs.labourCost")}>
+              {run.labour_cost ? money(run.labour_cost) : unknown(t("runs.figures.noLabour"))}
+            </Tile>
+            <Tile label={t("runs.cost")}>
+              {completed ? money(run.cost ?? "0") : unknown(t("runs.figures.notMade"))}
+            </Tile>
+          </>
+        )}
+      </dl>
+
       <ItemFacts
         facts={[
           [t("runs.batches"), quantity(run.planned_batches)],
-          [t("runs.planned"), run.planned_quantity && quantity(run.planned_quantity)],
-          [t("runs.actual"), run.actual_quantity && quantity(run.actual_quantity)],
           [t("hoard:common.location"), location(run.location_id)],
           [t("runs.assignee"), run.assignee_ref && memberName(run.assignee_ref)],
           [t("runs.started"), run.started_on && date(run.started_on)],
@@ -200,6 +238,7 @@ function Run({ run }: { run: RunRead }) {
         <TableHeader>
           <TableRow>
             <TableHead>{t("runs.lines.item")}</TableHead>
+            <TableHead>{t("hoard:common.sku")}</TableHead>
             <TableHead className="text-right">{t("hoard:common.quantity")}</TableHead>
             <TableHead>{t("runs.lines.lot")}</TableHead>
             {costed && (
@@ -215,10 +254,18 @@ function Run({ run }: { run: RunRead }) {
             <TableRow key={line.id}>
               <TableCell>
                 <span className="inline-flex items-center gap-2">
+                  {line.picture_id !== null && (
+                    <img
+                      src={pictureUrl(line.item.id, line.picture_id)}
+                      alt=""
+                      className="size-10 rounded object-cover"
+                    />
+                  )}
                   {item(line.item)}
                   <StatusBadge status={line.item.archived ? "archived" : "active"} />
                 </span>
               </TableCell>
+              <TableCell>{line.sku}</TableCell>
               <TableCell className="text-right">
                 <span className="inline-flex items-center gap-2 tabular-nums">
                   {line.short && (
@@ -226,7 +273,7 @@ function Run({ run }: { run: RunRead }) {
                       {t("runs.lines.short", { quantity: quantity(line.short) })}
                     </Badge>
                   )}
-                  {quantity(line.quantity)}
+                  {quantity(line.quantity)} {unit(line.unit_id)}
                 </span>
               </TableCell>
               <TableCell>
@@ -267,7 +314,13 @@ function Run({ run }: { run: RunRead }) {
               {costed && (
                 <>
                   <TableCell className="text-right">
-                    {line.unit_cost && money(line.unit_cost, { exact: true })}
+                    {line.unit_cost &&
+                      (line.unit_id === null
+                        ? money(line.unit_cost, { exact: true })
+                        : t("runs.lines.perUnit", {
+                            cost: money(line.unit_cost, { exact: true }),
+                            unit: unit(line.unit_id),
+                          }))}
                   </TableCell>
                   <TableCell className="text-right">{line.cost && money(line.cost)}</TableCell>
                 </>
@@ -279,6 +332,25 @@ function Run({ run }: { run: RunRead }) {
       {run.lines.length === 0 && (
         <p className="text-sm text-muted-foreground">{t("runs.lines.empty")}</p>
       )}
+
+      {(run.notes || run.recipe_notes) && (
+        <div className="grid grid-cols-pair gap-4">
+          {run.notes && <Notes title={t("hoard:common.notes")}>{run.notes}</Notes>}
+          {run.recipe_notes && <Notes title={t("runs.method")}>{run.recipe_notes}</Notes>}
+        </div>
+      )}
+
+      {completed && (
+        <section className="flex flex-col gap-2">
+          <h3 className="text-lg font-semibold tracking-tight">{t("runs.shipped.title")}</h3>
+          <ShippedTable shipped={run.shipped} />
+        </section>
+      )}
+
+      <section className="flex flex-col gap-2">
+        <h3 className="text-lg font-semibold tracking-tight">{t("documents:section.title")}</h3>
+        <DocumentsSection of="run" id={run.id} />
+      </section>
 
       <RunDialog open={editing} onOpenChange={setEditing} run={run} />
       <CompleteDialog
@@ -322,6 +394,77 @@ function Run({ run }: { run: RunRead }) {
         }}
       />
     </section>
+  );
+}
+
+/** Notes under their title, as they were written. */
+function Notes({ title, children }: { title: string; children: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="text-sm font-medium">{title}</h3>
+      <p className="text-sm whitespace-pre-wrap">{children}</p>
+    </div>
+  );
+}
+
+/** What orders shipped of what a run made, each opening its order: when it
+ *  was ordered and shipped, the store's number for its customer, what it
+ *  sold, how much, whether the lot was assumed, and, for a member who sees
+ *  costs, what the line charged for it. */
+function ShippedTable({ shipped }: { shipped: RunShipped[] }) {
+  const { t } = useTranslation(["production", "orders"]);
+  const seesCosts = useSeesCosts();
+  const money = useMoney();
+  const { date, item, quantity } = useMovementLabels();
+  if (shipped.length === 0)
+    return <p className="text-sm text-muted-foreground">{t("runs.shipped.empty")}</p>;
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("runs.shipped.order")}</TableHead>
+          <TableHead>{t("runs.shipped.orderedOn")}</TableHead>
+          <TableHead>{t("runs.shipped.shippedOn")}</TableHead>
+          <TableHead>{t("runs.shipped.item")}</TableHead>
+          <TableHead className="text-right">{t("hoard:common.quantity")}</TableHead>
+          {seesCosts && <TableHead className="text-right">{t("hoard:common.total")}</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {shipped.map((row) => (
+          <TableRow key={row.id}>
+            <TableCell>
+              <span className="inline-flex flex-wrap items-center gap-2">
+                <Link
+                  to="/orders/$orderId"
+                  params={{ orderId: String(row.order.id) }}
+                  className="font-medium underline-offset-4 hover:underline"
+                >
+                  {row.order.code}
+                </Link>
+                {row.store_customer && (
+                  <span className="text-muted-foreground">
+                    {t("orders:order.storeCustomer", { number: row.store_customer })}
+                  </span>
+                )}
+              </span>
+            </TableCell>
+            <TableCell>{date(row.ordered_on)}</TableCell>
+            <TableCell>{date(row.shipped_on)}</TableCell>
+            <TableCell>{item(row.item)}</TableCell>
+            <TableCell className="text-right">
+              <span className="inline-flex items-center gap-2 tabular-nums">
+                {row.assumed && <Badge variant="secondary">{t("runs.lines.assumed")}</Badge>}
+                {quantity(row.quantity)}
+              </span>
+            </TableCell>
+            {seesCosts && (
+              <TableCell className="text-right">{row.total && money(row.total)}</TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
   );
 }
 
