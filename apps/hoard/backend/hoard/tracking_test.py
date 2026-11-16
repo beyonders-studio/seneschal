@@ -87,7 +87,7 @@ async def _purchase(db: WriteSession, main: Location, *materials) -> Purchase:
             PurchaseLine(
                 organization_id=db.organization_id,
                 purchase_id=purchase.id,
-                material_id=bought.id,
+                item_id=bought.id,
                 purchase_quantity=Decimal(2),
                 tracking_quantity=Decimal(2),
                 unit_cost=Decimal(1),

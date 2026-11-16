@@ -288,3 +288,9 @@ async def test_an_organization_has_the_standard_units_which_stay_as_they_are(
         for source in (kilogram, jar)
     ]
     assert conversions == [{"factor": "1000.000000"}, {"factor": None}]
+    # Without a unit to convert to, a variation's: so many of it.
+    dozen = next(unit for unit in listed if unit["standard"] == "dozen")
+    of_itself = await client.get(
+        "/api/v1/settings/units/conversion", params={"from_unit_id": dozen["id"]}
+    )
+    assert of_itself.json() == {"factor": "12.000000"}

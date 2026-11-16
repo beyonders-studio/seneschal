@@ -251,7 +251,7 @@ async def test_materials_to_order_expand_runs_through_bases_with_their_suppliers
         PurchaseLine(
             organization_id=db.organization_id,
             purchase_id=on_order.id,
-            material_id=oil.id,
+            item_id=oil.id,
             purchase_quantity=Decimal(600),
             tracking_quantity=Decimal(600),
             unit_cost=Decimal(1),

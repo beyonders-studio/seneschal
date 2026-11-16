@@ -170,6 +170,28 @@ async def test_nothing_is_queued_where_the_store_was_last_pushed_as_much(
     assert (queued.quantity, queued.compare_quantity) == (5, 4)
 
 
+async def test_receiving_a_listed_variation_pushes_its_count_where_the_store_maps(
+    db: WriteSession, store: Store, listing: Listing, shop_location: StoreLocation, chai, buy
+):
+    back_room = Location(organization_id=db.organization_id, name="Back room")
+    db.add(back_room)
+    await db.flush()
+    await push.baseline(db, store)
+
+    # Bought at a location no store sells from: the store's count stays.
+    await buy((chai, "4", "2"), location_id=back_room.id)
+    assert db.info["hoard.noted_items"] == {db.organization_id: {chai.id}}
+    assert await push.queue(db, [chai.id]) == []
+
+    await buy((chai, "3", "2"))
+    [queued] = await push.queue(db, [chai.id])
+    assert (queued.listing_id, queued.store_location_id, queued.quantity) == (
+        listing.id,
+        shop_location.id,
+        3,
+    )
+
+
 async def test_nothing_is_queued_for_unmapped_locations_cleared_or_pending_stores(
     db: WriteSession,
     listing: Listing,

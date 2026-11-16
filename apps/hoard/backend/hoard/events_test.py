@@ -101,7 +101,7 @@ async def test_a_runs_a_purchases_and_a_holds_events_carry_what_they_declare(
         "initiative_id": 12,
         "task_id": None,
         "line_id": 0,
-        "material": "Flour",
+        "item": "Flour",
         "quantity": "10.000000",
     }
 

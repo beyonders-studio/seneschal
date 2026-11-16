@@ -36,6 +36,7 @@ from hoard.records import (
     Purchase,
     PurchaseLine,
     Unit,
+    Variation,
 )
 from hoard.stock import add_base, add_default_hold_reasons, add_material, adjust, main_location
 from seneschal_core import jobs, organizations
@@ -122,23 +123,22 @@ def base(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Base]]:
     return base
 
 
-#: A line to buy: a material, its quantity and its unit cost.
-Line = tuple[Material, str, str]
+#: A line to buy: a material or a variation, its quantity and its unit cost.
+Line = tuple[Material | Variation, str, str]
 
 
 @pytest.fixture
 def buy(db: WriteSession, main: Location) -> Callable[..., Awaitable[Purchase]]:
-    """Buy ``lines`` on one purchase received at the main location, receiving
-    each line in turn on the purchase's date. A line's purchase and tracking
-    quantities are the same."""
+    """Buy ``lines`` on one purchase received at the main location, unless it
+    names another, receiving each line in turn on the purchase's date. A
+    line's purchase and tracking quantities are the same."""
 
     async def buy(*lines: Line, dated_on: date = date(2026, 11, 1), **fields: Any) -> Purchase:
         purchase = Purchase(
             organization_id=db.organization_id,
             code=f"P-{secrets.token_hex(3)}",
             dated_on=dated_on,
-            location_id=main.id,
-            **fields,
+            **{"location_id": main.id} | fields,
         )
         db.add(purchase)
         await db.flush()
@@ -146,7 +146,7 @@ def buy(db: WriteSession, main: Location) -> Callable[..., Awaitable[Purchase]]:
             line = PurchaseLine(
                 organization_id=db.organization_id,
                 purchase_id=purchase.id,
-                material_id=bought.id,
+                item_id=bought.id,
                 purchase_quantity=Decimal(quantity),
                 tracking_quantity=Decimal(quantity),
                 unit_cost=Decimal(unit_cost),

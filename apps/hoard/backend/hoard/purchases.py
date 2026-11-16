@@ -4,15 +4,19 @@ A purchase's discount and shipping are spread over its lines by value
 (quantity times unit cost); its tax stays out of every cost. A line's landed
 cost is its value and its share, per tracking unit.
 
-Receiving a line of an inventoriable material makes its lot, at the purchase's
-location, and its purchase adjustment, at the landed cost, both dated the day
-it arrived. Receiving part of a line splits that part off as a line of its own
+A line buys a material or a product's variation, never a base or a bundle's
+variation, which has no stock of its own (:func:`bought`). Receiving it makes
+its lot, at the purchase's location, and its purchase adjustment, at the
+landed cost, both dated the day it arrived; a material that is not
+inventoriable gets neither. Costing re-derives the item's average from it, and
+a listed variation's new count is pushed to the stores mapping the location
+(``hoard.costing``). Receiving part of a line splits that part off as a line of its own
 at the same unit cost, the rest staying on order: their quantities split in
 proportion (``hoard.units.split``), so their values add up to the line's and
 the discount and shipping spread as before. Taking the part back puts it back
 into the rest while that is still on order as it was. After a purchase or its
 lines are edited, :func:`rederive_purchase` carries the edit into their
-adjustments and lots and re-derives each material's cost.
+adjustments and lots and re-derives each item's cost.
 """
 
 from __future__ import annotations
@@ -31,8 +35,10 @@ from hoard.records import (
     AdjustmentKind,
     Lot,
     Material,
+    Product,
     Purchase,
     PurchaseLine,
+    Variation,
 )
 from hoard.stock import StockError, StockRefused
 from seneschal_core.db import WriteSession
@@ -45,7 +51,7 @@ class PurchaseError(StrEnum):
     COSTS_HIDDEN = "COSTS_HIDDEN"
     #: Another purchase has the code.
     PURCHASE_CODE_TAKEN = "PURCHASE_CODE_TAKEN"
-    #: The line is received: it can't be received again or bought as another material.
+    #: The line is received: it can't be received again or buy another item.
     PURCHASE_LINE_RECEIVED = "PURCHASE_LINE_RECEIVED"
     #: The line has not been received.
     PURCHASE_LINE_NOT_RECEIVED = "PURCHASE_LINE_NOT_RECEIVED"
@@ -53,6 +59,8 @@ class PurchaseError(StrEnum):
     RECEIVED_BEFORE_PURCHASE = "RECEIVED_BEFORE_PURCHASE"
     #: More was received than the line is for.
     RECEIVED_MORE_THAN_LINE = "RECEIVED_MORE_THAN_LINE"
+    #: The line names what can't be bought: a base, or a bundle's variation.
+    PURCHASE_LINE_KIND = "PURCHASE_LINE_KIND"
 
 
 class PurchaseRefused(Exception):
@@ -83,6 +91,17 @@ def landed_costs(purchase: Purchase, lines: list[PurchaseLine]) -> dict[int, Dec
     }
 
 
+async def bought(db: WriteSession, item_id: int) -> Material | Variation:
+    """What a line buying ``item_id`` buys: a material, or a variation of a
+    product that is not a bundle. Refused for anything else."""
+    found = await db.get(Material, item_id) or await db.get(Variation, item_id)
+    if found is None or (
+        isinstance(found, Variation) and (await db.get_one(Product, found.product_id)).bundle
+    ):
+        raise PurchaseRefused(PurchaseError.PURCHASE_LINE_KIND)
+    return found
+
+
 async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
     lines = await db.exec(
         select(PurchaseLine)
@@ -96,7 +115,7 @@ async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
 async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
     """Carry a purchase's location and lines into its received lines'
     adjustments and lots, at their landed costs and on the days they arrived,
-    and re-derive the cost of every material it buys. Refused when a line
+    and re-derive the cost of every item it buys. Refused when a line
     arrived before the purchase's date."""
     await db.flush()
     lines = await _lines(db, purchase.id)
@@ -118,8 +137,8 @@ async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
         if lot is not None:
             lot.dated_on = line.received_on
             lot.location_id = purchase.location_id
-    for material_id in sorted({line.material_id for line in lines}):
-        await costing.rederive(db, material_id)
+    for item_id in sorted({line.item_id for line in lines}):
+        await costing.rederive(db, item_id)
 
 
 async def _split(db: WriteSession, line: PurchaseLine, quantity: Decimal) -> PurchaseLine:
@@ -137,7 +156,7 @@ async def _split(db: WriteSession, line: PurchaseLine, quantity: Decimal) -> Pur
     part = PurchaseLine(
         organization_id=db.organization_id,
         purchase_id=line.purchase_id,
-        material_id=line.material_id,
+        item_id=line.item_id,
         purchase_quantity=bought,
         tracking_quantity=tracked,
         unit_cost=line.unit_cost,
@@ -158,24 +177,24 @@ async def receive_line(
     expires_on: date | None = None,
     notes: str | None = None,
 ) -> PurchaseLine:
-    """Receive ``line`` on ``received_on``, today when not given: for an
-    inventoriable material, its lot (numbered from the purchase's code and
-    the line when no number is given) and its purchase adjustment. A
-    ``quantity`` less than the line's tracking quantity receives only that
-    much, split off as a line of its own. Records the purchase received once
-    every line is. Answers the line received."""
+    """Receive ``line`` on ``received_on``, today when not given: for a
+    variation or an inventoriable material, its lot (numbered from the
+    purchase's code and the line when no number is given) and its purchase
+    adjustment. A ``quantity`` less than the line's tracking quantity receives
+    only that much, split off as a line of its own. Records the purchase
+    received once every line is. Answers the line received."""
     purchase = await db.get_one(Purchase, line.purchase_id)
-    material = await db.get_one(Material, line.material_id)
+    item = await bought(db, line.item_id)
     received_on = received_on or date.today()
     if received_on < purchase.dated_on:
         raise PurchaseRefused(PurchaseError.RECEIVED_BEFORE_PURCHASE)
     if quantity is not None and quantity != line.tracking_quantity:
         line = await _split(db, line, quantity)
     line.received_on = received_on
-    if material.inventoriable:
+    if isinstance(item, Variation) or item.inventoriable:
         lot = Lot(
             organization_id=db.organization_id,
-            item_id=material.id,
+            item_id=item.id,
             location_id=purchase.location_id,
             purchase_line_id=line.id,
             number=number or f"{purchase.code}-{line.id}",
@@ -188,7 +207,7 @@ async def receive_line(
         db.add(
             Adjustment(
                 organization_id=db.organization_id,
-                item_id=material.id,
+                item_id=item.id,
                 location_id=purchase.location_id,
                 lot_id=lot.id,
                 kind=AdjustmentKind.PURCHASE,
@@ -228,20 +247,20 @@ async def _unreceive(db: WriteSession, line: PurchaseLine) -> None:
     await db.execute(delete(Adjustment).where(col(Adjustment.purchase_line_id) == line.id))
     await db.execute(delete(Lot).where(col(Lot.purchase_line_id) == line.id))
     line.received_on = None
-    await costing.rederive(db, line.material_id)
+    await costing.rederive(db, line.item_id)
 
 
 async def unreceive_line(db: WriteSession, line: PurchaseLine) -> None:
     """Take back what ``line`` received (refused while anything draws on its
     lot). A part received from another line goes back into it while that is
-    still on order for the same material at the same unit cost; otherwise it
+    still on order for the same item at the same unit cost; otherwise it
     stays a line of its own, on order."""
     await _unreceive(db, line)
     rest = None if line.split_from_id is None else await db.get(PurchaseLine, line.split_from_id)
     if (
         rest is None
         or rest.received_on is not None
-        or (rest.material_id, rest.unit_cost) != (line.material_id, line.unit_cost)
+        or (rest.item_id, rest.unit_cost) != (line.item_id, line.unit_cost)
     ):
         return
     rest.purchase_quantity += line.purchase_quantity

@@ -127,7 +127,7 @@ RETURNS: dict[EventName, list[Return]] = {
     EventName.PURCHASE_LINE_RECEIVED: [
         *_PURCHASE,
         Return("line_id", "int", "Purchase line"),
-        Return("material", "string", "Material"),
+        Return("item", "string", "Item, by name"),
         Return("quantity", "string", "Quantity received"),
     ],
     EventName.PURCHASE_RECEIVED: _PURCHASE,
@@ -251,7 +251,7 @@ async def purchase_event(
     if line is not None:
         payload |= {
             "line_id": line.id,
-            "material": await item_name(db, line.material_id),
+            "item": await item_name(db, line.item_id),
             "quantity": str(line.tracking_quantity),
         }
     return Event(name, payload, purchase.initiative_id)

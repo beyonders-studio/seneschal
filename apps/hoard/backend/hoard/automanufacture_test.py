@@ -10,6 +10,7 @@ from sqlmodel import col, select
 from hoard import automanufacture
 from hoard.records import (
     AutoManufacture,
+    Item,
     Location,
     Order,
     OrderLine,
@@ -101,7 +102,8 @@ async def test_a_claimed_order_makes_what_it_sells_as_each_variation_says(
     )
     for variation in (always, short, never):
         await _made_from(db, variation, leaf, "2")
-    await lot(short.id, "S-1", "3")
+    # Sencha is bought as well as made: what was bought is stock too.
+    await buy((short, "3", "1"))
     # Another open order commits one of the three on hand.
     await sell((short.id, "1", "4"))
 
@@ -121,6 +123,8 @@ async def test_a_claimed_order_makes_what_it_sells_as_each_variation_says(
     ]
     assert (await on_hand(db, always.id), await on_hand(db, short.id)) == (3, 6)
     assert await on_hand(db, leaf.id) == 100 - 2 * 6
+    # Its average follows both: three bought at 1, three made of 2 of leaf at 1.
+    assert (await db.get_one(Item, short.id)).average_cost == Decimal("1.5")
     made = [line.production_run_id is not None for line in await _lines(db, order)]
     assert made == [True, True, True, False, False]
     recorded = await db.exec(select(OutboxEvent).where(col(OutboxEvent.name).like("run-%")))
