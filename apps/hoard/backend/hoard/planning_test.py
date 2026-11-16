@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -188,13 +188,12 @@ async def test_nothing_to_make_is_not_listed(
 
 
 async def _received(db: WriteSession, purchase: Purchase, days_later: int) -> None:
-    """Record ``purchase``'s lines as received ``days_later`` after it was ordered."""
-    lines = select(PurchaseLine.id).where(PurchaseLine.purchase_id == purchase.id)
-    received = datetime.combine(purchase.dated_on + timedelta(days_later), datetime.min.time(), UTC)
+    """Date ``purchase``'s receipts ``days_later`` after it was ordered; they
+    were entered today, which a lead time doesn't count."""
     await db.execute(
-        update(Adjustment)
-        .where(col(Adjustment.purchase_line_id).in_(lines))
-        .values(created_at=received)
+        update(PurchaseLine)
+        .where(col(PurchaseLine.purchase_id) == purchase.id)
+        .values(received_on=purchase.dated_on + timedelta(days_later))
     )
 
 
