@@ -349,23 +349,44 @@ def lot_read(lot: Lot, on_hold: bool, properties: list[HoardPropertySummary]) ->
 
 
 async def require_tracking_unit(db: AsyncSession, item_id: int, was: int, now: int) -> None:
-    """Refuse (409 ``TRACKING_UNIT_IN_USE``) changing a material's or a base's
-    tracking unit once anything records a number in it: its stock movements,
-    purchases and stocktake counts, a recipe line naming it, its own recipe,
-    or a run making or using it. Before then it changes freely."""
+    """Refuse (409) changing a material's or a base's tracking unit once
+    anything records a number in it, naming the first that does: its stock
+    movements, purchases and stocktake counts, a recipe line naming it, its
+    own recipe, or a run making or using it. Before then it changes freely."""
     if was == now:
         return
-    for held in (
-        select(Adjustment.id).where(Adjustment.item_id == item_id),
-        select(PurchaseLine.id).where(PurchaseLine.item_id == item_id),
-        select(StocktakeRow.id).where(StocktakeRow.item_id == item_id),
-        select(RecipeLine.id).where(RecipeLine.item_id == item_id),
-        select(Recipe.id).where(Recipe.base_id == item_id),
-        select(ProductionRun.id).where(ProductionRun.item_id == item_id),
-        select(ProductionRunLine.id).where(ProductionRunLine.item_id == item_id),
+    for held, code in (
+        (
+            select(Adjustment.id).where(Adjustment.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_STOCK,
+        ),
+        (
+            select(PurchaseLine.id).where(PurchaseLine.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_PURCHASES,
+        ),
+        (
+            select(StocktakeRow.id).where(StocktakeRow.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_STOCKTAKES,
+        ),
+        (
+            select(RecipeLine.id).where(RecipeLine.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_RECIPES,
+        ),
+        (
+            select(Recipe.id).where(Recipe.base_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_OWN_RECIPE,
+        ),
+        (
+            select(ProductionRun.id).where(ProductionRun.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_RUNS,
+        ),
+        (
+            select(ProductionRunLine.id).where(ProductionRunLine.item_id == item_id),
+            SettingsError.TRACKING_UNIT_IN_RUNS,
+        ),
     ):
         if (await db.exec(held.limit(1))).first() is not None:
-            raise refuse(status.HTTP_409_CONFLICT, SettingsError.TRACKING_UNIT_IN_USE)
+            raise refuse(status.HTTP_409_CONFLICT, code)
 
 
 async def _set_bin(db: WriteSession, item_id: int, location_id: int, bin: ItemBin) -> None:

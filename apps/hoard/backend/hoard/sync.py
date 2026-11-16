@@ -230,7 +230,7 @@ async def _split(db: WriteSession, line: OrderLine) -> None:
             organization_id=db.organization_id,
             order_id=line.order_id,
             item_id=part.item_id,
-            quantity=units.scaled(line.quantity, part.quantity / recipe.batch_quantity),
+            quantity=units.scaled(line.quantity, units.each(part.quantity, recipe.batch_quantity)),
             price=Decimal(0),
             bundle_line_id=line.id,
         )

@@ -14,7 +14,7 @@
     { "key": "blend", "kind": "base", "shape": "base" },
     { "key": "prep", "kind": "base", "shape": "base" },
     { "key": "accessory", "kind": "product", "shape": "bought" },
-    { "key": "gift_box", "kind": "product", "shape": "bundle" }
+    { "key": "gift_box", "kind": "product", "shape": "made" }
   ],
   "categories": [
     { "key": "tea_botanical", "kinds": ["material"], "picking": "earliest_expiry" },

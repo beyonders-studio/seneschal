@@ -20,7 +20,7 @@
     "emptyOf": "No {{recipe}} for {{variation}} yet.",
     "add": "Add {{recipe}}",
     "makeBundle": "Make it a bundle",
-    "bundleHint": "A bundle sells other products together, such as a gift box, in place of a {{recipe}}."
+    "bundleHint": "A bundle sells products you already stock together, such as two infusers sold as a pair, and keeps no stock of its own. A gift box with packaging, or one made ahead and kept, is a product with a {{recipe}} instead."
   },
   "card": {
     "makes": "One batch makes {{quantity}}",
@@ -61,6 +61,8 @@
     "notesHint": "How it's made, shown above its lines.",
     "lines": "What a batch takes",
     "holds": "What it holds",
+    "holdsHint": "Each sale takes these products from their own stock. If it adds packaging or is made ahead and kept, give it a {{recipe}} instead.",
+    "linesHint": "Its materials, {{bases}} and products, such as a gift box's infuser, tin and box. Products sold together with nothing added are a bundle instead.",
     "item": "Item {{number}}",
     "quantity": "Quantity",
     "addLine": "Add line",
@@ -82,6 +84,7 @@
     "RECIPE_LINE_REPEATED": "Each item goes in once.",
     "RECIPE_CYCLE": "That would make it from itself.",
     "RECIPE_BUNDLE": "A bundle's products take no {{recipe}} of their own and go into no other {{recipe}}.",
+    "RECIPE_BUNDLE_RATIO": "A bundle holds whole products, so it's written by amount, not by ratio.",
     "RECIPE_EXISTS": "It already has a {{recipe}}.",
     "RECIPE_RATIO_TOTAL": "The ingredients total adds up the lines measured like it, and none is: give it a unit one of them is in."
   }

@@ -146,7 +146,7 @@ async def test_a_material_is_added_edited_and_removed_with_the_organization_s_se
 
 
 async def test_standard_units_fill_in_the_conversion_and_a_tracking_unit_with_history_stays(
-    client, sign_in, db: WriteSession, unit: Unit, buy
+    client, sign_in, db: WriteSession, unit: Unit, buy, base
 ):
     jar = Unit(organization_id=db.organization_id, name="Jar")
     db.add(jar)
@@ -184,11 +184,16 @@ async def test_standard_units_fill_in_the_conversion_and_a_tracking_unit_with_hi
     assert (
         await client.put(f"/api/v1/materials/{catnip}", json=body(tracking_unit_id=kilograms))
     ).status_code == 200
-    material = await db.get_one(Material, catnip)
-    await buy((material, "1", "4"))
+    # The refusal names what holds the unit: a recipe, then its stock first of all.
+    syrup = await base("Syrup")
+    await recipes.save(db, Recipe(base_id=syrup.id), [Line(catnip, Decimal(1))])
     await db.commit()
     held = await client.put(f"/api/v1/materials/{catnip}", json=body())
-    assert (held.status_code, held.json()) == (409, {"detail": "TRACKING_UNIT_IN_USE"})
+    assert (held.status_code, held.json()) == (409, {"detail": "TRACKING_UNIT_IN_RECIPES"})
+    await buy((await db.get_one(Material, catnip), "1", "4"))
+    await db.commit()
+    held = await client.put(f"/api/v1/materials/{catnip}", json=body())
+    assert (held.status_code, held.json()) == (409, {"detail": "TRACKING_UNIT_IN_STOCK"})
 
 
 async def test_a_new_material_starts_with_its_notes_bin_and_stock(

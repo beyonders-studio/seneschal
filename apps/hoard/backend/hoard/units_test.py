@@ -139,6 +139,9 @@ def test_a_recipe_scales_to_a_quantity_or_to_use_an_amount_of_one_line():
     assert batches == Decimal("2.5")
     assert units.scaled(Decimal("1.5"), batches) == Decimal("3.750000")
     assert units.scale(Decimal(4), None) == 1
+    assert units.scaled(Decimal("0.333333"), Decimal("0.5")) == Decimal("0.166666")
+    assert units.scaled(Decimal("0.333333"), Decimal("0.5"), exact=True) == Decimal("0.1666665")
+    assert units.each(Decimal(3), Decimal(4)) == Decimal("0.75")
     alyx = units.recipe(
         [
             RecipeLine(Decimal(2), GRAM, GRAM),

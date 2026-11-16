@@ -332,7 +332,10 @@ class Declarations:
         mix = _Mix()
         lines = await self.db.exec(select(RecipeLine).where(RecipeLine.recipe_id == recipe.id))
         for line in lines.all():
-            mix.add(await self._item(line.item_id, seen), line.quantity / recipe.batch_quantity)
+            mix.add(
+                await self._item(line.item_id, seen),
+                units.each(line.quantity, recipe.batch_quantity),
+            )
         return mix
 
     async def _item(self, item_id: int, seen: frozenset[int] = frozenset()) -> _Mix:
@@ -403,7 +406,7 @@ class Declarations:
         for line in lines.all():
             lot = await self.db.get(Lot, line.lot_id) if line.lot_id is not None else None
             consumed = await self._lot(lot) if lot is not None else await self._item(line.item_id)
-            mix.add(consumed, line.quantity / made)
+            mix.add(consumed, units.each(line.quantity, made))
         return mix
 
     async def _rinse_off(self, item_id: int) -> bool:

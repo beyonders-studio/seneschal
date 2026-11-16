@@ -60,7 +60,8 @@ describe("ProductPage", () => {
     await screen.findByRole("heading", { name: "Chai" });
     const picture = await screen.findByRole("img", { name: "Chai, picture 1" });
     expect(picture.getAttribute("src")).toBe("/api/v1/products/7/images/30");
-    const [variations, stock] = screen.getAllByRole("table");
+    // Its sales, which show to everyone, come first.
+    const [, variations, stock] = screen.getAllByRole("table");
     within(variations).getByText("Default");
     within(variations).getByText("Large");
     await within(stock).findByText("Main location");
@@ -232,14 +233,19 @@ describe("ProductPage", () => {
       await openSignedIn("/stock/products/7", signedIn(), figured);
 
       await screen.findByText("SKU CHAI-1");
-      const tile = (label: string) => screen.getByText(label).closest("div")?.textContent;
+      const tile = (label: string) =>
+        screen.getByText(label, { selector: "dt" }).closest("div")?.textContent;
       expect(tile("Consigned")).toBe("Consigned2");
       expect(tile("Committed")).toBe("Committed3");
       expect(tile("Sold")).toBe("Sold8");
       expect(tile("Shipped")).toBe("Shipped5");
       expect(tile("On order")).toBe("On order12");
+      // What sold to each group shows to everyone, and what it earned does not.
+      const retail = screen.getByText("Retail").closest("tr");
+      expect(retail?.textContent).toBe("Retail5");
+      expect(screen.getByText("Wholesale").closest("tr")?.textContent).toBe("Wholesale3");
       expect(screen.queryByText("Gross profit")).toBeNull();
-      expect(screen.queryByText("Wholesale")).toBeNull();
+      expect(screen.queryByText(/shipment line went out/)).toBeNull();
     });
 
     it("shows what it earned from retail and wholesale, its cost and its margin", async () => {
@@ -289,8 +295,8 @@ describe("ProductPage", () => {
         },
       });
 
-      const all = (await screen.findByText("All sales")).closest("tr");
-      expect(all?.textContent).toBe("All sales5$45.00$33.0073.33%");
+      const all = (await screen.findByText("All customers")).closest("tr");
+      expect(all?.textContent).toBe("All customers5$45.00$33.0073.33%");
       expect(screen.queryByText("Wholesale")).toBeNull();
       await screen.findByText("It has never had a cost, so its margin is unknown.");
       const term = (label: string) =>

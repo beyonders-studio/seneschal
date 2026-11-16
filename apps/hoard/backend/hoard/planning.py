@@ -61,7 +61,7 @@ from sqlalchemy import and_, func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import orders, recipes, summary
+from hoard import orders, recipes, summary, units
 from hoard import recall as recalls
 from hoard.events import item_name
 from hoard.holds import held_lots
@@ -247,11 +247,15 @@ async def plan(db: AsyncSession, today: date) -> Plan:
     for run in open_runs:
         recipe = by_id.get(run.recipe_id or 0) or made_by.get(run.item_id)
         if recipe is not None:
-            planned[run.item_id] += run.planned_batches * recipe.batch_quantity
+            planned[run.item_id] += units.scaled(
+                recipe.batch_quantity, run.planned_batches, exact=True
+            )
         runs.append(
             Run(
                 item_id=run.item_id,
-                minutes=run.planned_batches * Decimal((recipe.minutes or 0) if recipe else 0),
+                minutes=units.scaled(
+                    Decimal((recipe.minutes or 0) if recipe else 0), run.planned_batches, exact=True
+                ),
                 needed_on=run.deadline_on or today,
                 deadline=run.deadline_on,
                 suggested=False,
@@ -267,8 +271,8 @@ async def plan(db: AsyncSession, today: date) -> Plan:
         short = needed - available - curing[item_id] - planned[item_id]
         if short <= 0:
             return
-        batches = math.ceil(short / recipe.batch_quantity)
-        minutes = batches * Decimal(recipe.minutes or 0)
+        batches = math.ceil(units.scale(recipe.batch_quantity, short))
+        minutes = units.scaled(Decimal(recipe.minutes or 0), Decimal(batches), exact=True)
         suggestions.append(
             Suggestion(
                 item_id,
@@ -289,7 +293,10 @@ async def plan(db: AsyncSession, today: date) -> Plan:
                 needed_on=needed_on,
                 deadline=None,
                 suggested=True,
-                lines={line.item_id: line.quantity * batches for line in recipe_lines[recipe.id]},
+                lines={
+                    line.item_id: units.scaled(line.quantity, Decimal(batches), exact=True)
+                    for line in recipe_lines[recipe.id]
+                },
             )
         )
 

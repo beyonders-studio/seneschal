@@ -73,12 +73,12 @@ export function Glance({ product }: { product: ProductDetail }) {
 }
 
 /**
- * What a product's order lines earned and what what they shipped cost, its
- * variations added up, to a member who sees costs: what sold, the revenue,
- * the gross profit left and its share of the revenue, marked when it is a
- * loss, for retail and wholesale customers apart, or in one row while nobody
- * bought wholesale. It says when a shipment went out with no cost, and how
- * many orders in another currency it leaves out.
+ * What a product sold, its variations added up, to retail and wholesale
+ * customers apart, or in one row while nobody bought wholesale. To a member
+ * who sees costs, also what each earned and what what they shipped cost: the
+ * revenue, the gross profit left and its share of the revenue, marked when it
+ * is a loss. It says when a shipment went out with no cost, and how many
+ * orders in another currency it leaves out.
  */
 export function Profitability({ product }: { product: ProductDetail }) {
   const { t } = useTranslation("catalog");
@@ -86,8 +86,7 @@ export function Profitability({ product }: { product: ProductDetail }) {
   const money = useMoney();
   const share = useShare();
   const { totals } = product;
-  const profit = totals.profit;
-  if (!useSeesCosts() || !profit) return null;
+  const profit = useSeesCosts() ? totals.profit : null;
   const groups: [string, SalesGroupRead][] = totals.wholesale
     ? [
         [t("products.profit.retail"), totals.retail],
@@ -96,15 +95,19 @@ export function Profitability({ product }: { product: ProductDetail }) {
     : [[t("products.profit.all"), totals.retail]];
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-sm text-muted-foreground">{t("products.profit.hint")}</p>
+      {profit && <p className="text-sm text-muted-foreground">{t("products.profit.hint")}</p>}
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>{t("products.profit.group")}</TableHead>
             <TableHead className="text-right">{t("products.glance.sold")}</TableHead>
-            <TableHead className="text-right">{t("products.profit.revenue")}</TableHead>
-            <TableHead className="text-right">{t("products.profit.profit")}</TableHead>
-            <TableHead className="text-right">{t("products.profit.share")}</TableHead>
+            {profit && (
+              <>
+                <TableHead className="text-right">{t("products.profit.revenue")}</TableHead>
+                <TableHead className="text-right">{t("products.profit.profit")}</TableHead>
+                <TableHead className="text-right">{t("products.profit.share")}</TableHead>
+              </>
+            )}
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -115,31 +118,41 @@ export function Profitability({ product }: { product: ProductDetail }) {
               <TableRow key={label}>
                 <TableCell>{label}</TableCell>
                 <TableCell className="text-right tabular-nums">{quantity(group.sold)}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {earned && money(earned.revenue)}
-                </TableCell>
-                <TableCell className={cn("text-right tabular-nums", loss && "text-destructive")}>
-                  {earned && money(earned.profit)}
-                </TableCell>
-                <TableCell className={cn("text-right tabular-nums", loss && "text-destructive")}>
-                  {earned?.share == null ? (
-                    <span className="text-muted-foreground">{t("products.pricing.unknown")}</span>
-                  ) : (
-                    share(earned.share)
-                  )}
-                </TableCell>
+                {profit && (
+                  <>
+                    <TableCell className="text-right tabular-nums">
+                      {earned && money(earned.revenue)}
+                    </TableCell>
+                    <TableCell
+                      className={cn("text-right tabular-nums", loss && "text-destructive")}
+                    >
+                      {earned && money(earned.profit)}
+                    </TableCell>
+                    <TableCell
+                      className={cn("text-right tabular-nums", loss && "text-destructive")}
+                    >
+                      {earned?.share == null ? (
+                        <span className="text-muted-foreground">
+                          {t("products.pricing.unknown")}
+                        </span>
+                      ) : (
+                        share(earned.share)
+                      )}
+                    </TableCell>
+                  </>
+                )}
               </TableRow>
             );
           })}
         </TableBody>
       </Table>
-      {profit.uncosted > 0 && (
+      {profit && profit.uncosted > 0 && (
         <p className="inline-flex items-center gap-2 text-sm">
           <Badge variant="warning">{t("products.profit.uncostedMark")}</Badge>
           {t("products.profit.uncosted", { count: profit.uncosted })}
         </p>
       )}
-      {profit.left_out > 0 && (
+      {profit && profit.left_out > 0 && (
         <p className="text-sm text-muted-foreground">
           {t("products.profit.leftOut", { count: profit.left_out })}
         </p>

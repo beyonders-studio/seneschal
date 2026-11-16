@@ -54,6 +54,8 @@ class RecipeError(StrEnum):
     #: A bundle's variations take no recipe of their own and are no ordinary
     #: recipe's lines, and a product whose variations are either is not a bundle.
     RECIPE_BUNDLE = "RECIPE_BUNDLE"
+    #: A bundle counts whole variations, so its recipe is written by amount.
+    RECIPE_BUNDLE_RATIO = "RECIPE_BUNDLE_RATIO"
     #: Its output already has a recipe.
     RECIPE_EXISTS = "RECIPE_EXISTS"
 
@@ -154,6 +156,8 @@ async def _check_bundle(db: AsyncSession, recipe: Recipe) -> None:
         bundled = await db.exec(select(Recipe.id).where(Recipe.product_id == variation.product_id))
         clash = bundled.first() is not None
     elif recipe.product_id is not None:
+        if recipe.by_ratio:
+            raise RecipeRefused(RecipeError.RECIPE_BUNDLE_RATIO)
         variations = select(Variation.id).where(Variation.product_id == recipe.product_id)
         made = await db.exec(select(Recipe.id).where(col(Recipe.variation_id).in_(variations)))
         held = await db.exec(

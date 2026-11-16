@@ -20,6 +20,7 @@ import { ItemField } from "@/features/adjustments/fields";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { orNull, useQuantity, useRatio, useShare } from "@/features/items/format";
 import { UnitPicker } from "@/features/items/UnitPicker";
+import { IncludeArchived } from "@/features/search/records";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
@@ -52,11 +53,12 @@ type DraftLine = {
 };
 
 /** What the switch between amount and ratio changes: how the lines are
- *  written, and a ratio's ingredients total. */
+ *  written, a ratio's ingredients total, and what a batch makes. */
 type Draft = {
   byRatio: boolean;
   total: string;
   totalUnitId: number | null;
+  makes: string;
   lines: DraftLine[];
 };
 
@@ -69,17 +71,20 @@ const isPositive = (text: string) => text.trim() !== "" && Number(text) > 0;
  * order, written by amount or by ratio. Hoard works the draft out as it is
  * typed, so each line shows its other column and its share by weight. Its
  * lines are materials, bases and variations of products that are not
- * bundles; a bundle's are variations, and it makes one of itself.
+ * bundles; a bundle's are variations, and it makes one of itself. `unitId`
+ * is the unit a new recipe's output is counted in.
  */
 export function RecipeDialog({
   recipe,
   output,
+  unitId,
   title,
   open,
   onOpenChange,
 }: {
   recipe?: RecipeRead;
   output?: RecipeOutputOf;
+  unitId?: number | null;
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -91,6 +96,7 @@ export function RecipeDialog({
           <RecipeForm
             recipe={recipe}
             output={output}
+            unitId={unitId}
             title={title}
             onSaved={() => onOpenChange(false)}
           />
@@ -103,11 +109,13 @@ export function RecipeDialog({
 function RecipeForm({
   recipe,
   output,
+  unitId,
   title,
   onSaved,
 }: {
   recipe?: RecipeRead;
   output?: RecipeOutputOf;
+  unitId?: number | null;
   title: string;
   onSaved: () => void;
 }) {
@@ -126,13 +134,13 @@ function RecipeForm({
         product_id: bundle ? recipe.output_id : null,
       }
     : (output ?? {});
-  const [batchQuantity, setBatchQuantity] = useState(recipe?.batch_quantity ?? "1");
   const [minutes, setMinutes] = useState(recipe?.minutes?.toString() ?? "");
   const [notes, setNotes] = useState(recipe?.notes ?? "");
   const [draft, setDraft] = useState<Draft>({
     byRatio: recipe?.by_ratio ?? false,
     total: recipe?.total ?? "",
     totalUnitId: recipe?.total_unit_id ?? null,
+    makes: recipe?.batch_quantity ?? "1",
     lines: recipe?.lines.map((line, key) => ({
       key,
       itemId: line.item.id,
@@ -145,11 +153,28 @@ function RecipeForm({
   // back restores until the recipe is saved.
   const [switchedFrom, setSwitchedFrom] = useState<Draft | null>(null);
   const [nextKey, setNextKey] = useState(draft.lines.length);
-  const { byRatio, lines } = draft;
+  const [archived, setArchived] = useState(false);
+  const { byRatio, lines, makes } = draft;
+  // A base's ingredients total and what a batch of it makes start equal, and
+  // what it makes follows the total, while both count in the base's unit,
+  // until what it makes is changed on its own, as for what making loses.
+  const base = recipe ? recipe.output === "base" : output?.base_id != null;
+  const outputUnitId = recipe ? recipe.unit_id : (unitId ?? null);
+  const [linked, setLinked] = useState(
+    base &&
+      (!recipe ||
+        (recipe.by_ratio &&
+          recipe.total_unit_id === recipe.unit_id &&
+          Number(recipe.total) === Number(recipe.batch_quantity)))
+  );
+  const following = (next: Draft): Draft =>
+    linked && next.byRatio && next.total && next.totalUnitId === outputUnitId
+      ? { ...next, makes: next.total }
+      : next;
 
   const body = (): RecipeCreate => ({
     ...outputOf,
-    batch_quantity: bundle ? "1" : batchQuantity,
+    batch_quantity: bundle ? "1" : makes,
     minutes: bundle || !minutes.trim() ? null : Number(minutes),
     by_ratio: byRatio,
     total: byRatio && isPositive(draft.total) ? draft.total : null,
@@ -160,7 +185,7 @@ function RecipeForm({
         : [{ item_id: line.itemId, written: line.written, unit_id: line.unitId }]
     ),
   });
-  const drafted = useDebouncedValue(bundle || !isPositive(batchQuantity) ? null : body(), 300);
+  const drafted = useDebouncedValue(bundle || !isPositive(makes) ? null : body(), 300);
   const preview = useQuery({
     queryKey: ["recipes", "preview", drafted],
     queryFn: ({ signal }) => previewRecipe(drafted as RecipeCreate, undefined, signal),
@@ -211,6 +236,7 @@ function RecipeForm({
     byRatio: switched.by_ratio ?? false,
     total: switched.total ?? "",
     totalUnitId: switched.total_unit_id ?? null,
+    makes,
     lines: lines.map((line) => {
       const other = switched.lines.find((each) => each.item_id === line.itemId);
       return other ? { ...line, written: other.written, unitId: other.unit_id ?? null } : line;
@@ -223,9 +249,16 @@ function RecipeForm({
         ? switchedFrom
         : switched && !preview.isError
           ? fromSwitched(switched)
-          : { ...draft, byRatio: toRatio };
+          : toRatio && linked
+            ? {
+                ...draft,
+                byRatio: true,
+                total: draft.total || makes,
+                totalUnitId: draft.totalUnitId ?? outputUnitId,
+              }
+            : { ...draft, byRatio: toRatio };
     setSwitchedFrom(draft);
-    setDraft(next);
+    setDraft(following(next));
   };
 
   const complete =
@@ -256,13 +289,15 @@ function RecipeForm({
                       required
                       inputMode="decimal"
                       value={draft.total}
-                      onChange={(event) => setDraft({ ...draft, total: event.target.value })}
+                      onChange={(event) =>
+                        setDraft(following({ ...draft, total: event.target.value }))
+                      }
                     />
                     <div className="w-40 shrink-0">
                       <UnitPicker
                         aria-label={t("dialog.totalUnit")}
                         value={draft.totalUnitId}
-                        onChange={(totalUnitId) => setDraft({ ...draft, totalUnitId })}
+                        onChange={(totalUnitId) => setDraft(following({ ...draft, totalUnitId }))}
                       />
                     </div>
                   </div>
@@ -275,8 +310,11 @@ function RecipeForm({
                 <Input
                   required
                   inputMode="decimal"
-                  value={batchQuantity}
-                  onChange={(event) => setBatchQuantity(event.target.value)}
+                  value={makes}
+                  onChange={(event) => {
+                    setLinked(false);
+                    setDraft({ ...draft, makes: event.target.value });
+                  }}
                 />
               </Field>
               <Field label={t("dialog.minutes")}>
@@ -296,6 +334,12 @@ function RecipeForm({
           <legend className="mb-2 text-sm font-medium">
             {bundle ? t("dialog.holds") : t("dialog.lines")}
           </legend>
+          {(bundle || outputOf.variation_id != null) && (
+            <p className="text-xs text-muted-foreground">
+              {t(bundle ? "dialog.holdsHint" : "dialog.linesHint")}
+            </p>
+          )}
+          <IncludeArchived checked={archived} onCheckedChange={setArchived} />
           {lines.map((line, index) => {
             const figures = line.itemId === null ? undefined : worked.get(line.itemId);
             return (
@@ -307,6 +351,7 @@ function RecipeForm({
                     label={t("dialog.item", { number: index + 1 })}
                     value={line.itemId}
                     chosen={line.name}
+                    archived={archived}
                     onChange={(itemId) => change(line.key, { itemId, unitId: null })}
                   />
                 </div>
@@ -344,8 +389,11 @@ function RecipeForm({
                     </dl>
                     <dl className="flex min-w-16 flex-col pb-2 text-sm">
                       <dt className="text-muted-foreground">{t("card.share")}</dt>
-                      <dd className="tabular-nums">
-                        {figures?.percent != null && share(figures.percent)}
+                      <dd
+                        className="tabular-nums"
+                        title={figures?.percent === null ? t("card.notWeighed") : undefined}
+                      >
+                        {figures && (figures.percent === null ? "–" : share(figures.percent))}
                       </dd>
                     </dl>
                   </>
@@ -382,7 +430,7 @@ function RecipeForm({
         submitLabel={t("hoard:common.save")}
         pending={save.isPending}
         pendingLabel={t("hoard:common.saving")}
-        disabled={!complete || (!bundle && !batchQuantity.trim())}
+        disabled={!complete || (!bundle && !makes.trim())}
       />
     </form>
   );

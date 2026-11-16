@@ -81,7 +81,11 @@ export function DeclarationsPanel({ of, id }: { of: Of; id: number }) {
           {of !== "lot" && declared.ingredients.length > 0 && (
             <p>
               <span className="font-medium">{t("panel.ingredients")}</span>{" "}
-              {list(declared.ingredients)}
+              {list(
+                declared.ingredients.map((name) =>
+                  declared.unweighed.includes(name) ? t("panel.unweighedName", { name }) : name
+                )
+              )}
             </p>
           )}
           {declared.unweighed.length > 0 && (

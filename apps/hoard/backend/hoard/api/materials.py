@@ -39,7 +39,11 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "IN_USE, TRACKING_UNIT_IN_USE, NOT_INVENTORIABLE"},
+    409: {
+        "description": "IN_USE, TRACKING_UNIT_IN_STOCK, TRACKING_UNIT_IN_PURCHASES, "
+        "TRACKING_UNIT_IN_STOCKTAKES, TRACKING_UNIT_IN_RECIPES, TRACKING_UNIT_IN_RUNS, "
+        "NOT_INVENTORIABLE"
+    },
     422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN, AMOUNT_TOO_SMALL"},
 }
 

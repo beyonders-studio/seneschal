@@ -209,7 +209,7 @@ async def _parts(db: WriteSession, product: Product) -> list[tuple[RecipeLine, D
     if recipe is None:
         return []
     held_lines = (await recipes.lines_of(db, [recipe.id])).get(recipe.id, [])
-    return [(line, line.quantity / recipe.batch_quantity) for line in held_lines]
+    return [(line, units.each(line.quantity, recipe.batch_quantity)) for line in held_lines]
 
 
 async def _split(db: WriteSession, line: OrderLine, product: Product) -> None:

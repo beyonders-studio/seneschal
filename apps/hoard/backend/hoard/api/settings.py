@@ -81,8 +81,15 @@ class SettingsError(StrEnum):
     CATEGORY_UNKNOWN = "CATEGORY_UNKNOWN"
     #: A standard unit keeps its name, and stays.
     UNIT_STANDARD = "UNIT_STANDARD"
-    #: Numbers are recorded in an item's tracking unit, so it stays.
-    TRACKING_UNIT_IN_USE = "TRACKING_UNIT_IN_USE"
+    #: Numbers are recorded in an item's tracking unit, so it stays: by its
+    #: stock movements, its purchases, its stocktake counts, a recipe holding
+    #: it, its own recipe, or a run making or using it.
+    TRACKING_UNIT_IN_STOCK = "TRACKING_UNIT_IN_STOCK"
+    TRACKING_UNIT_IN_PURCHASES = "TRACKING_UNIT_IN_PURCHASES"
+    TRACKING_UNIT_IN_STOCKTAKES = "TRACKING_UNIT_IN_STOCKTAKES"
+    TRACKING_UNIT_IN_RECIPES = "TRACKING_UNIT_IN_RECIPES"
+    TRACKING_UNIT_IN_OWN_RECIPE = "TRACKING_UNIT_IN_OWN_RECIPE"
+    TRACKING_UNIT_IN_RUNS = "TRACKING_UNIT_IN_RUNS"
     #: The type named is not one of the organization's for this kind of record.
     TYPE_UNKNOWN = "TYPE_UNKNOWN"
     #: The shape named is not one Hoard ships for this kind of record.

@@ -35,7 +35,7 @@ from sqlalchemy.orm import Session
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import events, plugin_manifest, purchases, runs
+from hoard import events, plugin_manifest, purchases, runs, units
 from hoard.records import (
     OutboxEvent,
     ProductionRun,
@@ -100,7 +100,11 @@ async def _run_fields(db: AsyncSession, run: ProductionRun) -> dict[str, Any]:
     quantity = run.actual_quantity
     if quantity is None and run.recipe_id is not None:
         recipe = await db.get(Recipe, run.recipe_id)
-        quantity = None if recipe is None else run.planned_batches * recipe.batch_quantity
+        quantity = (
+            None
+            if recipe is None
+            else units.scaled(recipe.batch_quantity, run.planned_batches, exact=True)
+        )
     short = None
     if run.status is not RunStatus.COMPLETED:
         needed = await db.exec(

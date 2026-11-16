@@ -424,7 +424,7 @@ async def make(
     recipe = await recipe_for(db, item_id)
     if recipe is None:
         return None
-    batches = (quantity / recipe.batch_quantity).quantize(PLACES)
+    batches = units.scale(recipe.batch_quantity, quantity).quantize(PLACES)
     if batches <= 0:
         return None
     run = ProductionRun(

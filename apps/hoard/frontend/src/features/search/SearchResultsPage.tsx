@@ -4,12 +4,10 @@ import { useTranslation } from "react-i18next";
 
 import type { SearchHit } from "@/api/generated/hoard.schemas";
 import { useSearchRecords } from "@/api/generated/search/search";
-import { KINDS, RecordLink, useKindName } from "@/features/search/records";
+import { IncludeArchived, KINDS, RecordLink, useKindName } from "@/features/search/records";
 import { Badge } from "@/ui/badge";
-import { Label } from "@/ui/label";
 import { PaginationBar } from "@/ui/pagination-bar";
 import { StatusMessage } from "@/ui/status-message";
-import { Switch } from "@/ui/switch";
 import { Tabs, TabsBar, TabsTrigger } from "@/ui/tabs";
 
 const route = getRouteApi("/search");
@@ -108,22 +106,18 @@ export function SearchResultsPage() {
             ))}
           </TabsBar>
         </Tabs>
-        <div className="flex items-center gap-2">
-          <Switch
-            id="search-archived"
-            checked={archived === true}
-            onCheckedChange={(checked) =>
-              void navigate({
-                search: (prev) => ({
-                  ...prev,
-                  archived: checked ? true : undefined,
-                  page: undefined,
-                }),
-              })
-            }
-          />
-          <Label htmlFor="search-archived">{t("results.includeArchived")}</Label>
-        </div>
+        <IncludeArchived
+          checked={archived === true}
+          onCheckedChange={(checked) =>
+            void navigate({
+              search: (prev) => ({
+                ...prev,
+                archived: checked ? true : undefined,
+                page: undefined,
+              }),
+            })
+          }
+        />
       </div>
       <p className="text-xs text-muted-foreground">{t("results.syntax")}</p>
     </div>

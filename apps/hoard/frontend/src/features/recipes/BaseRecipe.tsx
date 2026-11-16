@@ -30,6 +30,7 @@ export function BaseRecipe({ base }: { base: BaseRead }) {
       )}
       <RecipeDialog
         output={{ base_id: base.id }}
+        unitId={base.tracking_unit_id}
         title={t("dialog.addTitle", { name: base.name })}
         open={adding}
         onOpenChange={setAdding}

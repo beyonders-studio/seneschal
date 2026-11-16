@@ -35,6 +35,7 @@ from sqlalchemy import func, or_
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard import units
 from hoard.declarations import Declarations
 from hoard.events import item_name
 from hoard.records import (
@@ -301,7 +302,7 @@ async def planned_against_actual(call: EndpointCall) -> dict[str, Any]:
             planned: Decimal | None = (
                 None
                 if batch_quantity is None
-                else (run.planned_batches * batch_quantity).quantize(PLACES)
+                else units.scaled(batch_quantity, run.planned_batches)
             )
             columns["code"].append(run.code)
             columns["item"].append(await item_name(db, run.item_id))

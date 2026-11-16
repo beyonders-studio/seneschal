@@ -128,7 +128,13 @@ describe("PurchasePage", () => {
     fireEvent.click(within(dialog).getByRole("combobox", { name: "Material or product" }));
     await screen.findByRole("option", { name: /Oolong/ });
     expect(screen.queryByRole("option", { name: /Gift box/ })).toBeNull();
-    fireEvent.click(screen.getByRole("option", { name: /Infuser/ }));
+    // Archived items are left out until the picker's switch asks for them.
+    const archived = () =>
+      asked.filter((request) => request.url === "/api/v1/materials" && request.params?.archived);
+    expect(archived()).toEqual([]);
+    fireEvent.click(within(dialog).getByRole("switch", { name: "Include archived", hidden: true }));
+    await waitFor(() => expect(archived()).not.toEqual([]));
+    fireEvent.click(await screen.findByRole("option", { name: /Infuser/ }));
     fireEvent.change(within(dialog).getByLabelText("Quantity bought"), {
       target: { value: "12" },
     });

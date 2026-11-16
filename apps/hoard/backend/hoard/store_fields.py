@@ -35,6 +35,10 @@ hand.
 Hoard does not know a product's allergens while a material in it has none
 recorded, nor its ingredients while it has no recipe and records none of its
 own: such a value is never sent nor listed.
+
+An ingredient Hoard can't weigh is listed last with a mark (:data:`UNWEIGHED_MARK`)
+and a note after the list saying what the mark means (:data:`UNWEIGHED_NOTE`),
+so the list never reads as ordered by weight when it isn't.
 """
 
 from __future__ import annotations
@@ -128,6 +132,11 @@ _DERIVED_NAMES = {
     FieldTarget.ALLERGENS: frozenset({"allergens", "allergen information"}),
     FieldTarget.INGREDIENTS: frozenset({"ingredients", "ingredient list"}),
 }
+
+#: What follows each ingredient Hoard can't weigh in a list it sends.
+UNWEIGHED_MARK = "*"
+#: What follows a list holding one, saying what the mark means.
+UNWEIGHED_NOTE = f"{UNWEIGHED_MARK}Place by weight not known."
 
 #: Each allergen's names in English, the first the one Hoard writes.
 ALLERGEN_NAMES: dict[Allergen, tuple[str, ...]] = {
@@ -439,7 +448,17 @@ def derived(mapping: StoreFieldMapping, declared: Declaration | None) -> str | N
     if declared is None:
         return None
     if mapping.target is FieldTarget.INGREDIENTS:
-        return _joined(mapping, declared.ingredients) if declared.ingredients else None
+        if not declared.ingredients:
+            return None
+        listed = [
+            f"{name}{UNWEIGHED_MARK}" if name in declared.unweighed else name
+            for name in declared.ingredients
+        ]
+        if not declared.unweighed:
+            return _joined(mapping, listed)
+        if mapping.type in _LISTS:
+            return _joined(mapping, [*listed, UNWEIGHED_NOTE])
+        return f"{_joined(mapping, listed)}. {UNWEIGHED_NOTE}"
     if declared.undeclared:
         return None
     paired: dict[str, str] = {}
