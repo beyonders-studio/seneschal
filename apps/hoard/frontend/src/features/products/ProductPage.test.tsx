@@ -160,6 +160,177 @@ describe("ProductPage", () => {
     ).toEqual({ from_unit_id: 2 });
   });
 
+  describe("at a glance", () => {
+    /** Chai with a SKU, its figures added up, and to a member who sees costs,
+     *  what it earned and its prices at Retail and Wholesale. */
+    const FIGURED: ProductDetail = productDetail({
+      ...CHAI,
+      totals: {
+        committed: "3.000000",
+        available: "3.000000",
+        potential: null,
+        made: "10.000000",
+        sold: "8.000000",
+        shipped: "5.000000",
+        on_order: "12.000000",
+        overdue: false,
+        profit: {
+          revenue: "60.000000",
+          cost: "20.000000",
+          profit: "40.000000",
+          share: "66.67",
+          uncosted: 1,
+          left_out: 2,
+        },
+      },
+      variations: [
+        variation({
+          sku: "CHAI-1",
+          on_hand: "6.000000",
+          pricing: {
+            cost: {
+              goods: "2.500000",
+              last_known: true,
+              labour: null,
+              overhead: "0.250000",
+              total: "2.750000",
+            },
+            points: [
+              {
+                price_point_id: 1,
+                typed: null,
+                suggested: "5.50",
+                price: "5.50",
+                fee: "0",
+                commission: "0",
+                margin: "2.750000",
+                margin_share: "50.00",
+              },
+              {
+                price_point_id: 2,
+                typed: "2.000000",
+                suggested: "4.13",
+                price: "2.000000",
+                fee: "0.300000",
+                commission: "0.200000",
+                margin: "-1.250000",
+                margin_share: "-62.50",
+              },
+            ],
+          },
+        }),
+      ],
+    });
+
+    const figured = {
+      ...opened,
+      "GET /api/v1/products/7": { status: 200, data: FIGURED },
+      "GET /api/v1/settings/price-points": {
+        status: 200,
+        data: [
+          { id: 1, name: "Retail", markup: "100", listing_fee: "0", commission: "0" },
+          { id: 2, name: "Wholesale", markup: "50", listing_fee: "0.3", commission: "10" },
+        ],
+      },
+    };
+
+    it("shows its SKU, stock and figures to date, and no money without costs", async () => {
+      await openSignedIn("/stock/products/7", signedIn(), figured);
+
+      await screen.findByText("SKU CHAI-1");
+      const tile = (label: string) => screen.getByText(label).closest("div")?.textContent;
+      expect(tile("Committed")).toBe("Committed3");
+      expect(tile("Sold")).toBe("Sold8");
+      expect(tile("Shipped")).toBe("Shipped5");
+      expect(tile("On order")).toBe("On order12");
+      expect(screen.queryByText("Gross profit")).toBeNull();
+      expect(screen.queryByText("Wholesale")).toBeNull();
+    });
+
+    it("shows what it earned and its margins at each price point", async () => {
+      await openSignedIn(
+        "/stock/products/7",
+        signedIn({ permissions: ["use", SEE_COSTS] }),
+        figured
+      );
+
+      await screen.findByText("Gross profit");
+      await screen.findByText("$40.00");
+      screen.getByText("66.67%");
+      screen.getByText("1 shipment line went out with no cost, so the cost is too low.");
+      screen.getByText("2 orders in another currency aren't counted.");
+      // Its last known cost, with its overhead.
+      await screen.findByText("Last known");
+      screen.getByText("$2.75");
+      const retail = (await screen.findByText("Retail")).closest("tr");
+      expect(retail?.textContent).toContain("$5.50suggested");
+      const wholesale = screen.getByText("Wholesale").closest("tr");
+      expect(within(wholesale as HTMLElement).getByText("Loss")).toBeTruthy();
+      expect(wholesale?.textContent).toContain("-$1.25 (-62.5%)");
+    });
+
+    it("sets a price at a price point, and says when it has no cost", async () => {
+      const unpriced = productDetail({
+        ...FIGURED,
+        variations: [
+          variation({
+            pricing: {
+              cost: null,
+              points: [
+                {
+                  price_point_id: 1,
+                  typed: null,
+                  suggested: null,
+                  price: null,
+                  fee: "0",
+                  commission: null,
+                  margin: null,
+                  margin_share: null,
+                },
+              ],
+            },
+          }),
+        ],
+      });
+      const asked = await openSignedIn(
+        "/stock/products/7",
+        signedIn({ permissions: ["use", SEE_COSTS] }),
+        {
+          ...figured,
+          "GET /api/v1/products/7": { status: 200, data: unpriced },
+          "PUT /api/v1/products/7/variations/20/prices/1": { status: 200, data: unpriced },
+        }
+      );
+
+      await screen.findByText(
+        "It has never had a cost, so its suggested prices and margins are unknown."
+      );
+      const retail = (await screen.findByText("Retail")).closest("tr") as HTMLElement;
+      expect(within(retail).getAllByText("Unknown")).toHaveLength(4);
+      fireEvent.click(within(retail).getByRole("button", { name: "Set price" }));
+      const dialog = await screen.findByRole("dialog", { name: "Chai at Retail" });
+      fireEvent.change(within(dialog).getByLabelText("Price"), { target: { value: "6" } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() => {
+        const sent = asked.find((request) => request.method === "put");
+        expect(JSON.parse(String(sent?.data))).toEqual({ price: "6" });
+      });
+    });
+
+    it("counts a bundle's availability from its contents, with no stock of its own", async () => {
+      await openSignedIn("/stock/products/7", signedIn(), {
+        ...figured,
+        "GET /api/v1/products/7": { status: 200, data: { ...FIGURED, bundle: true } },
+      });
+
+      await screen.findByText("Committed");
+      expect(screen.getByText("Available", { selector: "dt" })).toBeTruthy();
+      expect(screen.queryByText("On order")).toBeNull();
+      expect(screen.queryByText("Made")).toBeNull();
+    });
+  });
+
   describe("by its type", () => {
     /** Each kind's default type, and Bought: bought finished. */
     const typed = {

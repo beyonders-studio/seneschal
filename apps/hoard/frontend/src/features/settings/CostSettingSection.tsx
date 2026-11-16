@@ -8,7 +8,7 @@ import {
   useReadSettings,
 } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
-import { orNull } from "@/features/items/format";
+import { orNull, useShare } from "@/features/items/format";
 import { useChangesSettings } from "@/features/settings/NamedList";
 import { SettingsSection } from "@/features/settings/SettingsSection";
 import { errorMessage } from "@/lib/errors";
@@ -18,38 +18,55 @@ import { Button } from "@/ui/button";
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 
-/** What an hour of work costs, which an admin sets; a cost, so shown only to
- *  a member who sees costs. */
-export function LabourRateSection() {
+/** The settings that are costs, each with its words under `settings.<words>`
+ *  in the catalog namespace. */
+const COST_SETTINGS = {
+  labour_rate: "labourRate",
+  overhead: "overhead",
+} as const;
+
+type CostSetting = keyof typeof COST_SETTINGS;
+
+/** A setting that is a cost, which an admin sets, shown only to a member who
+ *  sees costs: what an hour of work costs, or the percentage added to what
+ *  goods cost for overhead. */
+export function CostSettingSection({ setting }: { setting: CostSetting }) {
   const { t } = useTranslation("catalog");
   const settings = useReadSettings().data;
   const changes = useChangesSettings();
   const money = useMoney();
+  const share = useShare();
+  const words = COST_SETTINGS[setting];
   if (!useSeesCosts() || !settings) return null;
-  const rate = settings.labour_rate;
+  const value = settings[setting];
   return (
-    <SettingsSection id="labour-rate" title={t("settings.labourRate.title")}>
-      <p className="text-sm text-muted-foreground">{t("settings.labourRate.description")}</p>
+    <SettingsSection id={words} title={t(`settings.${words}.title`)}>
+      <p className="text-sm text-muted-foreground">{t(`settings.${words}.description`)}</p>
       {changes ? (
-        <LabourRateForm key={rate} current={rate} />
+        <CostSettingForm key={value} setting={setting} current={value} />
       ) : (
         <p className="text-sm">
-          {rate === null ? t("settings.labourRate.unset") : money(rate, { exact: true })}
+          {value === null
+            ? t(`settings.${words}.unset`)
+            : setting === "overhead"
+              ? share(value)
+              : money(value, { exact: true })}
         </p>
       )}
     </SettingsSection>
   );
 }
 
-function LabourRateForm({ current }: { current: string | null }) {
+function CostSettingForm({ setting, current }: { setting: CostSetting; current: string | null }) {
   const { t } = useTranslation("catalog");
   const queryClient = useQueryClient();
-  const [rate, setRate] = useState(current ?? "");
+  const words = COST_SETTINGS[setting];
+  const [value, setValue] = useState(current ?? "");
   const save = useMutation({
-    mutationFn: () => updateSettings({ labour_rate: orNull(rate) }),
+    mutationFn: () => updateSettings({ [setting]: orNull(value) }),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: getReadSettingsQueryKey() });
-      toast.success(t("settings.labourRate.saved"));
+      toast.success(t(`settings.${words}.saved`));
     },
     onError: (error) => toast.error(errorMessage(error, t, "settings.saveFailed")),
   });
@@ -59,15 +76,15 @@ function LabourRateForm({ current }: { current: string | null }) {
   };
   return (
     <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-      <Field label={t("settings.labourRate.perHour")} hint={t("settings.labourRate.hint")}>
+      <Field label={t(`settings.${words}.field`)} hint={t(`settings.${words}.hint`)}>
         <Input
           inputMode="decimal"
-          value={rate}
+          value={value}
           className="w-32"
-          onChange={(event) => setRate(event.target.value)}
+          onChange={(event) => setValue(event.target.value)}
         />
       </Field>
-      <Button type="submit" pending={save.isPending} disabled={orNull(rate) === current}>
+      <Button type="submit" pending={save.isPending} disabled={orNull(value) === current}>
         {t("hoard:common.save")}
       </Button>
     </form>

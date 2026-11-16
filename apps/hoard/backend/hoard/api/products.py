@@ -8,6 +8,12 @@ another holds the number typed (``hoard.units``). Prices and average costs are
 sent only to a member who sees costs, and only theirs are taken. Images are kept by Hoard,
 as :mod:`hoard.api.items` takes them.
 
+A product is read with its figures (``hoard.summary``): each variation's
+stock, what it sold and shipped and, to a member who sees costs, what it
+earned and cost and its price at each price point, typed in here or left to
+the suggested price; and its variations' added up. An archived product is
+listed only when asked for.
+
 A product a synced store lists stays the store's to show: changing its name
 or status, or a listed variation's SKU or options, is written to the store
 first, from the version of the store's product the edit started from
@@ -31,8 +37,9 @@ from sqlalchemy import and_, func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import listings, stock, units
+from hoard import listings, stock, summary, units
 from hoard.api import items, stores
+from hoard.api.adjustments import AdjustmentError
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import (
@@ -52,6 +59,7 @@ from hoard.records import (
     Item,
     ItemStatus,
     Listing,
+    PricePoint,
     Product,
     RecordKind,
     StockLevel,
@@ -59,6 +67,7 @@ from hoard.records import (
     StoreProductCopy,
     Unit,
     Variation,
+    VariationPrice,
 )
 from seneschal_core.api import (
     OrganizationSessionDep,
@@ -145,6 +154,66 @@ class ProductRead(BaseModel):
     properties: list[HoardPropertySummary]
 
 
+class ItemProfit(BaseModel):
+    """What the order lines charging for an item earned, and what what they
+    shipped cost, in the organization's currency (``hoard.summary``)."""
+
+    #: What shipped and was neither refunded nor returned, at its price less
+    #: its share of the order's discount, without shipping or tax.
+    revenue: Decimal
+    #: What it went out at, less what came back at.
+    cost: Decimal
+    profit: Decimal
+    #: The profit as a percentage of the revenue; null without revenue.
+    share: Decimal | None
+    #: Shipment lines that went out with no cost, so the cost is short.
+    uncosted: int
+    #: Orders in another currency, left out.
+    left_out: int
+
+
+class PriceCost(BaseModel):
+    """What one of a variation costs, by its parts."""
+
+    #: Its average or last known cost; a bundle's contents'.
+    goods: Decimal
+    #: Whether that is, or holds, a last known cost.
+    last_known: bool
+    #: What a unit of its recipe's labour costs; null without minutes or a rate.
+    labour: Decimal | None
+    #: The overhead on the goods and labour; null until it is set.
+    overhead: Decimal | None
+    total: Decimal
+
+
+class PointPriceRead(BaseModel):
+    """A variation at a price point."""
+
+    price_point_id: int
+    #: Its price there, typed in; null leaves it to the suggested price.
+    typed: Decimal | None
+    #: Its cost marked up, to the currency's smallest unit; null without a cost.
+    suggested: Decimal | None
+    #: What it sells for there: the typed price, or else the suggested one.
+    price: Decimal | None
+    #: The listing fee on one sold.
+    fee: Decimal
+    #: The commission on its price.
+    commission: Decimal | None
+    #: The price less the cost, the fee and the commission; null without a cost.
+    margin: Decimal | None
+    #: The margin as a percentage of the price.
+    margin_share: Decimal | None
+
+
+class VariationPricing(BaseModel):
+    """A variation's cost and its price at each price point, by name."""
+
+    #: Null for one that never had a cost.
+    cost: PriceCost | None
+    points: list[PointPriceRead]
+
+
 class ProductVariationRead(items.ItemHoldings):
     id: int
     #: Each attribute's value, such as ``{"size": "large"}``; none for a
@@ -166,11 +235,36 @@ class ProductVariationRead(items.ItemHoldings):
     purchase_unit_id: int | None
     #: How many of it one purchase unit holds.
     purchase_conversion: Decimal
+    #: What order lines sold of it, less what was refunded before it shipped.
+    sold: Decimal
+    #: What shipped of it, less what came back.
+    shipped: Decimal
+    #: Null without ``costs``.
+    profit: ItemProfit | None
+    #: Null without ``costs``.
+    pricing: VariationPricing | None
+
+
+class ProductTotals(BaseModel):
+    """A product's variations' figures added up."""
+
+    committed: Decimal
+    available: Decimal
+    #: Null when no variation has a recipe with lines.
+    potential: Decimal | None
+    made: Decimal
+    sold: Decimal
+    shipped: Decimal
+    on_order: Decimal
+    overdue: bool
+    #: Null without ``costs``.
+    profit: ItemProfit | None
 
 
 class ProductDetail(ProductRead, items.ItemStamps):
     """A product, with its variations' stock and lots at each location."""
 
+    totals: ProductTotals
     variations: list[ProductVariationRead]
     #: The synced stores' products listing its variations, each as Hoard's
     #: copy holds it: an edit names these versions (``store_versions``).
@@ -215,6 +309,13 @@ class ProductVariationWrite(BaseModel):
     purchase_conversion: items.Positive = Decimal(1)
     #: As for a product's (:attr:`ProductWrite.store_versions`).
     store_versions: list[StoreVersion] = Field(default_factory=list, max_length=100)
+
+
+class VariationPriceWrite(BaseModel):
+    """A variation's price at a price point: null leaves it to the
+    suggested price."""
+
+    price: items.Amount | None
 
 
 class ProductImageRead(BaseModel):
@@ -286,6 +387,47 @@ def _read(
     }
 
 
+def _profit(sales: summary.Sales, sees_costs: bool) -> ItemProfit | None:
+    if not sees_costs:
+        return None
+    return ItemProfit(
+        revenue=sales.revenue,
+        cost=sales.cost,
+        profit=sales.profit,
+        share=sales.profit_share,
+        uncosted=sales.uncosted,
+        left_out=len(sales.left_out),
+    )
+
+
+def _pricing(priced: summary.Pricing) -> VariationPricing:
+    cost = priced.cost
+    return VariationPricing(
+        cost=None
+        if cost is None
+        else PriceCost(
+            goods=cost.goods,
+            last_known=cost.last_known,
+            labour=cost.labour,
+            overhead=cost.overhead,
+            total=cost.total,
+        ),
+        points=[
+            PointPriceRead(
+                price_point_id=at.price_point_id,
+                typed=at.typed,
+                suggested=at.suggested,
+                price=at.price,
+                fee=at.fee,
+                commission=at.commission,
+                margin=at.margin,
+                margin_share=at.margin_share,
+            )
+            for at in priced.points
+        ],
+    )
+
+
 async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> ProductDetail:
     """The product as the database holds it."""
     db.expunge_all()
@@ -298,18 +440,26 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
             .order_by(col(Variation.is_default).desc(), col(Variation.id))
         )
     ).all()
-    held = await items.holdings(db, [variation.id for variation, _ in rows])
+    ids = [variation.id for variation, _ in rows]
+    figures = await summary.summarise(db, ids)
+    held = await items.holdings(db, ids, figures)
+    priced = await summary.pricing(db, ids) if sees_costs else {}
     variations = [
         ProductVariationRead.model_validate(
             {
                 **variation.model_dump(),
                 **held[variation.id].model_dump(),
                 "average_cost": item.average_cost,
+                "sold": figures[variation.id].sales.sold,
+                "shipped": figures[variation.id].sales.shipped,
+                "profit": _profit(figures[variation.id].sales, sees_costs),
+                "pricing": _pricing(priced[variation.id]) if sees_costs else None,
                 **dict.fromkeys(_hidden(sees_costs, "price", "average_cost")),
             }
         )
         for variation, item in rows
     ]
+    totals = summary.total(figures.values())
     on_hand = sum((variation.on_hand for variation in variations), Decimal(0))
     values = (await values_of(db, RecordKind.PRODUCT, [product_id]))[product_id]
     store_products = {
@@ -324,6 +474,17 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
     return ProductDetail.model_validate(
         {
             **_read(product, on_hand, sees_costs, values),
+            "totals": ProductTotals(
+                committed=totals.committed,
+                available=totals.available,
+                potential=totals.potential,
+                made=totals.made,
+                sold=totals.sales.sold,
+                shipped=totals.sales.shipped,
+                on_order=totals.on_order.quantity,
+                overdue=totals.on_order.overdue,
+                profit=_profit(totals.sales, sees_costs),
+            ),
             "variations": variations,
             "store_products": list(store_products.values()),
         }
@@ -403,11 +564,15 @@ async def list_products(
     page: PageDep,
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    archived: Annotated[bool, Query()] = False,
     type_id: Annotated[int | None, Query()] = None,
 ) -> Page[ProductRead]:
     """Products by name: those whose name holds ``q``, when it is given, of
-    the type ``type_id`` when it is given."""
+    the type ``type_id`` when it is given, and archived ones only when
+    ``archived``."""
     query = select(Product)
+    if not archived:
+        query = query.where(Product.status == ItemStatus.ACTIVE)
     if type_id is not None:
         query = query.where(Product.type_id == type_id)
     if q:
@@ -566,6 +731,47 @@ async def delete_product_variation(product_id: int, variation_id: int, db: Write
     with refused_as(SettingsError.IN_USE):
         await stock.remove_item(db, variation_id)
         await db.commit()
+
+
+@router.put(
+    "/{product_id}/variations/{variation_id}/prices/{price_point_id}",
+    responses={**_READ, 403: {"description": "READ_ONLY, COSTS_HIDDEN"}},
+)
+async def set_variation_price(
+    product_id: int,
+    variation_id: int,
+    price_point_id: int,
+    body: VariationPriceWrite,
+    db: WriteSessionDep,
+    sees_costs: SeesCostsDep,
+) -> ProductDetail:
+    """Set a variation's price at a price point; null leaves it to the
+    suggested price. Refused from a member who doesn't see costs."""
+    if not sees_costs:
+        raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
+    await _product_variation(db, product_id, variation_id)
+    await found(db, PricePoint, price_point_id)
+    kept = (
+        await db.exec(
+            select(VariationPrice).where(
+                VariationPrice.variation_id == variation_id,
+                VariationPrice.price_point_id == price_point_id,
+            )
+        )
+    ).first()
+    if body.price is None:
+        if kept is not None:
+            await db.delete(kept)
+    else:
+        kept = kept or VariationPrice(
+            organization_id=db.organization_id,
+            variation_id=variation_id,
+            price_point_id=price_point_id,
+        )
+        kept.price = body.price
+        db.add(kept)
+    await db.commit()
+    return await _detail(db, product_id, sees_costs)
 
 
 @router.get("/{product_id}/images", responses=_READ)

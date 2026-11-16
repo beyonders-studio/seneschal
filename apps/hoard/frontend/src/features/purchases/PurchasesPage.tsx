@@ -3,6 +3,7 @@ import { Plus, ShoppingCart } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import type { PurchaseSummary } from "@/api/generated/hoard.schemas";
 import { useListPurchases } from "@/api/generated/purchases/purchases";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { useSupplierNames } from "@/features/contacts/SupplierPicker";
@@ -19,15 +20,77 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 /** How many purchases a page lists. */
 export const PAGE_SIZE = 50;
 
+/** Purchases, each opening its page: its code, whether it is paid, its date,
+ *  supplier and location, when it is expected and how much of it arrived,
+ *  and to a member who sees costs, its total. */
+export function PurchasesTable({ purchases }: { purchases: PurchaseSummary[] }) {
+  const { t } = useTranslation("movements");
+  const seesCosts = useSeesCosts();
+  const money = useMoney();
+  const { date, location } = useMovementLabels();
+  const supplier = useSupplierNames();
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("purchases.code")}</TableHead>
+          <TableHead>{t("hoard:common.date")}</TableHead>
+          <TableHead>{t("connection:suppliers.label")}</TableHead>
+          <TableHead>{t("hoard:common.location")}</TableHead>
+          <TableHead>{t("purchases.expected")}</TableHead>
+          <TableHead>{t("purchases.received")}</TableHead>
+          {seesCosts && <TableHead className="text-right">{t("hoard:common.total")}</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {purchases.map((purchase) => (
+          <TableRow key={purchase.id}>
+            <TableCell>
+              <Link
+                to="/stock/purchases/$purchaseId"
+                params={{ purchaseId: String(purchase.id) }}
+                className="font-medium underline-offset-4 hover:underline"
+              >
+                {purchase.code}
+              </Link>
+              {purchase.paid && (
+                <Badge variant="secondary" className="ml-2">
+                  {t("purchases.paid")}
+                </Badge>
+              )}
+            </TableCell>
+            <TableCell>{date(purchase.dated_on)}</TableCell>
+            <TableCell>{supplier(purchase.supplier_contact_id)}</TableCell>
+            <TableCell>{location(purchase.location_id)}</TableCell>
+            <TableCell>
+              {purchase.expected_on && date(purchase.expected_on)}
+              {purchase.overdue && (
+                <Badge variant="warning" className="ml-2">
+                  {t("purchases.overdue")}
+                </Badge>
+              )}
+            </TableCell>
+            <TableCell>
+              {t("purchases.receivedOf", {
+                received: purchase.received,
+                lines: purchase.lines,
+              })}
+            </TableCell>
+            {seesCosts && (
+              <TableCell className="text-right">{money(purchase.total ?? "0")}</TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 /** The purchases list, under Stock: the latest first, and adding one. */
 export function PurchasesPage() {
   const { t } = useTranslation("movements");
   const navigate = useNavigate();
   const { read_only } = useSession();
-  const seesCosts = useSeesCosts();
-  const money = useMoney();
-  const { date, location } = useMovementLabels();
-  const supplier = useSupplierNames();
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
   const purchases = useListPurchases({ offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE });
@@ -55,59 +118,7 @@ export function PurchasesPage() {
   else
     body = (
       <>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("purchases.code")}</TableHead>
-              <TableHead>{t("hoard:common.date")}</TableHead>
-              <TableHead>{t("connection:suppliers.label")}</TableHead>
-              <TableHead>{t("hoard:common.location")}</TableHead>
-              <TableHead>{t("purchases.expected")}</TableHead>
-              <TableHead>{t("purchases.received")}</TableHead>
-              {seesCosts && <TableHead className="text-right">{t("hoard:common.total")}</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {purchases.data.items.map((purchase) => (
-              <TableRow key={purchase.id}>
-                <TableCell>
-                  <Link
-                    to="/stock/purchases/$purchaseId"
-                    params={{ purchaseId: String(purchase.id) }}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {purchase.code}
-                  </Link>
-                  {purchase.paid && (
-                    <Badge variant="secondary" className="ml-2">
-                      {t("purchases.paid")}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>{date(purchase.dated_on)}</TableCell>
-                <TableCell>{supplier(purchase.supplier_contact_id)}</TableCell>
-                <TableCell>{location(purchase.location_id)}</TableCell>
-                <TableCell>
-                  {purchase.expected_on && date(purchase.expected_on)}
-                  {purchase.overdue && (
-                    <Badge variant="warning" className="ml-2">
-                      {t("purchases.overdue")}
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {t("purchases.receivedOf", {
-                    received: purchase.received,
-                    lines: purchase.lines,
-                  })}
-                </TableCell>
-                {seesCosts && (
-                  <TableCell className="text-right">{money(purchase.total ?? "0")}</TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <PurchasesTable purchases={purchases.data.items} />
         {purchases.data.total > PAGE_SIZE && (
           <PaginationBar
             page={page}

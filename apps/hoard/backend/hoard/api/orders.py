@@ -24,7 +24,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import col, select
+from sqlmodel import col, exists, select
 
 from hoard import channels, holds, orders, stock
 from hoard.api.adjustments import (
@@ -450,9 +450,11 @@ async def list_orders(
     page: PageDep,
     order_status: Annotated[OrderStatus | None, Query(alias="status")] = None,
     store_customer: Annotated[str | None, Query(max_length=64)] = None,
+    item_id: Annotated[int | None, Query()] = None,
 ) -> Page[OrderSummary]:
-    """Orders, the latest first: all, or those of one status, or of a store's
-    customer, by the store's number for them."""
+    """Orders, the latest first: all, or those of one status, of a store's
+    customer, by the store's number for them, or with a line selling one
+    item, a bundle's part included."""
     value = (
         select(OrderLine.order_id, func.sum(OrderLine.quantity * OrderLine.price).label("value"))
         .group_by(col(OrderLine.order_id))
@@ -463,6 +465,10 @@ async def list_orders(
         conditions.append(Order.status == order_status)
     if store_customer:
         conditions.append(Order.store_customer == store_customer)
+    if item_id is not None:
+        conditions.append(
+            exists().where(col(OrderLine.order_id) == Order.id, col(OrderLine.item_id) == item_id)
+        )
     counted = select(func.count()).select_from(Order).where(*conditions)
     query = (
         select(Order, value.c.value)

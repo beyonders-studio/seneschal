@@ -20,7 +20,12 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { ContactCreate, ContactRead, HTTPValidationError } from "../hoard.schemas";
+import type {
+  ContactCreate,
+  ContactPricePointWrite,
+  ContactRead,
+  HTTPValidationError,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType, BodyType } from "../../mutator";
@@ -251,4 +256,246 @@ export const useCreateContact = <
   TContext
 > => {
   return useMutation(getCreateContactMutationOptions(options), queryClient);
+};
+/**
+ * The price point a contact buys at.
+ * @summary Read Contact Price Point
+ */
+export const readContactPricePoint = (
+  contactId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ContactPricePointWrite>(
+    { url: `/api/v1/contacts/${contactId}/price-point`, method: "GET", signal },
+    options
+  );
+};
+
+export const getReadContactPricePointQueryKey = (contactId: number) => {
+  return [`/api/v1/contacts/${contactId}/price-point`] as const;
+};
+
+export const getReadContactPricePointQueryOptions = <
+  TData = Awaited<ReturnType<typeof readContactPricePoint>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  contactId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadContactPricePointQueryKey(contactId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readContactPricePoint>>> = ({ signal }) =>
+    readContactPricePoint(contactId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: contactId !== null && contactId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ReadContactPricePointQueryResult = NonNullable<
+  Awaited<ReturnType<typeof readContactPricePoint>>
+>;
+export type ReadContactPricePointQueryError = ErrorType<HTTPValidationError>;
+
+/**
+ * The price point a contact buys at.
+ * @summary Read Contact Price Point
+ */
+export function useReadContactPricePoint<
+  TData = Awaited<ReturnType<typeof readContactPricePoint>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  contactId: number,
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readContactPricePoint>>,
+          TError,
+          Awaited<ReturnType<typeof readContactPricePoint>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price point a contact buys at.
+ * @summary Read Contact Price Point
+ */
+export function useReadContactPricePoint<
+  TData = Awaited<ReturnType<typeof readContactPricePoint>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  contactId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readContactPricePoint>>,
+          TError,
+          Awaited<ReturnType<typeof readContactPricePoint>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price point a contact buys at.
+ * @summary Read Contact Price Point
+ */
+export function useReadContactPricePoint<
+  TData = Awaited<ReturnType<typeof readContactPricePoint>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  contactId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price point a contact buys at.
+ * @summary Read Contact Price Point
+ */
+export function useReadContactPricePoint<
+  TData = Awaited<ReturnType<typeof readContactPricePoint>>,
+  TError = ErrorType<HTTPValidationError>,
+>(
+  contactId: number,
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof readContactPricePoint>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadContactPricePointQueryOptions(contactId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Set the price point a contact buys at, or none.
+ * @summary Set Contact Price Point
+ */
+export const setContactPricePoint = (
+  contactId: number,
+  contactPricePointWrite: BodyType<ContactPricePointWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ContactPricePointWrite>(
+    {
+      url: `/api/v1/contacts/${contactId}/price-point`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: contactPricePointWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getSetContactPricePointMutationKey = () => ["setContactPricePoint"] as const;
+
+export const getSetContactPricePointMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setContactPricePoint>>,
+    TError,
+    SetContactPricePointMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setContactPricePoint>>,
+  TError,
+  SetContactPricePointMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSetContactPricePointMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setContactPricePoint>>,
+    SetContactPricePointMutationVariables
+  > = (props) => {
+    const { contactId, data } = props ?? {};
+
+    return setContactPricePoint(contactId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetContactPricePointMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setContactPricePoint>>
+>;
+export type SetContactPricePointMutationBody = BodyType<ContactPricePointWrite>;
+export type SetContactPricePointMutationError = ErrorType<void | HTTPValidationError>;
+export type SetContactPricePointMutationVariables = {
+  contactId: number;
+  data: BodyType<ContactPricePointWrite>;
+};
+
+/**
+ * Set the price point a contact buys at, or none.
+ * @summary Set Contact Price Point
+ */
+export const useSetContactPricePoint = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setContactPricePoint>>,
+      TError,
+      SetContactPricePointMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof setContactPricePoint>>,
+  TError,
+  SetContactPricePointMutationVariables,
+  TContext
+> => {
+  return useMutation(getSetContactPricePointMutationOptions(options), queryClient);
 };

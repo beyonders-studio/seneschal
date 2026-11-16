@@ -1,4 +1,4 @@
-import { screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { product, SETTINGS } from "@/features/items/testing";
@@ -36,5 +36,21 @@ describe("ProductsPage", () => {
 
     await screen.findByText("Default price");
     await screen.findByText("$12.00");
+  });
+
+  it("asks for archived products only when they are to be shown", async () => {
+    const asked = await openSignedIn("/stock/products", signedIn(), {
+      ...SETTINGS,
+      ...list(product()),
+    });
+
+    fireEvent.click(await screen.findByRole("switch", { name: "Show archived" }));
+
+    await screen.findByRole("link", { name: "Chai" });
+    const listed = asked.filter((request) => request.url === "/api/v1/products");
+    expect(listed.map((request) => request.params)).toEqual([
+      { offset: 0, limit: 50 },
+      { offset: 0, limit: 50, archived: true },
+    ]);
   });
 });

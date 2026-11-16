@@ -21,11 +21,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
-from sqlmodel import col, select
+from sqlmodel import col, exists, select
 
 from hoard import events, purchases, units
 from hoard.api.adjustments import (
@@ -253,9 +253,13 @@ async def _rederive(db: WriteSession, purchase: Purchase) -> None:
 
 @router.get("", response_model_exclude_unset=True)
 async def list_purchases(
-    db: OrganizationSessionDep, sees_costs: SeesCostsDep, page: PageDep
+    db: OrganizationSessionDep,
+    sees_costs: SeesCostsDep,
+    page: PageDep,
+    item_id: Annotated[int | None, Query()] = None,
 ) -> Page[PurchaseSummary]:
-    """Purchases, the latest first, with how many of their lines are received."""
+    """Purchases, the latest first, with how many of their lines are
+    received: all, or those with a line buying one item."""
     lines = (
         select(
             PurchaseLine.purchase_id,
@@ -266,10 +270,18 @@ async def list_purchases(
         .group_by(col(PurchaseLine.purchase_id))
         .subquery()
     )
-    total = (await db.exec(select(func.count()).select_from(Purchase))).one()
+    conditions = []
+    if item_id is not None:
+        conditions.append(
+            exists().where(
+                col(PurchaseLine.purchase_id) == Purchase.id, col(PurchaseLine.item_id) == item_id
+            )
+        )
+    total = (await db.exec(select(func.count()).select_from(Purchase).where(*conditions))).one()
     rows = await db.exec(
         select(Purchase, lines.c.lines, lines.c.received, lines.c.value)
         .outerjoin(lines, lines.c.purchase_id == col(Purchase.id))
+        .where(*conditions)
         .order_by(col(Purchase.dated_on).desc(), col(Purchase.id).desc())
         .offset(page.offset)
         .limit(page.limit)

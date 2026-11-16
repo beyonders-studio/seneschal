@@ -31,6 +31,8 @@ import type {
   SettingsLocationCreate,
   SettingsLocationRead,
   SettingsLocationUpdate,
+  SettingsPricePointRead,
+  SettingsPricePointWrite,
   SettingsRead,
   SettingsReasonRead,
   SettingsReasonWrite,
@@ -2386,4 +2388,399 @@ export const useDeleteSettingsReason = <TError = ErrorType<void>, TContext = unk
   TContext
 > => {
   return useMutation(getDeleteSettingsReasonMutationOptions(options), queryClient);
+};
+/**
+ * The price points the organization sells at, by name.
+ * @summary List Settings Price Points
+ */
+export const listSettingsPricePoints = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsPricePointRead[]>(
+    { url: `/api/v1/settings/price-points`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListSettingsPricePointsQueryKey = () => {
+  return [`/api/v1/settings/price-points`] as const;
+};
+
+export const getListSettingsPricePointsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsPricePoints>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: Partial<
+    UseQueryOptions<Awaited<ReturnType<typeof listSettingsPricePoints>>, TError, TData>
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsPricePointsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsPricePoints>>> = ({
+    signal,
+  }) => listSettingsPricePoints(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsPricePoints>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsPricePointsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsPricePoints>>
+>;
+export type ListSettingsPricePointsQueryError = ErrorType<void>;
+
+/**
+ * The price points the organization sells at, by name.
+ * @summary List Settings Price Points
+ */
+export function useListSettingsPricePoints<
+  TData = Awaited<ReturnType<typeof listSettingsPricePoints>>,
+  TError = ErrorType<void>,
+>(
+  options: {
+    query: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsPricePoints>>, TError, TData>
+    > &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsPricePoints>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsPricePoints>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price points the organization sells at, by name.
+ * @summary List Settings Price Points
+ */
+export function useListSettingsPricePoints<
+  TData = Awaited<ReturnType<typeof listSettingsPricePoints>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsPricePoints>>, TError, TData>
+    > &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsPricePoints>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsPricePoints>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price points the organization sells at, by name.
+ * @summary List Settings Price Points
+ */
+export function useListSettingsPricePoints<
+  TData = Awaited<ReturnType<typeof listSettingsPricePoints>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsPricePoints>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The price points the organization sells at, by name.
+ * @summary List Settings Price Points
+ */
+export function useListSettingsPricePoints<
+  TData = Awaited<ReturnType<typeof listSettingsPricePoints>>,
+  TError = ErrorType<void>,
+>(
+  options?: {
+    query?: Partial<
+      UseQueryOptions<Awaited<ReturnType<typeof listSettingsPricePoints>>, TError, TData>
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsPricePointsQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Price Point
+ */
+export const createSettingsPricePoint = (
+  settingsPricePointWrite: BodyType<SettingsPricePointWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsPricePointRead>(
+    {
+      url: `/api/v1/settings/price-points`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsPricePointWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsPricePointMutationKey = () => ["createSettingsPricePoint"] as const;
+
+export const getCreateSettingsPricePointMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsPricePoint>>,
+    TError,
+    CreateSettingsPricePointMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsPricePoint>>,
+  TError,
+  CreateSettingsPricePointMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsPricePointMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsPricePoint>>,
+    CreateSettingsPricePointMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsPricePoint(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsPricePointMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsPricePoint>>
+>;
+export type CreateSettingsPricePointMutationBody = BodyType<SettingsPricePointWrite>;
+export type CreateSettingsPricePointMutationError = ErrorType<void>;
+export type CreateSettingsPricePointMutationVariables = { data: BodyType<SettingsPricePointWrite> };
+
+/** @summary Create Settings Price Point */
+export const useCreateSettingsPricePoint = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsPricePoint>>,
+      TError,
+      CreateSettingsPricePointMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsPricePoint>>,
+  TError,
+  CreateSettingsPricePointMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsPricePointMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Price Point
+ */
+export const updateSettingsPricePoint = (
+  pricePointId: number,
+  settingsPricePointWrite: BodyType<SettingsPricePointWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsPricePointRead>(
+    {
+      url: `/api/v1/settings/price-points/${pricePointId}`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: settingsPricePointWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsPricePointMutationKey = () => ["updateSettingsPricePoint"] as const;
+
+export const getUpdateSettingsPricePointMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsPricePoint>>,
+    TError,
+    UpdateSettingsPricePointMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsPricePoint>>,
+  TError,
+  UpdateSettingsPricePointMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsPricePointMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsPricePoint>>,
+    UpdateSettingsPricePointMutationVariables
+  > = (props) => {
+    const { pricePointId, data } = props ?? {};
+
+    return updateSettingsPricePoint(pricePointId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsPricePointMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsPricePoint>>
+>;
+export type UpdateSettingsPricePointMutationBody = BodyType<SettingsPricePointWrite>;
+export type UpdateSettingsPricePointMutationError = ErrorType<void>;
+export type UpdateSettingsPricePointMutationVariables = {
+  pricePointId: number;
+  data: BodyType<SettingsPricePointWrite>;
+};
+
+/** @summary Update Settings Price Point */
+export const useUpdateSettingsPricePoint = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsPricePoint>>,
+      TError,
+      UpdateSettingsPricePointMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsPricePoint>>,
+  TError,
+  UpdateSettingsPricePointMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsPricePointMutationOptions(options), queryClient);
+};
+/**
+ * Remove a price point, with the variations' prices there; the contacts
+ * buying at it buy at the default price again.
+ * @summary Delete Settings Price Point
+ */
+export const deleteSettingsPricePoint = (
+  pricePointId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/price-points/${pricePointId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsPricePointMutationKey = () => ["deleteSettingsPricePoint"] as const;
+
+export const getDeleteSettingsPricePointMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsPricePoint>>,
+    TError,
+    DeleteSettingsPricePointMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsPricePoint>>,
+  TError,
+  DeleteSettingsPricePointMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsPricePointMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsPricePoint>>,
+    DeleteSettingsPricePointMutationVariables
+  > = (props) => {
+    const { pricePointId } = props ?? {};
+
+    return deleteSettingsPricePoint(pricePointId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsPricePointMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsPricePoint>>
+>;
+
+export type DeleteSettingsPricePointMutationError = ErrorType<void>;
+export type DeleteSettingsPricePointMutationVariables = { pricePointId: number };
+
+/**
+ * Remove a price point, with the variations' prices there; the contacts
+ * buying at it buy at the default price again.
+ * @summary Delete Settings Price Point
+ */
+export const useDeleteSettingsPricePoint = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsPricePoint>>,
+      TError,
+      DeleteSettingsPricePointMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsPricePoint>>,
+  TError,
+  DeleteSettingsPricePointMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsPricePointMutationOptions(options), queryClient);
 };

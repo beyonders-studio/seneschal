@@ -50,15 +50,57 @@ export function useOrderFor(): (
       : contact(order.customer_contact_id);
 }
 
+/** Orders, each opening its page: its code, date, customer, location,
+ *  status and total. */
+export function OrdersTable({ orders }: { orders: OrderSummary[] }) {
+  const { t } = useTranslation("orders");
+  const money = useMoney();
+  const { date, location } = useMovementLabels();
+  const orderFor = useOrderFor();
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("order.code")}</TableHead>
+          <TableHead>{t("order.orderedOn")}</TableHead>
+          <TableHead>{t("customers.label")}</TableHead>
+          <TableHead>{t("hoard:common.location")}</TableHead>
+          <TableHead>{t("list.status")}</TableHead>
+          <TableHead className="text-right">{t("hoard:common.total")}</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {orders.map((order) => (
+          <TableRow key={order.id}>
+            <TableCell>
+              <Link
+                to="/orders/$orderId"
+                params={{ orderId: String(order.id) }}
+                className="font-medium underline-offset-4 hover:underline"
+              >
+                {order.code}
+              </Link>
+            </TableCell>
+            <TableCell>{date(order.ordered_on)}</TableCell>
+            <TableCell>{orderFor(order)}</TableCell>
+            <TableCell>{location(order.location_id)}</TableCell>
+            <TableCell>
+              <OrderBadges order={order} />
+            </TableCell>
+            <TableCell className="text-right">{money(order.total)}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 /** The orders list, under Orders: the latest first, filtered by status or by
  *  a store's customer number, and adding one by hand. */
 export function OrdersPage() {
   const { t } = useTranslation("orders");
   const navigate = useNavigate();
   const { read_only } = useSession();
-  const money = useMoney();
-  const { date, location } = useMovementLabels();
-  const orderFor = useOrderFor();
   const [status, setStatus] = useState<OrderStatus | null>(null);
   const [customer, setCustomer] = useState("");
   const [page, setPage] = useState(1);
@@ -95,40 +137,7 @@ export function OrdersPage() {
   else
     body = (
       <>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("order.code")}</TableHead>
-              <TableHead>{t("order.orderedOn")}</TableHead>
-              <TableHead>{t("customers.label")}</TableHead>
-              <TableHead>{t("hoard:common.location")}</TableHead>
-              <TableHead>{t("list.status")}</TableHead>
-              <TableHead className="text-right">{t("hoard:common.total")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {orders.data.items.map((order) => (
-              <TableRow key={order.id}>
-                <TableCell>
-                  <Link
-                    to="/orders/$orderId"
-                    params={{ orderId: String(order.id) }}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {order.code}
-                  </Link>
-                </TableCell>
-                <TableCell>{date(order.ordered_on)}</TableCell>
-                <TableCell>{orderFor(order)}</TableCell>
-                <TableCell>{location(order.location_id)}</TableCell>
-                <TableCell>
-                  <OrderBadges order={order} />
-                </TableCell>
-                <TableCell className="text-right">{money(order.total)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <OrdersTable orders={orders.data.items} />
         {orders.data.items.length === 0 && (
           <p className="text-sm text-muted-foreground">{t("list.noneMatch")}</p>
         )}

@@ -193,6 +193,12 @@ class ItemHoldings(BaseModel):
     lots."""
 
     on_hand: Decimal
+    #: What open orders need of it and have not shipped; of a bundle's
+    #: variation, how many bundles they need.
+    committed: Decimal
+    #: What is on hand less what is committed and on hold; of a bundle's
+    #: variation, which holds no stock, how many its contents make together.
+    available: Decimal
     #: What it could make at every location together; null with no recipe or
     #: no lines.
     potential: Decimal | None
@@ -222,15 +228,20 @@ async def on_hand(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, Decima
     }
 
 
-async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemHoldings]:
-    """Each item's figures, its stock and bin per location, and its lots,
-    oldest first."""
+async def holdings(
+    db: AsyncSession, item_ids: Iterable[int], figures: dict[int, summary.Summary] | None = None
+) -> dict[int, ItemHoldings]:
+    """Each item's figures, as ``figures`` holds them when given, its stock
+    and bin per location, and its lots, oldest first."""
     ids = list(item_ids)
-    figures = await summary.summarise(db, ids)
+    if figures is None:
+        figures = await summary.summarise(db, ids)
     used_in = await _used_in(db, figures)
     held = {
         item_id: ItemHoldings(
             on_hand=figures[item_id].stock.on_hand,
+            committed=figures[item_id].committed,
+            available=figures[item_id].available,
             potential=figures[item_id].potential,
             made=figures[item_id].made,
             last_stocktake=figures[item_id].last_stocktake,

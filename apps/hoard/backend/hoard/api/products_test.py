@@ -8,6 +8,7 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
+from sqlmodel import select
 
 from hoard import channels, listings, plugin_manifest
 from hoard.channels import ConnectError, StoreProduct, StoreVariant
@@ -17,7 +18,9 @@ from hoard.records import (
     Adjustment,
     AdjustmentKind,
     Channel,
+    ItemStatus,
     Location,
+    PricePoint,
     Product,
     Store,
     Variation,
@@ -125,10 +128,12 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
             "last_stocktake": None,
         }
     ]
-    hidden = [page["default_price"]] + [
-        v[field] for v in page["variations"] for field in ("price", "average_cost")
+    hidden = [page["default_price"], page["totals"]["profit"]] + [
+        v[field]
+        for v in page["variations"]
+        for field in ("price", "average_cost", "profit", "pricing")
     ]
-    assert hidden == [None] * 5
+    assert hidden == [None] * 10
 
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
     page = (await client.get(f"/api/v1/products/{product.id}")).json()
@@ -137,8 +142,100 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
         (None, "3.000000"),
         (None, "0.000000"),
     ]
+    assert page["variations"][0]["pricing"] == {
+        "cost": {
+            "goods": "3.000000",
+            "last_known": False,
+            "labour": None,
+            "overhead": None,
+            "total": "3.000000",
+        },
+        "points": [],
+    }
     listed = (await client.get("/api/v1/products")).json()
     assert [(p["name"], p["on_hand"]) for p in listed["items"]] == [("Chai", "4.000000")]
+
+
+async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
+    client, sign_in, db: WriteSession, main: Location, lot, sell, buy
+):
+    product = await _product(db, main, "4")
+    [chai] = (await db.exec(select(Variation).where(Variation.product_id == product.id))).all()
+    large = await add_variation(
+        db, Variation(product_id=product.id, attributes={"size": "large"}, sku="CHAI-L")
+    )
+    await lot(large.id, "L1", "6", unit_cost="5")
+    sold = await sell((chai.id, "1", "12"), (large.id, "2", "20"))
+    bought = await buy((large, "3", "5"))
+    await sell((large.id, "1", "20"))
+    wholesale = PricePoint(organization_id=db.organization_id, name="Wholesale", markup=Decimal(20))
+    db.add(wholesale)
+    await db.commit()
+
+    await sign_in(client)
+    page = (await client.get(f"/api/v1/products/{product.id}")).json()
+    assert page["totals"] == {
+        "committed": "4.000000",
+        "available": "9.000000",
+        "potential": None,
+        "made": "0",
+        "sold": "4.000000",
+        "shipped": "0",
+        "on_order": "0",
+        "overdue": False,
+        "profit": None,
+    }
+    path = f"/api/v1/products/{product.id}/variations/{large.id}/prices/{wholesale.id}"
+    refused = await client.put(path, json={"price": "9"})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
+    refused = await client.put("/api/v1/contacts/5/price-point", json={"price_point_id": 1})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
+
+    # Its orders and purchases, by item.
+    orders = (await client.get("/api/v1/orders", params={"item_id": chai.id})).json()
+    assert [order["id"] for order in orders["items"]] == [sold.id]
+    purchases = (await client.get("/api/v1/purchases", params={"item_id": large.id})).json()
+    assert [purchase["id"] for purchase in purchases["items"]] == [bought.id]
+    assert (await client.get("/api/v1/purchases", params={"item_id": chai.id})).json()["total"] == 0
+
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+    # Typed at a price point, and back to the suggested price: 5 marked up 20%.
+    typed = (await client.put(path, json={"price": "9"})).json()
+    [_, priced] = typed["variations"]
+    assert [(at["typed"], at["price"]) for at in priced["pricing"]["points"]] == [
+        ("9.000000", "9.000000")
+    ]
+    cleared = (await client.put(path, json={"price": None})).json()
+    [_, priced] = cleared["variations"]
+    assert [(at["typed"], at["suggested"]) for at in priced["pricing"]["points"]] == [
+        (None, "6.00")
+    ]
+    assert cleared["totals"]["profit"] == {
+        "revenue": "0.000000",
+        "cost": "0.000000",
+        "profit": "0.000000",
+        "share": None,
+        "uncosted": 0,
+        "left_out": 0,
+    }
+
+
+async def test_archived_products_are_listed_only_when_asked(
+    client, sign_in, db: WriteSession, product
+):
+    await product("Chai")
+    await product("Old chai", status=ItemStatus.ARCHIVED)
+    await db.commit()
+    await sign_in(client)
+
+    def names(listed) -> list[str]:
+        return [product["name"] for product in listed.json()["items"]]
+
+    assert names(await client.get("/api/v1/products")) == ["Chai"]
+    assert names(await client.get("/api/v1/products", params={"archived": True})) == [
+        "Chai",
+        "Old chai",
+    ]
 
 
 async def test_a_product_keeps_its_last_variation(client, sign_in, db: WriteSession, main):

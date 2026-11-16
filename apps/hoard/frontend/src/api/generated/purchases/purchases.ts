@@ -53,7 +53,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Purchases, the latest first, with how many of their lines are received.
+ * Purchases, the latest first, with how many of their lines are
+ * received: all, or those with a line buying one item.
  * @summary List Purchases
  */
 export const listPurchases = (
@@ -99,7 +100,8 @@ export type ListPurchasesQueryResult = NonNullable<Awaited<ReturnType<typeof lis
 export type ListPurchasesQueryError = ErrorType<HTTPValidationError>;
 
 /**
- * Purchases, the latest first, with how many of their lines are received.
+ * Purchases, the latest first, with how many of their lines are
+ * received: all, or those with a line buying one item.
  * @summary List Purchases
  */
 export function useListPurchases<
@@ -122,7 +124,8 @@ export function useListPurchases<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Purchases, the latest first, with how many of their lines are received.
+ * Purchases, the latest first, with how many of their lines are
+ * received: all, or those with a line buying one item.
  * @summary List Purchases
  */
 export function useListPurchases<
@@ -145,7 +148,8 @@ export function useListPurchases<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Purchases, the latest first, with how many of their lines are received.
+ * Purchases, the latest first, with how many of their lines are
+ * received: all, or those with a line buying one item.
  * @summary List Purchases
  */
 export function useListPurchases<
@@ -160,7 +164,8 @@ export function useListPurchases<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Purchases, the latest first, with how many of their lines are received.
+ * Purchases, the latest first, with how many of their lines are
+ * received: all, or those with a line buying one item.
  * @summary List Purchases
  */
 export function useListPurchases<
