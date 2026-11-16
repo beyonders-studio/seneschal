@@ -44,6 +44,10 @@
 * **Stocktakes**: counts of materials or products at a location, whose
   variances become adjustments.
 * **Settings**: the organization's one row of them, such as its currency.
+* **Price points** a community sells at (retail, wholesale), each with its
+  markup on cost, its listing fee and its commission; each **variation's
+  price** at a price point, where it is typed in; and the price point each
+  Initiative **contact** buys at.
 * **Images**: pictures of a product, and the one picture of a material or a
   base, which Hoard keeps itself and never offers a store.
 * **Bins**: where an item sits at a location, by zone, section and position.
@@ -1038,6 +1042,7 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settings_currency"),
         CheckConstraint(REGIMES_CHECK, name="ck_settings_regimes"),
         CheckConstraint("labour_rate >= 0", name="ck_settings_labour_rate"),
+        CheckConstraint("overhead >= 0", name="ck_settings_overhead"),
     )
 
     id: int = identity()
@@ -1061,6 +1066,69 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     )
     #: What an hour of work costs, which prices a recipe's minutes; None until set.
     labour_rate: Decimal | None = amount(None)
+    #: The share of what goods cost added for overhead, in percent; None until set.
+    overhead: Decimal | None = amount(None)
+
+
+class PricePoint(OrganizationRow, Stamped, table=True):
+    """A kind of customer a community sells to at its own prices, such as
+    retail or wholesale: its markup on cost gives a variation's suggested
+    price there, and its listing fee and commission come off each sale. Its
+    markup and commission are percentages; its fee is per unit sold."""
+
+    __tablename__ = "price_points"
+    __table_args__ = (
+        referable("price_points"),
+        UniqueConstraint("organization_id", "name", name="uq_price_points_name"),
+        CheckConstraint(
+            "markup >= 0 AND listing_fee >= 0 AND commission >= 0 AND commission < 100",
+            name="ck_price_points_amounts",
+        ),
+    )
+
+    id: int = identity()
+    name: str
+    markup: Decimal = amount()
+    listing_fee: Decimal = amount()
+    commission: Decimal = amount()
+
+
+class VariationPrice(OrganizationRow, Stamped, table=True):
+    """A variation's price at a price point, typed in; without one, it sells
+    there at its suggested price."""
+
+    __tablename__ = "variation_prices"
+    __table_args__ = (
+        reference("variation_prices", "variation_id", "variations", ondelete="CASCADE"),
+        reference("variation_prices", "price_point_id", "price_points", ondelete="CASCADE"),
+        UniqueConstraint(
+            "organization_id",
+            "variation_id",
+            "price_point_id",
+            name="uq_variation_prices_variation_point",
+        ),
+        CheckConstraint("price >= 0", name="ck_variation_prices_price"),
+    )
+
+    id: int = identity()
+    variation_id: int = Field(sa_type=BigInteger)
+    price_point_id: int = Field(sa_type=BigInteger)
+    price: Decimal = amount()
+
+
+class ContactPricePoint(OrganizationRow, Stamped, table=True):
+    """The price point an Initiative contact buys at, named by the contact's
+    id. It goes with its price point."""
+
+    __tablename__ = "contact_price_points"
+    __table_args__ = (
+        reference("contact_price_points", "price_point_id", "price_points", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "contact_id", name="uq_contact_price_points_contact"),
+    )
+
+    id: int = identity()
+    contact_id: int = Field(sa_type=BigInteger)
+    price_point_id: int = Field(sa_type=BigInteger)
 
 
 class Image(OrganizationRow, Stamped, table=True):
@@ -1824,6 +1892,7 @@ class Order(OrganizationRow, Stamped, table=True):
             "shipping >= 0 AND tax >= 0 AND discount >= 0 AND refunded >= 0",
             name="ck_orders_amounts",
         ),
+        CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_orders_currency"),
     )
 
     id: int = identity()
@@ -1855,6 +1924,9 @@ class Order(OrganizationRow, Stamped, table=True):
     store_customer: str | None = None
     #: When the store last changed it, as of the copy Hoard holds.
     store_updated_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
+    #: The ISO 4217 code a store's order is in, when the store said; None
+    #: for an order in the organization's currency, as one made by hand is.
+    currency: str | None = None
 
 
 class OrderLine(OrganizationRow, Stamped, table=True):

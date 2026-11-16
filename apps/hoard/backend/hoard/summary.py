@@ -37,6 +37,29 @@ else works these figures out.
   one, since a movement out records the average at the time and the average
   starts again from nothing only after one. An item that never had a cost has
   none. A recipe is costed from these (:func:`recipe_cost`), with its labour.
+* **A bundle's variation** holds no stock of its own: what is **available**
+  of it is its potential, how many its contents make together from what is
+  usable of them, and what is **committed** is how many bundles open orders
+  still need. Its contents' own figures count what the bundles need of them.
+* **Sales** (:func:`sales`), from its order lines, a bundle's parts included:
+  what was **sold**, less what was refunded before it shipped, and what
+  **shipped**, less what came back. Of the lines that charge for it, which
+  a bundle's parts don't, since their bundle's line does, its **revenue**:
+  what shipped and was not refunded or returned, at the line's price less
+  its share of its order's discount, without shipping or tax; and its
+  **cost**: what each shipment line went out at, less what came back at, a
+  bundle's being its parts'. An order counts once it ships. Shipment lines
+  that went out with no cost are counted, and only orders in the
+  organization's currency count toward revenue and cost: those in another
+  are counted apart.
+* **Pricing** (:func:`pricing`), of a variation: its cost, of its average or
+  last known cost (its contents' for a bundle), the labour a unit of its
+  recipe takes at the labour rate, and the organization's overhead on both;
+  and at each price point, its price, typed in or else suggested from the
+  cost and the price point's markup to the currency's smallest unit, the
+  price point's fee and commission on it, and the margin left. An item that
+  never had a cost has no suggested price and no margin. A hand order's line
+  starts at its customer's price point (:func:`contact_price`).
 """
 
 from __future__ import annotations
@@ -46,7 +69,7 @@ from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from sqlalchemy import and_, func, or_
@@ -61,17 +84,22 @@ from hoard.records import (
     PLACES,
     Adjustment,
     AdjustmentKind,
+    ContactPricePoint,
     Item,
     Location,
     Lot,
     Order,
     OrderLine,
     OrderStatus,
+    OrganizationSettings,
+    PricePoint,
+    Product,
     ProductionRun,
     Purchase,
     PurchaseLine,
     Recipe,
     RecipeLine,
+    ReturnLine,
     RunStatus,
     Shipment,
     ShipmentLine,
@@ -79,10 +107,22 @@ from hoard.records import (
     StockLevel,
     Stocktake,
     StocktakeRow,
+    Variation,
+    VariationPrice,
 )
 
 #: The minutes an hour of labour is.
 HOUR = Decimal(60)
+#: A percentage's whole.
+HUNDRED = Decimal(100)
+#: The places of the ISO 4217 currencies whose smallest unit is not a
+#: hundredth of them.
+MINOR_PLACES = {
+    **dict.fromkeys(
+        "BIF CLP DJF GNF ISK JPY KMF KRW PYG RWF UGX UYI VND VUV XAF XOF XPF".split(), 0
+    ),
+    **dict.fromkeys("BHD IQD JOD KWD LYD OMR TND".split(), 3),
+}
 
 
 @dataclass
@@ -269,6 +309,197 @@ def recipe_cost(
     )
 
 
+async def _settings(db: AsyncSession) -> OrganizationSettings:
+    return (await db.exec(select(OrganizationSettings))).first() or OrganizationSettings()
+
+
+def in_currency(amount: Decimal, currency: str) -> Decimal:
+    """``amount`` rounded to ``currency``'s smallest unit, halves up."""
+    return amount.quantize(Decimal(1).scaleb(-MINOR_PLACES.get(currency, 2)), ROUND_HALF_UP)
+
+
+def share(part: Decimal, whole: Decimal) -> Decimal | None:
+    """``part`` as a percentage of ``whole``, to two places; None of nothing."""
+    return None if whole == 0 else (part * HUNDRED / whole).quantize(Decimal("0.01"))
+
+
+@dataclass(frozen=True)
+class CostParts:
+    """What one of a variation costs, by its parts."""
+
+    #: Its average or last known cost; for a bundle, its contents'.
+    goods: Decimal
+    #: Whether that is, or holds, a last known cost.
+    last_known: bool
+    #: What a unit of its recipe's labour costs; None without minutes or a rate.
+    labour: Decimal | None
+    #: The overhead on the goods and the labour; None until it is set.
+    overhead: Decimal | None
+
+    @property
+    def total(self) -> Decimal:
+        return self.goods + (self.labour or Decimal(0)) + (self.overhead or Decimal(0))
+
+
+@dataclass(frozen=True)
+class PointPrice:
+    """A variation at a price point."""
+
+    price_point_id: int
+    #: Its price there, typed in; None leaves it to the suggested price.
+    typed: Decimal | None
+    #: Its cost marked up, to the currency's smallest unit; None without a cost.
+    suggested: Decimal | None
+    #: The listing fee on one sold, and the commission on its price.
+    fee: Decimal
+    commission: Decimal | None
+    #: The price less the cost, the fee and the commission; None without a cost.
+    margin: Decimal | None
+
+    @property
+    def price(self) -> Decimal | None:
+        return self.suggested if self.typed is None else self.typed
+
+    @property
+    def margin_share(self) -> Decimal | None:
+        """The margin as a percentage of the price."""
+        if self.margin is None or self.price is None:
+            return None
+        return share(self.margin, self.price)
+
+
+@dataclass(frozen=True)
+class Pricing:
+    """A variation's cost and its price at each price point, by name."""
+
+    cost: CostParts | None
+    points: list[PointPrice]
+
+
+async def pricing(db: AsyncSession, variation_ids: Iterable[int]) -> dict[int, Pricing]:
+    """Each variation's cost and its price at every price point."""
+    ids = list(set(variation_ids))
+    settings = await _settings(db)
+    points = (await db.exec(select(PricePoint).order_by(col(PricePoint.name)))).all()
+    typed = {
+        (row.variation_id, row.price_point_id): row.price
+        for row in await db.exec(
+            select(VariationPrice).where(col(VariationPrice.variation_id).in_(ids))
+        )
+    }
+    products = dict(
+        (
+            await db.exec(
+                select(Variation.id, Product)
+                .join(Product, col(Product.id) == Variation.product_id)
+                .where(col(Variation.id).in_(ids))
+            )
+        ).all()
+    )
+    held = (
+        await db.exec(
+            select(Recipe).where(
+                or_(
+                    col(Recipe.variation_id).in_(ids),
+                    col(Recipe.product_id).in_(
+                        [product.id for product in products.values() if product.bundle]
+                    ),
+                )
+            )
+        )
+    ).all()
+    made = {recipe.variation_id: recipe for recipe in held if recipe.variation_id}
+    bundled = {recipe.product_id: recipe for recipe in held if recipe.product_id}
+    lines = await recipes.lines_of(db, [recipe.id for recipe in bundled.values()])
+    known = await costs(db, [*ids, *(line.item_id for held in lines.values() for line in held)])
+    rate, overhead = settings.labour_rate, settings.overhead
+    found: dict[int, Pricing] = {}
+    for variation_id in ids:
+        product = products[variation_id]
+        goods: tuple[Decimal, bool] | None = None
+        labour = None
+        if product.bundle:
+            recipe = bundled.get(product.id)
+            contents = [] if recipe is None else lines[recipe.id]
+            costed = recipe_cost(
+                [line.item_id for line in contents],
+                [line.quantity for line in contents],
+                known,
+                makes=recipe.batch_quantity if recipe else Decimal(1),
+                batches=Decimal(1),
+                minutes=None,
+                rate=None,
+            )
+            if contents and not costed.incomplete:
+                goods = costed.unit_cost, any(costed.last_known)
+        else:
+            if variation_id in known:
+                goods = known[variation_id].unit_cost, known[variation_id].last_known
+            recipe = made.get(variation_id)
+            if recipe is not None and recipe.minutes is not None and rate is not None:
+                labour = recipe_cost(
+                    [],
+                    [],
+                    known,
+                    makes=recipe.batch_quantity,
+                    batches=Decimal(1),
+                    minutes=recipe.minutes,
+                    rate=rate,
+                ).unit_cost
+        cost = None
+        if goods is not None:
+            base = goods[0] + (labour or Decimal(0))
+            cost = CostParts(
+                goods=goods[0],
+                last_known=goods[1],
+                labour=labour,
+                overhead=None if overhead is None else (base * overhead / HUNDRED).quantize(PLACES),
+            )
+        priced = []
+        for point in points:
+            price = typed.get((variation_id, point.id))
+            suggested = (
+                None
+                if cost is None
+                else in_currency(cost.total * (HUNDRED + point.markup) / HUNDRED, settings.currency)
+            )
+            selling = suggested if price is None else price
+            commission = (
+                None if selling is None else (selling * point.commission / HUNDRED).quantize(PLACES)
+            )
+            priced.append(
+                PointPrice(
+                    price_point_id=point.id,
+                    typed=price,
+                    suggested=suggested,
+                    fee=point.listing_fee,
+                    commission=commission,
+                    margin=None
+                    if cost is None or selling is None or commission is None
+                    else selling - cost.total - point.listing_fee - commission,
+                )
+            )
+        found[variation_id] = Pricing(cost=cost, points=priced)
+    return found
+
+
+async def contact_price(db: AsyncSession, contact_id: int, variation_id: int) -> Decimal | None:
+    """What a variation sells for at the price point a contact buys at; None
+    for a contact with none, or where neither a price is typed nor a cost
+    suggests one."""
+    point = (
+        await db.exec(
+            select(ContactPricePoint.price_point_id).where(
+                ContactPricePoint.contact_id == contact_id
+            )
+        )
+    ).first()
+    if point is None:
+        return None
+    priced = (await pricing(db, [variation_id]))[variation_id]
+    return next(at.price for at in priced.points if at.price_point_id == point)
+
+
 @dataclass(frozen=True)
 class OnOrder:
     """What an item's purchase lines not yet received will bring."""
@@ -438,6 +669,163 @@ async def _used_in(db: AsyncSession, item_ids: list[int]) -> dict[int, list[Used
 
 
 @dataclass
+class Sales:
+    """What an item sold and shipped, and what the lines charging for it
+    earned and what what they shipped cost."""
+
+    sold: Decimal = Decimal(0)
+    shipped: Decimal = Decimal(0)
+    #: How many bundles open orders still need, for a bundle's variation.
+    bundles_committed: Decimal = Decimal(0)
+    revenue: Decimal = Decimal(0)
+    cost: Decimal = Decimal(0)
+    #: The shipment lines that went out with no cost.
+    uncosted: int = 0
+    #: The orders in another currency than the organization's, left out of
+    #: revenue and cost.
+    left_out: frozenset[int] = frozenset()
+
+    @property
+    def profit(self) -> Decimal:
+        return self.revenue - self.cost
+
+    @property
+    def profit_share(self) -> Decimal | None:
+        """The profit as a percentage of the revenue."""
+        return share(self.profit, self.revenue)
+
+    def __add__(self, other: Sales) -> Sales:
+        return Sales(
+            self.sold + other.sold,
+            self.shipped + other.shipped,
+            self.bundles_committed + other.bundles_committed,
+            self.revenue + other.revenue,
+            self.cost + other.cost,
+            self.uncosted + other.uncosted,
+            self.left_out | other.left_out,
+        )
+
+
+@dataclass
+class _Sent:
+    """What an order line's shipped shipments sent of it, what came back, and
+    what both cost."""
+
+    shipped: Decimal = Decimal(0)
+    returned: Decimal = Decimal(0)
+    cost: Decimal = Decimal(0)
+    uncosted: int = 0
+
+
+async def sales(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, Sales]:
+    """Each item's sales, in the organization's currency."""
+    ids = list(set(item_ids))
+    found = {item_id: Sales() for item_id in ids}
+    if not ids:
+        return found
+    currency = (await _settings(db)).currency
+    own = (
+        await db.exec(
+            select(OrderLine, Order)
+            .join(Order, col(Order.id) == OrderLine.order_id)
+            .where(col(OrderLine.item_id).in_(ids))
+        )
+    ).all()
+    parts: dict[int, list[OrderLine]] = defaultdict(list)
+    for part in await db.exec(
+        select(OrderLine).where(col(OrderLine.bundle_line_id).in_([line.id for line, _ in own]))
+    ):
+        parts[part.bundle_line_id or 0].append(part)
+    line_ids = {line.id for line, _ in own} | {p.id for held in parts.values() for p in held}
+    goods = dict(
+        (
+            await db.exec(
+                select(OrderLine.order_id, func.sum(OrderLine.quantity * OrderLine.price))
+                .where(col(OrderLine.order_id).in_({order.id for _, order in own}))
+                .group_by(col(OrderLine.order_id))
+            )
+        ).all()
+    )
+    sent: dict[int, _Sent] = defaultdict(_Sent)
+    for line_id, quantity, change, unit_cost in await db.exec(
+        select(
+            col(ShipmentLine.order_line_id),
+            col(ShipmentLine.quantity),
+            col(Adjustment.change),
+            col(Adjustment.unit_cost),
+        )
+        .join(Shipment, col(Shipment.id) == ShipmentLine.shipment_id)
+        .outerjoin(Adjustment, col(Adjustment.shipment_line_id) == ShipmentLine.id)
+        .where(
+            col(ShipmentLine.order_line_id).in_(line_ids), Shipment.status == ShipmentStatus.SHIPPED
+        )
+    ):
+        sent[line_id].shipped += quantity
+        if not unit_cost:
+            sent[line_id].uncosted += 1
+        else:
+            sent[line_id].cost -= change * unit_cost
+    for line_id, quantity, change, unit_cost in await db.exec(
+        select(
+            col(ShipmentLine.order_line_id),
+            col(ReturnLine.quantity),
+            col(Adjustment.change),
+            col(Adjustment.unit_cost),
+        )
+        .join(ShipmentLine, col(ShipmentLine.id) == ReturnLine.shipment_line_id)
+        .outerjoin(
+            Adjustment,
+            and_(
+                col(Adjustment.return_line_id) == ReturnLine.id,
+                col(Adjustment.kind) == AdjustmentKind.RETURN,
+            ),
+        )
+        .where(col(ShipmentLine.order_line_id).in_(line_ids))
+    ):
+        sent[line_id].returned += quantity
+        sent[line_id].cost -= (change or 0) * (unit_cost or 0)
+
+    def sent_of(line: OrderLine) -> _Sent:
+        """What was sent of ``line``: a bundle's, as many whole bundles as its
+        parts sent, and what they cost."""
+        held = parts.get(line.id)
+        if not held:
+            return sent[line.id]
+        each = [(sent[part.id], part.quantity) for part in held]
+        shipped = min(of.shipped / quantity for of, quantity in each)
+        kept = min((of.shipped - of.returned) / quantity for of, quantity in each)
+        return _Sent(
+            shipped=units.scaled(line.quantity, shipped, down=True),
+            returned=units.scaled(line.quantity, shipped - kept, down=True),
+            cost=sum((of.cost for of, _ in each), Decimal(0)),
+            uncosted=sum(of.uncosted for of, _ in each),
+        )
+
+    for line, order in own:
+        of = sent_of(line)
+        live = order.status in (OrderStatus.OPEN, OrderStatus.SHIPPED)
+        # What it sells now; a pending or cancelled order sold what it shipped.
+        selling = orders.selling(line) if live else of.shipped
+        figures = found[line.item_id]
+        figures.sold += min(line.quantity, max(selling, of.shipped))
+        figures.shipped += of.shipped - of.returned
+        if order.status is OrderStatus.OPEN and line.id in parts:
+            figures.bundles_committed += max(selling - of.shipped, Decimal(0))
+        if line.bundle_line_id is not None:
+            continue
+        if (order.currency or currency) != currency:
+            figures.left_out |= {order.id}
+            continue
+        whole = goods.get(order.id) or Decimal(0)
+        net = Decimal(1) if whole == 0 else 1 - order.discount / whole
+        earned = max(min(selling, of.shipped - of.returned), Decimal(0))
+        figures.revenue += (earned * line.price * net).quantize(PLACES)
+        figures.cost += of.cost.quantize(PLACES)
+        figures.uncosted += of.uncosted
+    return found
+
+
+@dataclass
 class AtLocation:
     """An item's figures at one location."""
 
@@ -462,21 +850,69 @@ class Summary:
     #: Over every window, in :class:`UsageWindow` order.
     usage: list[Usage]
     used_in: list[UsedIn]
+    sales: Sales
+    #: Whether it is a bundle's variation, which holds no stock of its own.
+    bundle: bool = False
 
     @property
     def stock(self) -> Stock:
         return sum((at.stock for at in self.locations.values()), Stock())
 
+    @property
+    def committed(self) -> Decimal:
+        return self.sales.bundles_committed if self.bundle else self.stock.committed
+
+    @property
+    def available(self) -> Decimal:
+        return (self.potential or Decimal(0)) if self.bundle else self.stock.available
+
+
+@dataclass(frozen=True)
+class Totals:
+    """Several items' figures together, such as a product's variations'."""
+
+    on_hand: Decimal
+    committed: Decimal
+    available: Decimal
+    #: None when none of them has any.
+    potential: Decimal | None
+    made: Decimal
+    on_order: OnOrder
+    sales: Sales
+
+
+def total(figures: Iterable[Summary]) -> Totals:
+    """``figures`` added up."""
+    held = list(figures)
+    potentials = [each.potential for each in held if each.potential is not None]
+    return Totals(
+        on_hand=sum((each.stock.on_hand for each in held), Decimal(0)),
+        committed=sum((each.committed for each in held), Decimal(0)),
+        available=sum((each.available for each in held), Decimal(0)),
+        potential=sum(potentials, Decimal(0)) if potentials else None,
+        made=sum((each.made for each in held), Decimal(0)),
+        on_order=OnOrder(
+            sum((each.on_order.quantity for each in held), Decimal(0)),
+            any(each.on_order.overdue for each in held),
+        ),
+        sales=sum((each.sales for each in held), Sales()),
+    )
+
 
 async def _could_make(
-    db: AsyncSession, item_ids: list[int], today: date
+    db: AsyncSession, item_ids: list[int], bundles: dict[int, int], today: date
 ) -> dict[int, dict[int, Decimal]]:
     """What each item with a recipe that has lines could make at every
-    location, by item and then by location."""
+    location, by item and then by location; a bundle's variations, of
+    ``bundles`` by their product, from what their bundle holds."""
     found = (
         await db.exec(
             select(Recipe).where(
-                or_(col(Recipe.base_id).in_(item_ids), col(Recipe.variation_id).in_(item_ids))
+                or_(
+                    col(Recipe.base_id).in_(item_ids),
+                    col(Recipe.variation_id).in_(item_ids),
+                    col(Recipe.product_id).in_(set(bundles.values())),
+                )
             )
         )
     ).all()
@@ -488,7 +924,17 @@ async def _could_make(
         quantities = [line.quantity for line in lines[recipe.id]]
         if not quantities:
             continue
-        at = could[recipe.base_id or recipe.variation_id or 0] = {}
+        at: dict[int, Decimal] = {}
+        for output in (
+            [recipe.base_id or recipe.variation_id or 0]
+            if recipe.product_id is None
+            else [
+                variation_id
+                for variation_id, product_id in bundles.items()
+                if product_id == recipe.product_id
+            ]
+        ):
+            could[output] = at
         for location_id in locations:
             usable = [
                 held[line.item_id].get(location_id, Stock()).usable for line in lines[recipe.id]
@@ -506,10 +952,20 @@ async def summarise(
     today = today or date.today()
     ids = list(set(item_ids))
     held = await stock(db, ids, today)
-    could = await _could_make(db, ids, today)
+    bundles = dict(
+        (
+            await db.exec(
+                select(Variation.id, Variation.product_id)
+                .join(Product, col(Product.id) == Variation.product_id)
+                .where(col(Variation.id).in_(ids), col(Product.bundle))
+            )
+        ).all()
+    )
+    could = await _could_make(db, ids, bundles, today)
     ordered = await on_order(db, ids, today)
     usage = await _usage(db, ids, today)
     used_in = await _used_in(db, ids)
+    sold = await sales(db, ids)
     made = dict(
         (
             await db.exec(
@@ -542,6 +998,8 @@ async def summarise(
             on_order=ordered.get(item_id, OnOrder()),
             usage=usage[item_id],
             used_in=used_in[item_id],
+            sales=sold[item_id],
+            bundle=item_id in bundles,
         )
     for item_id, location_id, dated_on in counted:
         summary = found[item_id]
