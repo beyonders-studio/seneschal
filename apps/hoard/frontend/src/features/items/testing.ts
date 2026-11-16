@@ -159,6 +159,8 @@ export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetai
     on_order: "0",
     overdue: false,
     profit: null,
+    retail: { sold: "0", shipped: "0", profit: null },
+    wholesale: null,
   },
   variations: [],
   store_products: [],

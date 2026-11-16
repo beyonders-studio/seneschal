@@ -601,10 +601,6 @@ export interface ContactCreate {
   is_organization?: boolean;
 }
 
-export interface ContactPricePointWrite {
-  price_point_id: number | null;
-}
-
 /**
  * A contact, as a supplier picker shows it.
  */
@@ -2025,20 +2021,6 @@ export const Picking = {
 } as const;
 
 /**
- * A variation at a price point.
- */
-export interface PointPriceRead {
-  price_point_id: number;
-  typed: string | null;
-  suggested: string | null;
-  price: string | null;
-  fee: string;
-  commission: string | null;
-  margin: string | null;
-  margin_share: string | null;
-}
-
-/**
  * What one of a variation costs, by its parts.
  */
 export interface PriceCost {
@@ -2047,6 +2029,16 @@ export interface PriceCost {
   labour: string | null;
   overhead: string | null;
   total: string;
+}
+
+/**
+ * What a product's variations sold and shipped in one group of sales,
+ * and what that earned.
+ */
+export interface SalesGroupRead {
+  sold: string;
+  shipped: string;
+  profit: ItemProfit | null;
 }
 
 /**
@@ -2063,14 +2055,19 @@ export interface ProductTotals {
   on_order: string;
   overdue: boolean;
   profit: ItemProfit | null;
+  retail: SalesGroupRead;
+  wholesale: SalesGroupRead | null;
 }
 
 /**
- * A variation's cost and its price at each price point, by name.
+ * A variation's cost, its price and the margin left at that price.
  */
 export interface VariationPricing {
   cost: PriceCost | null;
-  points: PointPriceRead[];
+  price: string | null;
+  store_price: boolean;
+  margin: string | null;
+  margin_share: string | null;
 }
 
 export type ProductVariationReadAttributes = { [key: string]: string };
@@ -2730,25 +2727,6 @@ export interface SettingsLocationUpdate {
   consignee?: boolean | null;
 }
 
-export interface SettingsPricePointRead {
-  id: number;
-  name: string;
-  markup: string | null;
-  listing_fee: string | null;
-  commission: string | null;
-}
-
-export interface SettingsPricePointWrite {
-  /**
-   * @minLength 1
-   * @maxLength 200
-   */
-  name: string;
-  markup?: number | string;
-  listing_fee?: number | string;
-  commission?: number | string;
-}
-
 export interface SettingsRead {
   currency: string;
   base_word: string | null;
@@ -3179,10 +3157,19 @@ export interface StoreRead {
   imported_at: string | null;
   sync_job_id: number | null;
   locations: StoreLocationRead[];
+  wholesale_segment: string | null;
   listings: number;
   linked: number;
   pushes_queued: number;
   pushes_failed: number;
+}
+
+/**
+ * One of the store's customer segments.
+ */
+export interface StoreSegmentRead {
+  id: string;
+  name: string;
 }
 
 /**
@@ -3193,6 +3180,10 @@ export interface StoreRead {
 export interface StoreSyncWrite {
   locations?: StoreLocationChoice[];
   fields?: StoreFieldChoiceWrite[];
+}
+
+export interface StoreWholesaleWrite {
+  segment_id: string | null;
 }
 
 /**
@@ -3302,14 +3293,6 @@ export interface TransferCreate {
 
 export interface UnitConversion {
   factor: string | null;
-}
-
-/**
- * A variation's price at a price point: null leaves it to the
- * suggested price.
- */
-export interface VariationPriceWrite {
-  price: number | string | null;
 }
 
 export type Healthz200 = { [key: string]: string };

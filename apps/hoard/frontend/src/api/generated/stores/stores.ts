@@ -35,7 +35,9 @@ import type {
   StoreProductRead,
   StoreProductWrite,
   StoreRead,
+  StoreSegmentRead,
   StoreSyncWrite,
+  StoreWholesaleWrite,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -575,6 +577,244 @@ export const useUnsyncStore = <TError = ErrorType<void | HTTPValidationError>, T
   TContext
 > => {
   return useMutation(getUnsyncStoreMutationOptions(options), queryClient);
+};
+/**
+ * The store's customer segments, read from the store now, by name, for
+ * choosing the one whose orders are wholesale.
+ * @summary List Store Segments
+ */
+export const listStoreSegments = (
+  storeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreSegmentRead[]>(
+    { url: `/api/v1/stores/${storeId}/segments`, method: "GET", signal },
+    options
+  );
+};
+
+export const getListStoreSegmentsQueryKey = (storeId: number) => {
+  return [`/api/v1/stores/${storeId}/segments`] as const;
+};
+
+export const getListStoreSegmentsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listStoreSegments>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListStoreSegmentsQueryKey(storeId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listStoreSegments>>> = ({ signal }) =>
+    listStoreSegments(storeId, requestOptions, signal);
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: storeId !== null && storeId !== undefined,
+    ...queryOptions,
+  } as UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+};
+
+export type ListStoreSegmentsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listStoreSegments>>
+>;
+export type ListStoreSegmentsQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The store's customer segments, read from the store now, by name, for
+ * choosing the one whose orders are wholesale.
+ * @summary List Store Segments
+ */
+export function useListStoreSegments<
+  TData = Awaited<ReturnType<typeof listStoreSegments>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreSegments>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreSegments>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's customer segments, read from the store now, by name, for
+ * choosing the one whose orders are wholesale.
+ * @summary List Store Segments
+ */
+export function useListStoreSegments<
+  TData = Awaited<ReturnType<typeof listStoreSegments>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStoreSegments>>,
+          TError,
+          Awaited<ReturnType<typeof listStoreSegments>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's customer segments, read from the store now, by name, for
+ * choosing the one whose orders are wholesale.
+ * @summary List Store Segments
+ */
+export function useListStoreSegments<
+  TData = Awaited<ReturnType<typeof listStoreSegments>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The store's customer segments, read from the store now, by name, for
+ * choosing the one whose orders are wholesale.
+ * @summary List Store Segments
+ */
+export function useListStoreSegments<
+  TData = Awaited<ReturnType<typeof listStoreSegments>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  storeId: number,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listStoreSegments>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListStoreSegmentsQueryOptions(storeId, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * Choose the customer segment of a synced store whose orders are
+ * wholesale, or none; its orders are marked again by who is in it now, as a
+ * job.
+ * @summary Set Store Wholesale
+ */
+export const setStoreWholesale = (
+  storeId: number,
+  storeWholesaleWrite: BodyType<StoreWholesaleWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StoreRead>(
+    {
+      url: `/api/v1/stores/${storeId}/wholesale`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: storeWholesaleWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getSetStoreWholesaleMutationKey = () => ["setStoreWholesale"] as const;
+
+export const getSetStoreWholesaleMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setStoreWholesale>>,
+    TError,
+    SetStoreWholesaleMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setStoreWholesale>>,
+  TError,
+  SetStoreWholesaleMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSetStoreWholesaleMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setStoreWholesale>>,
+    SetStoreWholesaleMutationVariables
+  > = (props) => {
+    const { storeId, data } = props ?? {};
+
+    return setStoreWholesale(storeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetStoreWholesaleMutationResult = NonNullable<
+  Awaited<ReturnType<typeof setStoreWholesale>>
+>;
+export type SetStoreWholesaleMutationBody = BodyType<StoreWholesaleWrite>;
+export type SetStoreWholesaleMutationError = ErrorType<void>;
+export type SetStoreWholesaleMutationVariables = {
+  storeId: number;
+  data: BodyType<StoreWholesaleWrite>;
+};
+
+/**
+ * Choose the customer segment of a synced store whose orders are
+ * wholesale, or none; its orders are marked again by who is in it now, as a
+ * job.
+ * @summary Set Store Wholesale
+ */
+export const useSetStoreWholesale = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setStoreWholesale>>,
+      TError,
+      SetStoreWholesaleMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof setStoreWholesale>>,
+  TError,
+  SetStoreWholesaleMutationVariables,
+  TContext
+> => {
+  return useMutation(getSetStoreWholesaleMutationOptions(options), queryClient);
 };
 /**
  * Set the Hoard location whose stock a store location sells, or none; the

@@ -12,9 +12,11 @@ import {
 import { useListSettingsLocations } from "@/api/generated/settings/settings";
 import {
   getListStoresQueryKey,
+  useListStoreSegments,
   useListStores,
   useMapStoreLocation,
   useRefreshStore,
+  useSetStoreWholesale,
   useUnsyncStore,
 } from "@/api/generated/stores/stores";
 import { JobProgress } from "@/components/JobProgress";
@@ -33,7 +35,9 @@ import { Alert, AlertDescription } from "@/ui/alert";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
+import { Field } from "@/ui/field";
 import { RelativeTime } from "@/ui/relative-time";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
 /** The community's connected stores: how each connection stands, and where
@@ -147,6 +151,7 @@ function StoreCard({ store }: { store: StoreRead }) {
       {synced && (
         <>
           <StoreLocations store={store} changes={changes} />
+          {changes && <WholesaleSegment store={store} />}
           <DifferingFields store={store} changes={changes} />
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" size="sm" onClick={() => setShowingFields(!showingFields)}>
@@ -247,5 +252,58 @@ function StoreLocations({ store, changes }: { store: StoreRead; changes: boolean
         ))}
       </TableBody>
     </Table>
+  );
+}
+
+/** The value that stands for no segment, which a select item cannot carry as empty. */
+const NO_SEGMENT = "none";
+
+/** The store's customer segment whose orders are wholesale, picked from the
+ *  segments the store has now, or none: an order a company bought is
+ *  wholesale either way. Choosing one marks the store's orders again. */
+function WholesaleSegment({ store }: { store: StoreRead }) {
+  const { t } = useTranslation("stores");
+  const queryClient = useQueryClient();
+  const segments = useListStoreSegments(store.id);
+  const choose = useSetStoreWholesale({
+    mutation: {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries({ queryKey: getListStoresQueryKey() });
+        toast.success(t("wholesale.saved"));
+      },
+      onError: (error) => toast.error(errorMessage(error, t, "wholesale.saveFailed")),
+    },
+  });
+  return (
+    <Field label={t("wholesale.label")} hint={t("wholesale.hint")}>
+      {segments.isError ? (
+        <p className="text-sm text-destructive">
+          {errorMessage(segments.error, t, "wholesale.loadFailed")}
+        </p>
+      ) : (
+        <Select
+          value={store.wholesale_segment ?? NO_SEGMENT}
+          disabled={!segments.data || choose.isPending}
+          onValueChange={(chosen) =>
+            choose.mutate({
+              storeId: store.id,
+              data: { segment_id: chosen === NO_SEGMENT ? null : chosen },
+            })
+          }
+        >
+          <SelectTrigger aria-label={t("wholesale.label")}>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_SEGMENT}>{t("wholesale.none")}</SelectItem>
+            {segments.data?.map((segment) => (
+              <SelectItem key={segment.id} value={segment.id}>
+                {segment.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
+    </Field>
   );
 }

@@ -161,8 +161,19 @@ describe("ProductPage", () => {
   });
 
   describe("at a glance", () => {
+    /** What one group of Chai's sales earned. */
+    const earned = (revenue: string, profit: string, share: string) => ({
+      revenue,
+      cost: "0",
+      profit,
+      share,
+      uncosted: 0,
+      left_out: 0,
+    });
+
     /** Chai with a SKU, its figures added up, and to a member who sees costs,
-     *  what it earned and its prices at Retail and Wholesale. */
+     *  what it earned to retail and wholesale customers, its cost, and its
+     *  price in the store. */
     const FIGURED: ProductDetail = productDetail({
       ...CHAI,
       totals: {
@@ -183,6 +194,16 @@ describe("ProductPage", () => {
           uncosted: 1,
           left_out: 2,
         },
+        retail: {
+          sold: "5.000000",
+          shipped: "3.000000",
+          profit: earned("45.000000", "33.000000", "73.33"),
+        },
+        wholesale: {
+          sold: "3.000000",
+          shipped: "2.000000",
+          profit: earned("15.000000", "-1.000000", "-6.67"),
+        },
       },
       variations: [
         variation({
@@ -196,44 +217,16 @@ describe("ProductPage", () => {
               overhead: "0.250000",
               total: "2.750000",
             },
-            points: [
-              {
-                price_point_id: 1,
-                typed: null,
-                suggested: "5.50",
-                price: "5.50",
-                fee: "0",
-                commission: "0",
-                margin: "2.750000",
-                margin_share: "50.00",
-              },
-              {
-                price_point_id: 2,
-                typed: "2.000000",
-                suggested: "4.13",
-                price: "2.000000",
-                fee: "0.300000",
-                commission: "0.200000",
-                margin: "-1.250000",
-                margin_share: "-62.50",
-              },
-            ],
+            price: "2.000000",
+            store_price: true,
+            margin: "-0.750000",
+            margin_share: "-37.50",
           },
         }),
       ],
     });
 
-    const figured = {
-      ...opened,
-      "GET /api/v1/products/7": { status: 200, data: FIGURED },
-      "GET /api/v1/settings/price-points": {
-        status: 200,
-        data: [
-          { id: 1, name: "Retail", markup: "100", listing_fee: "0", commission: "0" },
-          { id: 2, name: "Wholesale", markup: "50", listing_fee: "0.3", commission: "10" },
-        ],
-      },
-    };
+    const figured = { ...opened, "GET /api/v1/products/7": { status: 200, data: FIGURED } };
 
     it("shows its SKU, stock and figures to date, and no money without costs", async () => {
       await openSignedIn("/stock/products/7", signedIn(), figured);
@@ -249,7 +242,7 @@ describe("ProductPage", () => {
       expect(screen.queryByText("Wholesale")).toBeNull();
     });
 
-    it("shows what it earned and its margins at each price point", async () => {
+    it("shows what it earned from retail and wholesale, its cost and its margin", async () => {
       await openSignedIn(
         "/stock/products/7",
         signedIn({ permissions: ["use", SEE_COSTS] }),
@@ -257,67 +250,53 @@ describe("ProductPage", () => {
       );
 
       await screen.findByText("Gross profit");
-      await screen.findByText("$40.00");
-      screen.getByText("66.67%");
+      const retail = (await screen.findByText("Retail")).closest("tr");
+      expect(retail?.textContent).toBe("Retail5$45.00$33.0073.33%");
+      const wholesale = screen.getByText("Wholesale").closest("tr");
+      expect(wholesale?.textContent).toBe("Wholesale3$15.00-$1.00-6.67%");
       screen.getByText("1 shipment line went out with no cost, so the cost is too low.");
       screen.getByText("2 orders in another currency aren't counted.");
-      // Its last known cost, with its overhead.
+      // Its last known cost, with its overhead, and a loss at the store's price.
       await screen.findByText("Last known");
       screen.getByText("$2.75");
-      const retail = (await screen.findByText("Retail")).closest("tr");
-      expect(retail?.textContent).toContain("$5.50suggested");
-      const wholesale = screen.getByText("Wholesale").closest("tr");
-      expect(within(wholesale as HTMLElement).getByText("Loss")).toBeTruthy();
-      expect(wholesale?.textContent).toContain("-$1.25 (-62.5%)");
+      const price = screen.getByText("Price in the store").closest("div");
+      expect(price?.textContent).toBe("Price in the store$2.00");
+      const margin = screen.getByText("Margin").closest("div") as HTMLElement;
+      within(margin).getByText("Loss");
+      expect(margin.textContent).toContain("-$0.75 (-37.5%)");
     });
 
-    it("sets a price at a price point, and says when it has no cost", async () => {
-      const unpriced = productDetail({
-        ...FIGURED,
-        variations: [
-          variation({
-            pricing: {
-              cost: null,
-              points: [
-                {
-                  price_point_id: 1,
-                  typed: null,
-                  suggested: null,
-                  price: null,
-                  fee: "0",
-                  commission: null,
+    it("shows its sales in one row while nobody bought wholesale, and no cost", async () => {
+      await openSignedIn("/stock/products/7", signedIn({ permissions: ["use", SEE_COSTS] }), {
+        ...figured,
+        "GET /api/v1/products/7": {
+          status: 200,
+          data: productDetail({
+            ...FIGURED,
+            totals: { ...FIGURED.totals, wholesale: null },
+            variations: [
+              variation({
+                pricing: {
+                  cost: null,
+                  price: "6.000000",
+                  store_price: false,
                   margin: null,
                   margin_share: null,
                 },
-              ],
-            },
+              }),
+            ],
           }),
-        ],
+        },
       });
-      const asked = await openSignedIn(
-        "/stock/products/7",
-        signedIn({ permissions: ["use", SEE_COSTS] }),
-        {
-          ...figured,
-          "GET /api/v1/products/7": { status: 200, data: unpriced },
-          "PUT /api/v1/products/7/variations/20/prices/1": { status: 200, data: unpriced },
-        }
-      );
 
-      await screen.findByText(
-        "It has never had a cost, so its suggested prices and margins are unknown."
-      );
-      const retail = (await screen.findByText("Retail")).closest("tr") as HTMLElement;
-      expect(within(retail).getAllByText("Unknown")).toHaveLength(4);
-      fireEvent.click(within(retail).getByRole("button", { name: "Set price" }));
-      const dialog = await screen.findByRole("dialog", { name: "Chai at Retail" });
-      fireEvent.change(within(dialog).getByLabelText("Price"), { target: { value: "6" } });
-      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
-
-      await waitFor(() => {
-        const sent = asked.find((request) => request.method === "put");
-        expect(JSON.parse(String(sent?.data))).toEqual({ price: "6" });
-      });
+      const all = (await screen.findByText("All sales")).closest("tr");
+      expect(all?.textContent).toBe("All sales5$45.00$33.0073.33%");
+      expect(screen.queryByText("Wholesale")).toBeNull();
+      await screen.findByText("It has never had a cost, so its margin is unknown.");
+      const term = (label: string) =>
+        screen.getByText(label, { selector: "dt" }).closest("div")?.textContent;
+      expect(term("Price")).toBe("Price$6.00");
+      expect(term("Margin")).toBe("MarginUnknown");
     });
 
     it("counts a bundle's availability from its contents, with no stock of its own", async () => {

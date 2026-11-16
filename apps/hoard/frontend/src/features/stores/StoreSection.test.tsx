@@ -16,6 +16,7 @@ const STORE: StoreRead = {
   state: "synced",
   imported_at: "2026-11-14T09:00:00Z",
   sync_job_id: null,
+  wholesale_segment: null,
   locations: [],
   listings: 1,
   linked: 1,

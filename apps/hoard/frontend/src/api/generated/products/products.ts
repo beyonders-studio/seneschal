@@ -28,7 +28,6 @@ import type {
   ProductImageRead,
   ProductVariationWrite,
   ProductWrite,
-  VariationPriceWrite,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -859,108 +858,6 @@ export const useDeleteProductVariation = <TError = ErrorType<void>, TContext = u
   TContext
 > => {
   return useMutation(getDeleteProductVariationMutationOptions(options), queryClient);
-};
-/**
- * Set a variation's price at a price point; null leaves it to the
- * suggested price. Refused from a member who doesn't see costs.
- * @summary Set Variation Price
- */
-export const setVariationPrice = (
-  productId: number,
-  variationId: number,
-  pricePointId: number,
-  variationPriceWrite: BodyType<VariationPriceWrite>,
-  options?: SecondParameter<typeof apiMutator>,
-  signal?: AbortSignal
-) => {
-  return apiMutator<ProductDetail>(
-    {
-      url: `/api/v1/products/${productId}/variations/${variationId}/prices/${pricePointId}`,
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      data: variationPriceWrite,
-      signal,
-    },
-    options
-  );
-};
-
-export const getSetVariationPriceMutationKey = () => ["setVariationPrice"] as const;
-
-export const getSetVariationPriceMutationOptions = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(options?: {
-  mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof setVariationPrice>>,
-    TError,
-    SetVariationPriceMutationVariables,
-    TContext
-  >;
-  request?: SecondParameter<typeof apiMutator>;
-}): UseMutationOptions<
-  Awaited<ReturnType<typeof setVariationPrice>>,
-  TError,
-  SetVariationPriceMutationVariables,
-  TContext
-> => {
-  const mutationKey = getSetVariationPriceMutationKey();
-  const { mutation: mutationOptions, request: requestOptions } = options
-    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
-      ? options
-      : { ...options, mutation: { ...options.mutation, mutationKey } }
-    : { mutation: { mutationKey }, request: undefined };
-
-  const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof setVariationPrice>>,
-    SetVariationPriceMutationVariables
-  > = (props) => {
-    const { productId, variationId, pricePointId, data } = props ?? {};
-
-    return setVariationPrice(productId, variationId, pricePointId, data, requestOptions);
-  };
-
-  return { mutationFn, ...mutationOptions };
-};
-
-export type SetVariationPriceMutationResult = NonNullable<
-  Awaited<ReturnType<typeof setVariationPrice>>
->;
-export type SetVariationPriceMutationBody = BodyType<VariationPriceWrite>;
-export type SetVariationPriceMutationError = ErrorType<void | HTTPValidationError>;
-export type SetVariationPriceMutationVariables = {
-  productId: number;
-  variationId: number;
-  pricePointId: number;
-  data: BodyType<VariationPriceWrite>;
-};
-
-/**
- * Set a variation's price at a price point; null leaves it to the
- * suggested price. Refused from a member who doesn't see costs.
- * @summary Set Variation Price
- */
-export const useSetVariationPrice = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(
-  options?: {
-    mutation?: UseMutationOptions<
-      Awaited<ReturnType<typeof setVariationPrice>>,
-      TError,
-      SetVariationPriceMutationVariables,
-      TContext
-    >;
-    request?: SecondParameter<typeof apiMutator>;
-  },
-  queryClient?: QueryClient
-): UseMutationResult<
-  Awaited<ReturnType<typeof setVariationPrice>>,
-  TError,
-  SetVariationPriceMutationVariables,
-  TContext
-> => {
-  return useMutation(getSetVariationPriceMutationOptions(options), queryClient);
 };
 /**
  * A product's images, first to last.

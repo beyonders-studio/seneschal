@@ -78,9 +78,12 @@
     },
     "profit": {
       "title": "Profitability",
-      "hint": "Revenue is what order lines charged after their discounts, less refunds and returns, without shipping or tax. An order counts once it ships, at what its stock cost when it went out.",
+      "hint": "Revenue is what order lines charged after their discounts, less refunds and returns, without shipping or tax. An order counts once it ships, at what its stock cost when it went out. Wholesale is what the store sold to a company, or to a customer in its wholesale segment.",
+      "group": "Sales",
+      "retail": "Retail",
+      "wholesale": "Wholesale",
+      "all": "All sales",
       "revenue": "Revenue",
-      "cost": "Cost of what shipped",
       "profit": "Gross profit",
       "share": "Share of revenue",
       "uncostedMark": "No cost",
@@ -90,28 +93,20 @@
       "leftOut_other": "{{count}} orders in another currency aren't counted."
     },
     "pricing": {
-      "title": "Pricing",
+      "title": "Cost and price",
       "materials": "Materials",
       "contents": "Contents",
       "labour": "Labour",
       "overhead": "Overhead",
       "total": "Total cost",
       "lastKnown": "Last known",
-      "noCost": "It has never had a cost, so its suggested prices and margins are unknown.",
-      "noPricePoints": "No price points yet. An admin adds them in Settings.",
-      "pricePoint": "Price point",
-      "suggested": "Suggested",
-      "usesSuggested": "suggested",
-      "fee": "Listing fee",
-      "commission": "Commission",
+      "noCost": "It has never had a cost, so its margin is unknown.",
+      "price": "Price",
+      "storePrice": "Price in the store",
       "margin": "Margin",
       "marginIs": "{{margin}} ({{share}})",
       "loss": "Loss",
-      "unknown": "Unknown",
-      "setPrice": "Set price",
-      "priceTitle": "{{name}} at {{point}}",
-      "priceHint": "Leave it blank to sell it there at its suggested price.",
-      "saveFailed": "Couldn't save the price."
+      "unknown": "Unknown"
     }
   },
   "settings": {
@@ -242,26 +237,11 @@
     },
     "overhead": {
       "title": "Overhead",
-      "description": "What running the business adds to what goods cost, such as rent and power, as a share of the goods and labour. Prices suggested from cost, and their margins, count it.",
+      "description": "What running the business adds to what goods cost, such as rent and power, as a share of the goods and labour. A product's cost, and its margin, count it.",
       "field": "Percent",
       "hint": "Leave it blank to add no overhead.",
       "unset": "Not set",
       "saved": "Overhead saved."
-    },
-    "pricePoints": {
-      "title": "Price points",
-      "description": "The kinds of customer you price for, such as Retail and Wholesale. Each suggests a price from what a product costs, and counts what each sale pays. A customer buying at one starts their hand orders at its prices; a store's orders keep the store's.",
-      "add": "Add price point",
-      "edit": "Edit price point",
-      "empty": "No price points yet.",
-      "name": "Price point",
-      "markup": "Markup, in percent",
-      "markupHint": "What its suggested prices add to cost.",
-      "listingFee": "Listing fee",
-      "listingFeeHint": "What each one sold pays.",
-      "commission": "Commission, in percent",
-      "commissionHint": "The share of its price each sale pays.",
-      "removeBody": "Prices typed at it go with it. Orders keep their prices, and its customers' new orders start at the default price."
     }
   },
   "errors": {
