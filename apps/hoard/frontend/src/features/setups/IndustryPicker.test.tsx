@@ -9,6 +9,11 @@ const offered = (added: boolean, started = false): SetupsRead => ({
   setups: [
     { key: "bakery_food", added: false, words: ["units.case"] },
     { key: "cosmetics_soap", added: false, words: ["hold_reasons.curing"] },
+    {
+      key: "crafts_assembly",
+      added: false,
+      words: ["base_word", "recipe_word", "types.merch", "types.component"],
+    },
     { key: "drinks", added, words: ["units.bottle_750ml", "reasons.spill"] },
     { key: "restaurant_bar", added: false, words: ["reasons.sent_back"] },
   ],
@@ -19,7 +24,8 @@ const answers = (setups: SetupsRead) => ({
   ...SETTINGS,
   "GET /api/v1/materials": { status: 200, data: { items: [], total: 0 } },
   "GET /api/v1/setups": { status: 200, data: setups },
-  "POST /api/v1/setups/drinks/add": { status: 200, data: offered(true).setups[2] },
+  "POST /api/v1/setups/drinks/add": { status: 200, data: offered(true).setups[3] },
+  "POST /api/v1/setups/crafts_assembly/add": { status: 200, data: offered(false).setups[2] },
   "POST /api/v1/setups/blank": { status: 200, data: offered(false, true) },
 });
 
@@ -53,6 +59,7 @@ describe("IndustryPicker", () => {
     expect(options.map((option) => option.textContent)).toEqual([
       "Bakery and food",
       "Cosmetics and soap",
+      "Crafts and assembly",
       "Tea, coffee and drinks",
       "Restaurant, café and bar",
       "Something else",
@@ -70,6 +77,27 @@ describe("IndustryPicker", () => {
       ).toBe(
         JSON.stringify({
           words: { "units.bottle_750ml": "Bottle, 750 mL", "reasons.spill": "Spill" },
+        })
+      )
+    );
+  });
+
+  it("adds crafts and assembly, which calls recipes bills of materials", async () => {
+    const asked = await openSignedIn("/stock/materials", admin, answers(offered(false)));
+
+    await choose("Crafts and assembly");
+
+    await waitFor(() =>
+      expect(
+        asked.find((request) => request.method === "post" && request.url?.includes("setups"))?.data
+      ).toBe(
+        JSON.stringify({
+          words: {
+            base_word: "sub-assembly",
+            recipe_word: "bill of materials",
+            "types.merch": "Merch",
+            "types.component": "Component",
+          },
         })
       )
     );

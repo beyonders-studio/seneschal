@@ -1,6 +1,14 @@
 {
   "base_word": "base",
+  "recipe_word": "recipe",
   "units": ["case"],
+  "types": [
+    { "key": "packaging", "kind": "material", "shape": "packaging" },
+    { "key": "dough_batter", "kind": "base", "shape": "base" },
+    { "key": "filling_frosting", "kind": "base", "shape": "base" },
+    { "key": "bought", "kind": "product", "shape": "bought" },
+    { "key": "gift_box", "kind": "product", "shape": "bundle" }
+  ],
   "categories": [
     { "key": "flour_grain", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "sugar_sweetener", "kinds": ["material"], "picking": "earliest_expiry" },
@@ -10,11 +18,23 @@
     { "key": "nut_seed", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "spice_flavoring", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "other_ingredient", "kinds": ["material"], "picking": "earliest_expiry" },
-    { "key": "dough_batter", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "filling_frosting", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    {
+      "key": "dough_batter",
+      "kinds": ["base"],
+      "picking": "earliest_expiry",
+      "type": "dough_batter"
+    },
+    {
+      "key": "filling_frosting",
+      "kinds": ["base"],
+      "picking": "earliest_expiry",
+      "type": "filling_frosting"
+    },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in", "type": "packaging" },
     { "key": "baked_good", "kinds": ["product"], "picking": "earliest_expiry" },
-    { "key": "packed_food", "kinds": ["product"], "picking": "earliest_expiry" }
+    { "key": "packed_food", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "bought_food", "kinds": ["product"], "picking": "earliest_expiry", "type": "bought" },
+    { "key": "gift_box", "kinds": ["product"], "picking": "first_in", "type": "gift_box" }
   ],
   "properties": [
     {

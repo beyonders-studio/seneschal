@@ -51,18 +51,19 @@ async def _everything(db: WriteSession) -> list[Any]:
     return rows
 
 
+def _said(words: Any, path: str) -> Any:
+    """What a setup's locale ``words`` hold at ``path``."""
+    for part in path.split("."):
+        words = words[part]
+    return words
+
+
 def test_the_page_holds_words_for_every_key_of_every_setup():
     words = json.loads(LOCALE.read_text(encoding="utf-8"))["setups"]
     for key, setup in setups.setups().items():
-
-        def word(path: str, held: Any = words[key]) -> Any:
-            for part in path.split("."):
-                held = held[part]
-            return held
-
         for path in setup.words():
-            assert isinstance(word(path), str), (key, path)
-        assert isinstance(word("name"), str)
+            assert isinstance(_said(words[key], path), str), (key, path)
+        assert isinstance(_said(words[key], "name"), str)
 
 
 async def test_adding_drinks_twice_changes_nothing_the_second_time(db: WriteSession):
@@ -90,10 +91,18 @@ async def test_adding_drinks_twice_changes_nothing_the_second_time(db: WriteSess
 
 
 def test_the_first_open_dropdown_offers_each_industry():
-    assert [*setups.setups()] == ["bakery_food", "cosmetics_soap", "drinks", "restaurant_bar"]
+    assert [*setups.setups()] == [
+        "bakery_food",
+        "cosmetics_soap",
+        "crafts_assembly",
+        "drinks",
+        "restaurant_bar",
+    ]
 
 
-@pytest.mark.parametrize("key", ["bakery_food", "cosmetics_soap", "restaurant_bar"])
+@pytest.mark.parametrize(
+    "key", ["bakery_food", "cosmetics_soap", "crafts_assembly", "drinks", "restaurant_bar"]
+)
 async def test_adding_an_industrys_setup_twice_changes_nothing_the_second_time(
     db: WriteSession, key: str
 ):
@@ -110,6 +119,68 @@ async def test_adding_an_industrys_setup_twice_changes_nothing_the_second_time(
     # Packaging and the like, which never expires, go first in, first out.
     first_in = await db.exec(select(Category.name).where(Category.picking == Picking.FIRST_IN))
     assert first_in.all()
+    # Its types: packaging, bought products and bundles among them.
+    types = {
+        name: (kind, shape)
+        for name, kind, shape in await db.exec(select(ItemType.name, ItemType.kind, ItemType.shape))
+    }
+    assert types == {f"<types.{each.key}>": (each.kind, each.shape) for each in setup.types}
+    assert {TypeShape.PACKAGING, TypeShape.BOUGHT, TypeShape.BUNDLE} <= {
+        shape for _kind, shape in types.values()
+    }
+    # Each category of its kind takes the type it names; one naming none takes
+    # its kind's default.
+    defaults = await db.exec(
+        select(Category.kind, Category.name, ItemType.name).join(
+            ItemType, col(ItemType.id) == col(Category.default_type_id), isouter=True
+        )
+    )
+    assert sorted(defaults.all()) == sorted(
+        (
+            kind,
+            f"<categories.{category.key}>",
+            f"<types.{category.type}>"
+            if any(each.key == category.type and each.kind == kind for each in setup.types)
+            else None,
+        )
+        for category in setup.categories
+        for kind in category.kinds
+    )
+    settings = (await db.exec(select(OrganizationSettings))).first()
+    named = (settings.base_word, settings.recipe_word) if settings else (None, None)
+    assert named == (
+        "<base_word>" if setup.base_word != setups.BASE else None,
+        "<recipe_word>" if setup.recipe_word != setups.RECIPE else None,
+    )
+
+
+async def test_the_crafts_setup_names_recipes_bill_of_materials(db: WriteSession):
+    words = json.loads(LOCALE.read_text(encoding="utf-8"))["setups"]["crafts_assembly"]
+    crafts = setups.setups()["crafts_assembly"]
+
+    await setups.add(db, crafts, {word: _said(words, word) for word in crafts.words()})
+
+    settings = (await db.exec(select(OrganizationSettings))).one()
+    assert (settings.recipe_word, settings.base_word) == ("bill of materials", "sub-assembly")
+    products = await db.exec(
+        select(ItemType.name, ItemType.shape).where(ItemType.kind == CategoryKind.PRODUCT)
+    )
+    assert {
+        "Pins": TypeShape.MADE,
+        "Games": TypeShape.MADE,
+        "Merch": TypeShape.BOUGHT,
+    }.items() <= dict(products.all()).items()
+
+
+async def test_a_word_named_already_stays(db: WriteSession):
+    crafts = setups.setups()["crafts_assembly"]
+    db.add(OrganizationSettings(organization_id=db.organization_id, recipe_word="pattern"))
+    await db.flush()
+
+    await setups.add(db, crafts, _words(crafts))
+
+    settings = (await db.exec(select(OrganizationSettings))).one()
+    assert (settings.recipe_word, settings.base_word) == ("pattern", "<base_word>")
 
 
 async def test_cosmetics_cures_its_lots_and_writes_off_a_failed_cure(db: WriteSession):

@@ -1,7 +1,7 @@
 {
   "picker": {
     "title": "What kind of business is this?",
-    "body": "Hoard starts with the units, categories, lot details and waste reasons your kind of business uses. You can rename or remove any of them afterwards.",
+    "body": "Hoard starts with the units, categories, types, lot details and waste reasons your kind of business uses, and its words for a base and a recipe. You can rename or remove any of them afterwards.",
     "label": "Kind of business",
     "placeholder": "Choose one",
     "other": "Something else",
@@ -14,6 +14,13 @@
       "name": "Bakery and food",
       "units": {
         "case": "Case"
+      },
+      "types": {
+        "packaging": "Packaging",
+        "dough_batter": "Dough or batter",
+        "filling_frosting": "Filling or frosting",
+        "bought": "Bought to resell",
+        "gift_box": "Gift box"
       },
       "categories": {
         "flour_grain": "Flour and grain",
@@ -28,7 +35,9 @@
         "filling_frosting": "Filling or frosting",
         "packaging": "Packaging",
         "baked_good": "Baked good",
-        "packed_food": "Packed food"
+        "packed_food": "Packed food",
+        "bought_food": "Bought food",
+        "gift_box": "Gift box"
       },
       "properties": {
         "organic_category": "Organic category",
@@ -65,6 +74,14 @@
     },
     "cosmetics_soap": {
       "name": "Cosmetics and soap",
+      "recipe_word": "formula",
+      "types": {
+        "packaging": "Packaging",
+        "oil_blend": "Oil blend",
+        "fragrance_blend": "Fragrance blend",
+        "accessory": "Accessory",
+        "gift_set": "Gift set"
+      },
       "categories": {
         "oil_butter": "Oil and butter",
         "lye": "Lye",
@@ -77,7 +94,9 @@
         "fragrance_blend": "Fragrance blend",
         "packaging": "Packaging",
         "soap": "Soap",
-        "skin_hair_care": "Skin and hair care"
+        "skin_hair_care": "Skin and hair care",
+        "accessory": "Accessory",
+        "gift_set": "Gift set"
       },
       "properties": {
         "certificate_of_analysis": "Certificate of analysis",
@@ -106,6 +125,58 @@
         "label_check": "Label check"
       }
     },
+    "crafts_assembly": {
+      "name": "Crafts and assembly",
+      "base_word": "sub-assembly",
+      "recipe_word": "bill of materials",
+      "units": {
+        "strand": "Strand",
+        "spool": "Spool",
+        "sheet": "Sheet",
+        "pack": "Pack"
+      },
+      "types": {
+        "component": "Component",
+        "packaging": "Packaging",
+        "jewellery": "Jewellery",
+        "pins": "Pins",
+        "games": "Games",
+        "merch": "Merch",
+        "gift_set": "Gift set"
+      },
+      "categories": {
+        "findings": "Findings and hardware",
+        "beads_stones": "Beads and stones",
+        "metal_wire": "Metal, wire and chain",
+        "loose_pins": "Pins and patches to card",
+        "printed_parts": "Printed parts",
+        "game_pieces": "Game pieces",
+        "packaging": "Packaging",
+        "sub_assembly": "Sub-assembly",
+        "jewellery": "Jewellery",
+        "pins": "Pins and patches",
+        "games": "Games",
+        "merch": "Merch",
+        "gift_set": "Gift set"
+      },
+      "properties": {
+        "metal_finish": "Metal or finish",
+        "nickel_free": "Nickel free",
+        "age_grade": "Age grade",
+        "test_report": "Test report or certificate",
+        "country_of_origin": "Country of origin"
+      },
+      "reasons": {
+        "defective": "Defective or broken",
+        "misprint": "Misprint",
+        "missing_parts": "Missing parts",
+        "sample": "Sample or display",
+        "damaged_packaging": "Damaged packaging"
+      },
+      "hold_reasons": {
+        "quality_check": "Quality check"
+      }
+    },
     "drinks": {
       "name": "Tea, coffee and drinks",
       "units": {
@@ -115,6 +186,13 @@
         "bottle_750ml": "Bottle, 750 mL",
         "bottle_1l": "Bottle, 1 L",
         "bottle_1750ml": "Bottle, 1.75 L"
+      },
+      "types": {
+        "packaging": "Packaging",
+        "blend": "Blend or roast",
+        "prep": "Prep",
+        "accessory": "Accessory",
+        "gift_box": "Gift box"
       },
       "categories": {
         "tea_botanical": "Tea or botanical",
@@ -127,7 +205,9 @@
         "syrup_mixer": "Syrup, concentrate, bitters or mixer",
         "packaging": "Packaging",
         "packed_product": "Packed product",
-        "drink": "Drink"
+        "drink": "Drink",
+        "teaware": "Teaware and accessories",
+        "gift_box": "Gift box"
       },
       "properties": {
         "organic_category": "Organic category",
@@ -187,6 +267,13 @@
         "bottle_1l": "Bottle, 1 L",
         "bottle_1750ml": "Bottle, 1.75 L"
       },
+      "types": {
+        "supplies": "Supplies and packaging",
+        "kitchen_prep": "Kitchen prep",
+        "bar_prep": "Bar prep",
+        "bottled": "Bottled or canned",
+        "set_menu": "Set menu"
+      },
       "categories": {
         "produce": "Produce",
         "meat_poultry": "Meat and poultry",
@@ -201,7 +288,9 @@
         "prep": "Prep",
         "supplies": "Disposables and supplies",
         "dish": "Dish",
-        "drink": "Drink"
+        "drink": "Drink",
+        "bottled_drink": "Bottled or canned drink",
+        "set_menu": "Set menu"
       },
       "properties": {
         "received_temperature": "Temperature on receipt",

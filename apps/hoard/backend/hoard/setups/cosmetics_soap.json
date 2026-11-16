@@ -1,6 +1,14 @@
 {
   "base_word": "base",
+  "recipe_word": "formula",
   "units": [],
+  "types": [
+    { "key": "packaging", "kind": "material", "shape": "packaging" },
+    { "key": "oil_blend", "kind": "base", "shape": "base" },
+    { "key": "fragrance_blend", "kind": "base", "shape": "base" },
+    { "key": "accessory", "kind": "product", "shape": "bought" },
+    { "key": "gift_set", "kind": "product", "shape": "bundle" }
+  ],
   "categories": [
     { "key": "oil_butter", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "lye", "kinds": ["material"], "picking": "earliest_expiry" },
@@ -9,11 +17,18 @@
     { "key": "colorant_additive", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "emulsifier_preservative", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "wax", "kinds": ["material"], "picking": "first_in" },
-    { "key": "oil_blend", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "fragrance_blend", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    { "key": "oil_blend", "kinds": ["base"], "picking": "earliest_expiry", "type": "oil_blend" },
+    {
+      "key": "fragrance_blend",
+      "kinds": ["base"],
+      "picking": "earliest_expiry",
+      "type": "fragrance_blend"
+    },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in", "type": "packaging" },
     { "key": "soap", "kinds": ["product"], "picking": "earliest_expiry" },
-    { "key": "skin_hair_care", "kinds": ["product"], "picking": "earliest_expiry" }
+    { "key": "skin_hair_care", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "accessory", "kinds": ["product"], "picking": "first_in", "type": "accessory" },
+    { "key": "gift_set", "kinds": ["product"], "picking": "first_in", "type": "gift_set" }
   ],
   "properties": [
     { "key": "certificate_of_analysis", "kind": "lot", "type": "file" },

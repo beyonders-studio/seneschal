@@ -1,5 +1,6 @@
 {
   "base_word": "base",
+  "recipe_word": "recipe",
   "units": [
     "bottle_50ml",
     "bottle_200ml",
@@ -8,18 +9,37 @@
     "bottle_1l",
     "bottle_1750ml"
   ],
+  "types": [
+    { "key": "packaging", "kind": "material", "shape": "packaging" },
+    { "key": "blend", "kind": "base", "shape": "base" },
+    { "key": "prep", "kind": "base", "shape": "base" },
+    { "key": "accessory", "kind": "product", "shape": "bought" },
+    { "key": "gift_box", "kind": "product", "shape": "bundle" }
+  ],
   "categories": [
     { "key": "tea_botanical", "kinds": ["material"], "picking": "earliest_expiry" },
     { "key": "green_coffee", "kinds": ["material"], "picking": "earliest_expiry" },
-    { "key": "roasted_coffee", "kinds": ["material", "base"], "picking": "earliest_expiry" },
-    { "key": "blend", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "base", "kinds": ["base"], "picking": "earliest_expiry" },
-    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry" },
+    {
+      "key": "roasted_coffee",
+      "kinds": ["material", "base"],
+      "picking": "earliest_expiry",
+      "type": "blend"
+    },
+    { "key": "blend", "kinds": ["base"], "picking": "earliest_expiry", "type": "blend" },
+    { "key": "base", "kinds": ["base"], "picking": "earliest_expiry", "type": "prep" },
+    { "key": "prep", "kinds": ["base"], "picking": "earliest_expiry", "type": "prep" },
     { "key": "dairy", "kinds": ["material"], "picking": "earliest_expiry" },
-    { "key": "syrup_mixer", "kinds": ["material", "base"], "picking": "earliest_expiry" },
-    { "key": "packaging", "kinds": ["material"], "picking": "first_in" },
+    {
+      "key": "syrup_mixer",
+      "kinds": ["material", "base"],
+      "picking": "earliest_expiry",
+      "type": "prep"
+    },
+    { "key": "packaging", "kinds": ["material"], "picking": "first_in", "type": "packaging" },
     { "key": "packed_product", "kinds": ["product"], "picking": "earliest_expiry" },
-    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" }
+    { "key": "drink", "kinds": ["product"], "picking": "earliest_expiry" },
+    { "key": "teaware", "kinds": ["product"], "picking": "first_in", "type": "accessory" },
+    { "key": "gift_box", "kinds": ["product"], "picking": "first_in", "type": "gift_box" }
   ],
   "properties": [
     {
