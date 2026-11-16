@@ -23,18 +23,19 @@ from hoard.records import (
     TypeShape,
     Unit,
 )
-from hoard.stock import add_product, adjust
+from hoard.stock import add_product, adjust, transfer
 from seneschal_core.db import WriteSession
 
 #: A material's stock row's figures that only a recipe or a stocktake gives.
-NONE = {"bin": None, "could_make": None, "last_stocktake": None}
+NONE = {"bin": None, "could_make": None, "last_stocktake": None, "consigned": "0"}
 
 
 async def test_a_material_page_holds_its_stock_and_lots_at_each_location(
     client, sign_in, db: WriteSession, main: Location, material, buy
 ):
     back = Location(organization_id=db.organization_id, name="Back room")
-    db.add(back)
+    shop = Location(organization_id=db.organization_id, name="Shop", contact_id=3, consignee=True)
+    db.add_all([back, shop])
     await db.flush()
     oolong = await material("Oolong", low_stock_limit=Decimal(5))
     await buy((oolong, "10", "2"))
@@ -48,19 +49,22 @@ async def test_a_material_page_holds_its_stock_and_lots_at_each_location(
             change=Decimal(3),
         ),
     )
+    await transfer(db, oolong.id, back.id, shop.id, Decimal(1), dated_on=date(2026, 11, 3))
     await db.commit()
     await sign_in(client)
 
     page = (await client.get(f"/api/v1/materials/{oolong.id}")).json()
 
-    assert (page["name"], page["on_hand"], page["low_stock_limit"]) == (
+    assert (page["name"], page["on_hand"], page["consigned"], page["low_stock_limit"]) == (
         "Oolong",
         "13.000000",
+        "1.000000",
         "5.000000",
     )
     assert page["stock"] == [
         {**NONE, "location_id": main.id, "quantity": "10.000000"},
-        {**NONE, "location_id": back.id, "quantity": "3.000000"},
+        {**NONE, "location_id": back.id, "quantity": "2.000000"},
+        {**NONE, "location_id": shop.id, "quantity": "1.000000", "consigned": "1.000000"},
     ]
     assert [(lot["location_id"], lot["balance"]) for lot in page["lots"]] == [
         (main.id, "10.000000")

@@ -166,6 +166,7 @@ describe("ProductPage", () => {
     const FIGURED: ProductDetail = productDetail({
       ...CHAI,
       totals: {
+        consigned: "2.000000",
         committed: "3.000000",
         available: "3.000000",
         potential: null,
@@ -239,6 +240,7 @@ describe("ProductPage", () => {
 
       await screen.findByText("SKU CHAI-1");
       const tile = (label: string) => screen.getByText(label).closest("div")?.textContent;
+      expect(tile("Consigned")).toBe("Consigned2");
       expect(tile("Committed")).toBe("Committed3");
       expect(tile("Sold")).toBe("Sold8");
       expect(tile("Shipped")).toBe("Shipped5");

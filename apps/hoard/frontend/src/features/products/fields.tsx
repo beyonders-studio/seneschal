@@ -87,14 +87,19 @@ const named = (product: ProductDetail) => product.variations.length > 1;
 
 const Stock = ({ item }: { item: ProductDetail }) => {
   const variationName = useVariationName();
+  const queryClient = useQueryClient();
+  const name = (variation: ProductDetail["variations"][number]) =>
+    named(item) ? variationName(variation) : undefined;
   return (
     <StockTable
       stock={item.variations.flatMap((variation) =>
-        variation.stock.map((row) => ({
-          ...row,
-          variation: named(item) ? variationName(variation) : undefined,
-        }))
+        variation.stock.map((row) => ({ ...row, variation: name(variation) }))
       )}
+      moves={{
+        items: item.variations.map((variation) => ({ ...variation, name: name(variation) })),
+        onChanged: () =>
+          void queryClient.invalidateQueries({ queryKey: getReadProductQueryKey(item.id) }),
+      }}
     />
   );
 };

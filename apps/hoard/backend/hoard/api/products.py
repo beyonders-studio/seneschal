@@ -248,6 +248,8 @@ class ProductVariationRead(items.ItemHoldings):
 class ProductTotals(BaseModel):
     """A product's variations' figures added up."""
 
+    #: What of them consignees hold for it to sell.
+    consigned: Decimal
     committed: Decimal
     available: Decimal
     #: Null when no variation has a recipe with lines.
@@ -475,6 +477,7 @@ async def _detail(db: AsyncSession, product_id: int, sees_costs: bool) -> Produc
         {
             **_read(product, on_hand, sees_costs, values),
             "totals": ProductTotals(
+                consigned=totals.consigned,
                 committed=totals.committed,
                 available=totals.available,
                 potential=totals.potential,

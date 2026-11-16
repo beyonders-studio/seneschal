@@ -8,7 +8,7 @@ from decimal import Decimal
 from sqlmodel import select
 
 from hoard import plugin_manifest, shipments
-from hoard.records import AdjustmentReason, Item, Product
+from hoard.records import AdjustmentReason, Item, Location, Lot, Product
 from hoard.stock import add_product, on_hand
 from seneschal_core.db import WriteSession
 
@@ -113,3 +113,51 @@ async def test_a_member_without_costs_adjusts_but_sees_and_types_no_cost(
         f"/api/v1/adjustments/{made.json()['id']}", json={"unit_cost": "1"}
     )
     assert (refused.status_code, refused.json()) == (403, {"detail": "COSTS_HIDDEN"})
+
+
+async def test_a_transfer_moves_stock_as_two_adjustments_that_are_never_changed(
+    client, sign_in, db: WriteSession, material, buy, main
+):
+    flour = await material("Flour")
+    await buy((flour, "10", "2"))
+    shed = Location(organization_id=db.organization_id, name="Shed")
+    db.add(shed)
+    await db.commit()
+    bought = (await db.exec(select(Lot.id).where(Lot.item_id == flour.id))).one()
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+    move = {
+        "item_id": flour.id,
+        "from_location_id": main.id,
+        "to_location_id": shed.id,
+        "lot_id": bought,
+        "quantity": "10",
+    }
+
+    moved = await client.post("/api/v1/adjustments/transfers", json=move)
+
+    assert moved.status_code == 201, moved.text
+    out, into = moved.json()
+    assert [(half["location_id"], half["change"], half["unit_cost"]) for half in (out, into)] == [
+        (main.id, "-10.000000", "2.000000"),
+        (shed.id, "10.000000", "2.000000"),
+    ]
+    assert out["transfer_id"] == into["transfer_id"] is not None
+    assert into["lot_id"] not in (None, bought)
+    assert await _average(db, flour.id) == Decimal(2)
+    listed = (await client.get("/api/v1/adjustments", params={"kind": "transfer"})).json()
+    assert listed["total"] == 2
+
+    # Undone by moving it back, never by changing either half.
+    for changed in (
+        client.patch(f"/api/v1/adjustments/{out['id']}", json={"change": "-4"}),
+        client.delete(f"/api/v1/adjustments/{into['id']}"),
+    ):
+        answer = await changed
+        assert (answer.status_code, answer.json()) == (409, {"detail": "ADJUSTMENT_FROM_TRANSFER"})
+    for refused, status_code, code in (
+        ({"to_location_id": main.id}, 422, "TRANSFER_SAME_LOCATION"),
+        ({"quantity": "1"}, 409, "TRANSFER_OVER_BALANCE"),
+        ({"to_location_id": 999999}, 404, "NOT_FOUND"),
+    ):
+        answer = await client.post("/api/v1/adjustments/transfers", json=move | refused)
+        assert (answer.status_code, answer.json()) == (status_code, {"detail": code})

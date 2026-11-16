@@ -9,8 +9,12 @@ files a regulator asks for and one a person reads.
 * **Canada's plain-text file** is one tab-separated file, as the Safe Food for
   Canadians Regulations ask: each lot with whom it came from or what went
   into it, then each lot provided to a business, with whom and when.
-* **The PDF** lists everything, a sale to a consumer included, marking what
-  only may have gone.
+* **The PDF** lists everything, a sale to a consumer included, and the
+  stock moved to other locations, a consignee's included, marking what only
+  may have gone.
+
+A lot moved to another location keeps the source its lot code was given at:
+its supplier, or the location that made it.
 
 The parties (name, address and phone) are the community's contacts in
 Initiative: a shipment's customer and carrier, a purchase's supplier, and the
@@ -192,6 +196,20 @@ class Recall:
                     found.append(step)
         return found
 
+    def origin(self, lot: Lot) -> Lot:
+        """The lot ``lot`` was moved from, through every transfer the traces
+        follow, or ``lot`` itself."""
+        moved_from = {
+            step.made_lot_id: step.lot_id
+            for step in self.steps(StepKind.TRANSFER)
+            if step.made_lot_id is not None and step.lot_id is not None
+        }
+        seen = {lot.id}
+        while (earlier := self.lots.get(moved_from.get(lot.id, 0))) and earlier.id not in seen:
+            seen.add(earlier.id)
+            lot = earlier
+        return lot
+
     def made_lot_ids(self) -> list[int]:
         """The lots made from the recalled ones, in the order the traces reach them."""
         return list(
@@ -263,6 +281,9 @@ async def gather(db: AsyncSession, traces: list[Trace]) -> Recall:
     recall.shipments = {shipment.id: (shipment, order) for shipment, order in shipped.all()}
     location_ids = {lot.location_id for lot in recall.lots.values()}
     location_ids |= {shipment.location_id for shipment, _ in recall.shipments.values()}
+    location_ids |= {
+        step.location_id for step in recall.steps(StepKind.TRANSFER) if step.location_id
+    }
     locations = await db.exec(select(Location).where(col(Location.id).in_(location_ids)))
     recall.locations = {location.id: location for location in locations.all()}
     unit_of: dict[int, str] = {}
@@ -314,7 +335,8 @@ class _Names:
 
     def source(self, lot: Lot) -> Party:
         """Where a lot's code was given: its supplier, for a bought lot, or
-        the location that made it."""
+        the location that made it; for a lot moved, the lot it was moved from's."""
+        lot = self.recall.origin(lot)
         purchase = self.recall.purchases.get(lot.id)
         if purchase is not None:
             return self.contact(purchase.supplier_contact_id)
@@ -401,7 +423,8 @@ def canada_text(recall: Recall, contacts: dict[int, Party]) -> str:
         lot = recall.lots.get(lot_of(step) or 0)
         if order.customer_contact_id is None or lot is None:
             continue
-        made_by = Party() if lot.id in recall.purchases else names.place(lot.location_id)
+        origin = recall.origin(lot)
+        made_by = Party() if origin.id in recall.purchases else names.place(origin.location_id)
         recipient = names.contact(order.customer_contact_id)
         rows.append(
             [
@@ -520,6 +543,22 @@ def pdf(recall: Recall, contacts: dict[int, Party], prepared_on: date) -> bytes:
                 _how(step),
             ]
         )
+    moved: list[list[str]] = []
+    for step in recall.steps(StepKind.TRANSFER):
+        name, unit = recall.items[step.item_id]
+        moved.append(
+            [
+                step.dated_on.isoformat(),
+                name,
+                lot_number(lot_of(step)),
+                names.place(step.location_id or 0).name,
+                f"{_quantity(step.quantity)} {unit}",
+                _how(step),
+            ]
+        )
+    document.heading("Moved to other locations")
+    document.rows(("Moved on", "Item", "Lot", "To", "Quantity", ""), moved, "None")
+
     document.heading("Shipments")
     document.rows(
         (

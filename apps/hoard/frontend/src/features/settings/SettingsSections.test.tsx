@@ -39,8 +39,9 @@ const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings/locations": {
     status: 200,
     data: [
-      { id: 3, name: null, main: true, contact_id: 11 },
-      { id: 4, name: "Back room", main: false, contact_id: null },
+      { id: 3, name: null, main: true, contact_id: 11, consignee: false },
+      { id: 4, name: "Back room", main: false, contact_id: null, consignee: false },
+      { id: 6, name: "Gift shop", main: false, contact_id: 12, consignee: true },
     ],
   },
   "GET /api/v1/contacts": {
@@ -108,6 +109,9 @@ describe("Settings", () => {
     screen.getByText("Euro (EUR)");
     await screen.findByText("Corner shop");
     expect(screen.queryByRole("combobox", { name: "Contact for Back room" })).toBeNull();
+    // A consignee's location is marked, and the mark isn't changed here.
+    within(screen.getByText("Gift shop").closest("tr") as HTMLElement).getByText("Consignee");
+    expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.getByRole("combobox", { name: "Which lot of Tea goes first" })).toHaveProperty(
       "disabled",
       true
@@ -351,5 +355,28 @@ describe("Settings", () => {
     );
     const changed = asked.find((request) => request.url === "/api/v1/settings/locations/4");
     expect(JSON.parse(changed?.data ?? "")).toEqual({ name: "Back room", contact_id: 12 });
+  });
+
+  it("lets an admin mark a location with a contact a consignee's", async () => {
+    const asked = await openSignedIn("/settings", signedIn({ page: "settings", admin: true }), {
+      ...SETTINGS,
+      "PATCH /api/v1/settings/locations/6": {
+        status: 200,
+        data: { id: 6, name: "Gift shop", main: false, contact_id: 12, consignee: false },
+      },
+    });
+
+    // A location naming no contact can't be one yet, and the main location never is.
+    expect(
+      await screen.findByRole("switch", { name: "Back room is a consignee's" })
+    ).toHaveProperty("disabled", true);
+    expect(screen.queryByRole("switch", { name: "Main location is a consignee's" })).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Gift shop is a consignee's" }));
+
+    await waitFor(() =>
+      expect(asked.some((request) => request.url === "/api/v1/settings/locations/6")).toBe(true)
+    );
+    const changed = asked.find((request) => request.url === "/api/v1/settings/locations/6");
+    expect(JSON.parse(changed?.data ?? "")).toEqual({ name: "Gift shop", consignee: false });
   });
 });

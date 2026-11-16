@@ -42,7 +42,8 @@ function madeLots(steps: TraceStepRead[]): TraceStepRead[] {
     });
 }
 
-/** One recalled lot: the lots made from it and the shipments it reached. */
+/** One recalled lot: the lots made from it, the shipments it reached and,
+ *  once any was, where it was moved to. */
 function TraceCard({ trace }: { trace: TraceRead }) {
   const { t } = useTranslation("trace");
   const labels = useMovementLabels();
@@ -50,6 +51,7 @@ function TraceCard({ trace }: { trace: TraceRead }) {
   const shipped = trace.steps
     .filter((step) => step.kind === "shipment")
     .sort((a, b) => Number(a.assumed) - Number(b.assumed));
+  const moved = trace.steps.filter((step) => step.kind === "transfer");
   return (
     <Card>
       <CardHeader>
@@ -82,6 +84,12 @@ function TraceCard({ trace }: { trace: TraceRead }) {
           <h3 className="text-sm font-medium">{t("recall.shipments")}</h3>
           <StepsTable steps={shipped} empty={t("recall.shipmentsEmpty")} />
         </section>
+        {moved.length > 0 && (
+          <section className="flex flex-col gap-2">
+            <h3 className="text-sm font-medium">{t("recall.moved")}</h3>
+            <StepsTable steps={moved} />
+          </section>
+        )}
       </CardContent>
     </Card>
   );

@@ -9,7 +9,10 @@ An item's average is derived from its adjustments, in date order:
   zero cost and lowers the average;
 * stock going out, a shipment's included, leaves the average as it is, and
   records it as what went out cost at the time;
-* stock reaching zero starts the average again from zero cost.
+* stock reaching zero starts the average again from zero cost;
+* a transfer moves stock between locations at the average, and is passed by:
+  the average is the item's at every location, so moving all of it, which
+  touches zero between its two halves, leaves the average as it was.
 
 A completed production run costs what it consumed at each item's average on
 its date, and its output comes in at that cost divided by the quantity made.
@@ -85,6 +88,9 @@ async def _derive(db: WriteSession, item_id: int) -> tuple[Decimal, set[int]]:
     quantity = average = Decimal(0)
     runs: set[int] = set()
     for adjustment in adjustments.all():
+        if adjustment.kind is AdjustmentKind.TRANSFER:
+            adjustment.unit_cost = average
+            continue
         if adjustment.change > 0:
             if adjustment.kind not in COSTED_KINDS:
                 adjustment.unit_cost = Decimal(0)

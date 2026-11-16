@@ -25,7 +25,7 @@ from hoard.records import (
     Store,
     Variation,
 )
-from hoard.stock import add_product, add_variation, adjust
+from hoard.stock import add_product, add_variation, adjust, transfer
 from seneschal_core.db import WriteSession
 from seneschal_core.testing import InitiativeStandIn
 
@@ -123,6 +123,7 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
         {
             "location_id": main.id,
             "quantity": "4.000000",
+            "consigned": "0",
             "bin": None,
             "could_make": None,
             "last_stocktake": None,
@@ -164,19 +165,27 @@ async def test_a_product_adds_up_its_variations_and_is_priced_at_price_points(
     large = await add_variation(
         db, Variation(product_id=product.id, attributes={"size": "large"}, sku="CHAI-L")
     )
-    await lot(large.id, "L1", "6", unit_cost="5")
+    large_lot = await lot(large.id, "L1", "6", unit_cost="5")
     sold = await sell((chai.id, "1", "12"), (large.id, "2", "20"))
     bought = await buy((large, "3", "5"))
     await sell((large.id, "1", "20"))
     wholesale = PricePoint(organization_id=db.organization_id, name="Wholesale", markup=Decimal(20))
     db.add(wholesale)
+    # Two at a consignee's shop are on hand there, and available to nobody else.
+    shop = Location(organization_id=db.organization_id, name="Shop", contact_id=8, consignee=True)
+    db.add(shop)
+    await db.flush()
+    await transfer(
+        db, large.id, main.id, shop.id, Decimal(2), lot_id=large_lot.id, dated_on=date(2026, 11, 3)
+    )
     await db.commit()
 
     await sign_in(client)
     page = (await client.get(f"/api/v1/products/{product.id}")).json()
     assert page["totals"] == {
+        "consigned": "2.000000",
         "committed": "4.000000",
-        "available": "9.000000",
+        "available": "7.000000",
         "potential": None,
         "made": "0",
         "sold": "4.000000",

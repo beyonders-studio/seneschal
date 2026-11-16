@@ -30,7 +30,7 @@ function Tiles({ title, children }: { title: string; children: ReactNode }) {
 
 /**
  * A product at a glance, its variations added up: its stock (on hand, what
- * open orders commit, what is available, what its recipe could make and what
+ * consignees hold, once they hold some, what open orders commit, what is available, what its recipe could make and what
  * is on order) and, to date, what it made, sold and shipped. A bundle holds
  * no stock of its own: what is available of it is what its contents make
  * together.
@@ -43,6 +43,9 @@ export function Glance({ product }: { product: ProductDetail }) {
     <div className="flex flex-col gap-4">
       <Tiles title={t("products.glance.stock")}>
         {!bundle && <Tile label={t("hoard:common.onHand")}>{quantity(product.on_hand)}</Tile>}
+        {Number(totals.consigned) > 0 && (
+          <Tile label={t("items.consigned")}>{quantity(totals.consigned)}</Tile>
+        )}
         <Tile label={t("products.glance.committed")}>{quantity(totals.committed)}</Tile>
         <Tile label={t("products.glance.available")}>{quantity(totals.available)}</Tile>
         {!bundle && totals.potential !== null && (

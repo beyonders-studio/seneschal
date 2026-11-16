@@ -147,7 +147,13 @@ async def test_names_stay_unique_and_what_records_name_stays(
     renamed = await client.patch(
         f"/api/v1/settings/locations/{main['id']}", json={"name": "Shop", "contact_id": 4}
     )
-    assert renamed.json() == {"id": main["id"], "name": "Shop", "main": True, "contact_id": 4}
+    assert renamed.json() == {
+        "id": main["id"],
+        "name": "Shop",
+        "main": True,
+        "contact_id": 4,
+        "consignee": False,
+    }
     # A contact not sent is kept.
     again = await client.patch(f"/api/v1/settings/locations/{main['id']}", json={"name": "Shop"})
     assert again.json()["contact_id"] == 4
@@ -164,6 +170,37 @@ async def test_names_stay_unique_and_what_records_name_stays(
         "Packaging",
         "recorded",
     )
+
+
+async def test_a_consignees_location_names_its_contact_and_is_not_the_main_one(client, sign_in):
+    await sign_in(client, admin=True)
+    main = (await client.get("/api/v1/settings/locations")).json()[0]
+    for refused in (
+        client.patch(
+            f"/api/v1/settings/locations/{main['id']}",
+            json={"name": None, "contact_id": 4, "consignee": True},
+        ),
+        client.post("/api/v1/settings/locations", json={"name": "Corner shop", "consignee": True}),
+    ):
+        answer = await refused
+        assert (answer.status_code, answer.json()) == (422, {"detail": "CONSIGNEE_CONTACT"})
+
+    shop = await client.post(
+        "/api/v1/settings/locations",
+        json={"name": "Corner shop", "contact_id": 7, "consignee": True},
+    )
+    assert (shop.status_code, shop.json()["consignee"]) == (201, True)
+    # Its contact stays while it is a consignee's, and it is the organization's own again.
+    cleared = await client.patch(
+        f"/api/v1/settings/locations/{shop.json()['id']}",
+        json={"name": "Corner shop", "contact_id": None},
+    )
+    assert (cleared.status_code, cleared.json()) == (422, {"detail": "CONSIGNEE_CONTACT"})
+    own = await client.patch(
+        f"/api/v1/settings/locations/{shop.json()['id']}",
+        json={"name": "Corner shop", "consignee": False},
+    )
+    assert (own.json()["consignee"], own.json()["contact_id"]) == (False, 7)
 
 
 TYPES = "/api/v1/settings/types"

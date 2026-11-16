@@ -231,6 +231,7 @@ async def test_a_base_page_shows_its_figures_and_its_history(
         {
             "location_id": main.id,
             "quantity": "300.000000",
+            "consigned": "0",
             "bin": None,
             "could_make": "150.000000",
             "last_stocktake": "2026-11-05",

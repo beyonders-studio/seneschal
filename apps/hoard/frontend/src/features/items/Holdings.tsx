@@ -1,4 +1,4 @@
-import { MapPin, Pencil } from "lucide-react";
+import { ArrowRightLeft, MapPin, Pencil } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -6,6 +6,7 @@ import type { ItemStockRead } from "@/api/generated/hoard.schemas";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { BinDialog, useBinLabel } from "@/features/items/bins";
 import { useQuantity } from "@/features/items/format";
+import { type Movable, TransferDialog } from "@/features/items/transfer";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMemberNames } from "@/lib/members";
 import { useSession } from "@/session";
@@ -28,18 +29,22 @@ export function ItemSection({ title, children }: { title: string; children: Reac
 
 /**
  * What is on hand at each location: of one item, or of each of a product's
- * variations, with when a stocktake last counted it there and, for an item
- * with a recipe, what it could make there. With `bins`, each location's bin
- * for the item too, which is set here while Hoard may change.
+ * variations, with what of it consignees hold, when a stocktake last counted
+ * it there and, for an item with a recipe, what it could make there. With
+ * `bins`, each location's bin for the item too, which is set here while Hoard
+ * may change; with `moves`, stock of those items is moved between locations
+ * here.
  */
 export function StockTable({
   stock,
   unit,
   bins,
+  moves,
 }: {
   stock: OfVariation<ItemStockRead>[];
   unit?: string;
   bins?: { itemId: number; onChanged: () => void };
+  moves?: { items: Movable[]; onChanged: () => void };
 }) {
   const { t } = useTranslation("catalog");
   const quantity = useQuantity();
@@ -49,9 +54,13 @@ export function StockTable({
   const { location } = useSettingsNames();
   // The row whose bin is being set, or null for a location picked in the dialog.
   const [binning, setBinning] = useState<ItemStockRead | null | undefined>(undefined);
+  const [moving, setMoving] = useState(false);
   const editsBins = bins !== undefined && !read_only;
+  const movesStock =
+    moves !== undefined && !read_only && stock.some((row) => Number(row.quantity) > 0);
   const ofVariations = stock.some((row) => row.variation !== undefined);
   const makes = stock.some((row) => row.could_make !== null);
+  const consigned = stock.some((row) => Number(row.consigned) > 0);
   const withUnit = (amount: string) => [quantity(amount), unit].filter(Boolean).join(" ");
   return (
     <div className="flex flex-col gap-2">
@@ -65,6 +74,7 @@ export function StockTable({
               <TableHead>{t("hoard:common.location")}</TableHead>
               {bins && <TableHead>{t("items.bin.title")}</TableHead>}
               <TableHead className="text-right">{t("hoard:common.onHand")}</TableHead>
+              {consigned && <TableHead className="text-right">{t("items.consigned")}</TableHead>}
               {makes && <TableHead className="text-right">{t("items.couldMake")}</TableHead>}
               <TableHead>{t("items.lastStocktake")}</TableHead>
             </TableRow>
@@ -92,6 +102,11 @@ export function StockTable({
                   </TableCell>
                 )}
                 <TableCell className="text-right tabular-nums">{withUnit(row.quantity)}</TableCell>
+                {consigned && (
+                  <TableCell className="text-right tabular-nums">
+                    {Number(row.consigned) > 0 && withUnit(row.consigned)}
+                  </TableCell>
+                )}
                 {makes && (
                   <TableCell className="text-right tabular-nums">
                     {row.could_make !== null && withUnit(row.could_make)}
@@ -103,26 +118,40 @@ export function StockTable({
           </TableBody>
         </Table>
       )}
+      {(editsBins || movesStock) && (
+        <div className="flex flex-wrap gap-2">
+          {editsBins && (
+            <Button variant="outline" size="sm" onClick={() => setBinning(null)}>
+              <MapPin aria-hidden />
+              {t("items.bin.add")}
+            </Button>
+          )}
+          {movesStock && (
+            <Button variant="outline" size="sm" onClick={() => setMoving(true)}>
+              <ArrowRightLeft aria-hidden />
+              {t("items.move.title")}
+            </Button>
+          )}
+        </div>
+      )}
+      {moves && (
+        <TransferDialog
+          items={moves.items}
+          unit={unit}
+          open={moving}
+          onOpenChange={setMoving}
+          onMoved={moves.onChanged}
+        />
+      )}
       {editsBins && (
-        <>
-          <Button
-            variant="outline"
-            size="sm"
-            className="self-start"
-            onClick={() => setBinning(null)}
-          >
-            <MapPin aria-hidden />
-            {t("items.bin.add")}
-          </Button>
-          <BinDialog
-            itemId={bins.itemId}
-            location={binning?.location_id ?? null}
-            bin={binning?.bin ?? null}
-            open={binning !== undefined}
-            onOpenChange={(open) => !open && setBinning(undefined)}
-            onSaved={bins.onChanged}
-          />
-        </>
+        <BinDialog
+          itemId={bins.itemId}
+          location={binning?.location_id ?? null}
+          bin={binning?.bin ?? null}
+          open={binning !== undefined}
+          onOpenChange={(open) => !open && setBinning(undefined)}
+          onSaved={bins.onChanged}
+        />
       )}
     </div>
   );
