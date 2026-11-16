@@ -28,10 +28,11 @@ from hoard.records import (
     Shipment,
     ShipmentLine,
 )
-from hoard.stock import add_default_reasons, add_product, adjust
+from hoard.stock import add_default_reasons, add_product, adjust, transfer
 from seneschal_core.db import WriteSession
 
 START, END = date(2026, 1, 1), date(2026, 12, 31)
+FEB, MOVED = date(2026, 2, 1), date(2026, 6, 1)
 
 
 async def _reason(db: WriteSession, key: DefaultReason) -> int:
@@ -141,6 +142,31 @@ async def test_stock_out_at_the_start_opens_at_nothing(db: WriteSession, materia
     )
 
 
+async def test_a_transfer_changes_neither_cost_of_goods_nor_the_mass_balance(
+    db: WriteSession, main: Location, material, buy
+):
+    flour = await material("Flour")
+    await buy((flour, "10", "2"), dated_on=date(2025, 12, 1))
+    await buy((flour, "10", "4"), dated_on=date(2026, 3, 1))
+    before = await cogs.cost_of_goods(db, START, END)
+    balance = await cogs.mass_balance(db, START, END)
+    shop = Location(organization_id=db.organization_id, name="Shop")
+    db.add(shop)
+    await db.flush()
+
+    # The first lot moves while it is all there is, so the stock touches
+    # nothing between the two halves; then the second.
+    first, second = (
+        await db.exec(select(Lot).where(Lot.item_id == flour.id).order_by(col(Lot.id)))
+    ).all()
+    await transfer(db, flour.id, main.id, shop.id, Decimal(10), lot_id=first.id, dated_on=FEB)
+    await transfer(db, flour.id, main.id, shop.id, Decimal(10), lot_id=second.id, dated_on=MOVED)
+
+    assert await cogs.cost_of_goods(db, START, END) == before
+    assert await cogs.mass_balance(db, START, END) == balance
+    assert (before.closing, balance[0].closing, balance[0].lost) == (Decimal(60), 20, 0)
+
+
 async def test_the_mass_balance_accounts_for_every_change(
     db: WriteSession, main: Location, material, buy, lot, sell
 ):
@@ -207,6 +233,14 @@ async def test_the_mass_balance_splits_by_what_each_lot_holds(
             reason_id=await _reason(db, DefaultReason.LOST),
         ),
     )
+
+    # Moved to another location and part of it back, it keeps what its lot holds.
+    shed = Location(organization_id=db.organization_id, name="Shed")
+    db.add(shed)
+    await db.flush()
+    await transfer(db, tea.id, main.id, shed.id, Decimal(6), lot_id=certified.id, dated_on=MOVED)
+    moved = (await db.exec(select(Lot).where(Lot.location_id == shed.id))).one()
+    await transfer(db, tea.id, shed.id, main.id, Decimal(2), lot_id=moved.id, dated_on=MOVED)
 
     split = await cogs.mass_balance(db, START, END, status.id)
     whole = await cogs.mass_balance(db, START, END)

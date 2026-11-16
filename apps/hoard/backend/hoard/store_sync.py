@@ -191,7 +191,8 @@ class _Sync:
 
 
 async def _chosen(db: WriteSession, choice: Mapping[str, Any] | None, name: str) -> int | None:
-    """The Hoard location a store location is mapped into, as chosen."""
+    """The Hoard location a store location is mapped into, as chosen: never a
+    consignee's."""
     if choice is None:
         return None
     if choice.get("new"):
@@ -202,9 +203,10 @@ async def _chosen(db: WriteSession, choice: Mapping[str, Any] | None, name: str)
         )
         return (await db.exec(select(Location.id).where(Location.name == name))).one()
     location_id = choice.get("location_id")
-    if location_id is None or await db.get(Location, int(location_id)) is None:
+    location = None if location_id is None else await db.get(Location, int(location_id))
+    if location is None or location.consignee:
         return None
-    return int(location_id)
+    return location.id
 
 
 async def _locations(run: _Sync) -> None:

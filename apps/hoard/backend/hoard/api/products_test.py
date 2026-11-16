@@ -120,6 +120,7 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
         {
             "location_id": main.id,
             "quantity": "4.000000",
+            "consigned": "0",
             "bin": None,
             "could_make": None,
             "last_stocktake": None,

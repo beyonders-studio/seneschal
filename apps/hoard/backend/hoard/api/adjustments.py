@@ -2,7 +2,10 @@
 
 A manual adjustment changes an item's stock at a location, with a reason. One
 that a purchase, a stocktake or an order's shipment or return made, a damaged
-return's write-off included, is changed through that record. Editing or
+return's write-off included, is changed through that record. A **transfer**
+moves stock from one location to another as a pair of adjustments
+(``hoard.stock.transfer``); it is never changed, and is undone by moving the
+stock back. Editing or
 deleting a manual or starting adjustment re-derives its item's cost
 (``hoard.costing``). A starting adjustment's unit cost is typed in; every other
 one's is derived. Without :data:`~hoard.api.deps.SeesCostsDep` no unit cost is
@@ -43,7 +46,7 @@ from hoard.records import (
     StocktakeRow,
     Variation,
 )
-from hoard.stock import StockRefused, adjust, main_location
+from hoard.stock import StockError, StockRefused, adjust, main_location, transfer
 from seneschal_core.api import ErrorCode, OrganizationSessionDep, WriteSessionDep, refuse
 from seneschal_core.db import OrganizationSession, WriteSession
 
@@ -70,6 +73,8 @@ class AdjustmentError(StrEnum):
     ADJUSTMENT_COST_DERIVED = "ADJUSTMENT_COST_DERIVED"
     #: A change of nothing.
     ADJUSTMENT_CHANGE_ZERO = "ADJUSTMENT_CHANGE_ZERO"
+    #: Half of a transfer, which is undone by moving the stock back.
+    ADJUSTMENT_FROM_TRANSFER = "ADJUSTMENT_FROM_TRANSFER"
 
 
 class AdjustmentItem(BaseModel):
@@ -159,6 +164,8 @@ class AdjustmentRead(BaseModel):
     stocktake_id: int | None
     #: The order whose shipment, or what came back of it, made it.
     order_id: int | None
+    #: The transfer it is half of.
+    transfer_id: int | None
     created_at: datetime
     created_by: str | None
     updated_at: datetime
@@ -196,6 +203,7 @@ async def _read(db: OrganizationSession, rows: list[Any], sees_costs: bool) -> l
             purchase_id=purchase_id,
             stocktake_id=stocktake_id,
             order_id=order_id,
+            transfer_id=adjustment.transfer_id,
             created_at=adjustment.created_at,
             created_by=adjustment.created_by,
             updated_at=adjustment.updated_at,
@@ -299,6 +307,68 @@ async def create_adjustment(
     return await _read_one(db, adjustment.id, sees_costs)
 
 
+class TransferCreate(BaseModel):
+    """Stock of an item moved from one of the organization's locations to
+    another: out of a lot there, or, with none, out of what it holds in no lot."""
+
+    item_id: int
+    from_location_id: int
+    to_location_id: int
+    lot_id: int | None = None
+    quantity: Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=6)]
+    #: Today when not given.
+    dated_on: date | None = None
+
+
+@router.post(
+    "/transfers",
+    status_code=status.HTTP_201_CREATED,
+    response_model_exclude_unset=True,
+    responses={
+        **NOT_FOUND,
+        409: {"description": "TRANSFER_OVER_BALANCE, LOT_REQUIRED"},
+        422: {"description": "TRANSFER_SAME_LOCATION, TRANSFER_LOT_ELSEWHERE"},
+    },
+)
+async def create_transfer(
+    db: WriteSessionDep, sees_costs: SeesCostsDep, body: TransferCreate
+) -> list[AdjustmentRead]:
+    """Move stock of an item from one location to another, as one transfer at
+    its average cost, and push its listings what each location holds now.
+    Answers its two adjustments: out, then in."""
+    if not await describe_items(db, [body.item_id]):
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    for location_id in (body.from_location_id, body.to_location_id):
+        await known(db, Location, location_id)
+    try:
+        moved = await transfer(
+            db,
+            body.item_id,
+            body.from_location_id,
+            body.to_location_id,
+            body.quantity,
+            lot_id=body.lot_id,
+            dated_on=body.dated_on or date.today(),
+        )
+    except StockRefused as refused:
+        unprocessable = refused.code in (
+            StockError.TRANSFER_SAME_LOCATION,
+            StockError.TRANSFER_LOT_ELSEWHERE,
+        )
+        raise refuse(
+            status.HTTP_422_UNPROCESSABLE_CONTENT if unprocessable else status.HTTP_409_CONFLICT,
+            refused.code,
+        ) from None
+    await db.commit()
+    rows = await db.exec(
+        _adjustments()
+        .where(Adjustment.transfer_id == moved.id)
+        .order_by(col(Adjustment.change))
+        .execution_options(populate_existing=True)
+    )
+    return await _read(db, list(rows.all()), sees_costs)
+
+
 class AdjustmentUpdate(BaseModel):
     """A change to a manual or starting adjustment: only what is sent."""
 
@@ -313,6 +383,8 @@ class AdjustmentUpdate(BaseModel):
 
 async def _editable(db: WriteSession, adjustment_id: int) -> Adjustment:
     adjustment = await known(db, Adjustment, adjustment_id)
+    if adjustment.kind is AdjustmentKind.TRANSFER:
+        raise refuse(status.HTTP_409_CONFLICT, AdjustmentError.ADJUSTMENT_FROM_TRANSFER)
     by_hand = adjustment.kind in (AdjustmentKind.MANUAL, AdjustmentKind.STARTING)
     # A damaged return's write-off is manual, but its return made it.
     if not by_hand or adjustment.return_line_id is not None:
@@ -326,7 +398,10 @@ async def _editable(db: WriteSession, adjustment_id: int) -> Adjustment:
     responses={
         **NOT_FOUND,
         403: {"description": "COSTS_HIDDEN"},
-        409: {"description": "ADJUSTMENT_FROM_RECORD, ADJUSTMENT_COST_DERIVED"},
+        409: {
+            "description": "ADJUSTMENT_FROM_RECORD, ADJUSTMENT_FROM_TRANSFER, "
+            "ADJUSTMENT_COST_DERIVED"
+        },
         422: {"description": "ADJUSTMENT_CHANGE_ZERO"},
     },
 )
@@ -355,7 +430,10 @@ async def update_adjustment(
 @router.delete(
     "/{adjustment_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    responses={**NOT_FOUND, 409: {"description": "ADJUSTMENT_FROM_RECORD"}},
+    responses={
+        **NOT_FOUND,
+        409: {"description": "ADJUSTMENT_FROM_RECORD, ADJUSTMENT_FROM_TRANSFER"},
+    },
 )
 async def delete_adjustment(db: WriteSessionDep, adjustment_id: int) -> None:
     """Delete a manual or starting adjustment, and re-derive its item's cost."""

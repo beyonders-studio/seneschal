@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from hoard import purchases, recipes, runs, summary
+from hoard import orders, purchases, recipes, runs, summary
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
@@ -108,6 +108,38 @@ async def test_potential_is_what_make_as_much_as_makes_at_most(
 
     assert plan.most == Decimal("3.385")
     assert figures.potential == Decimal(300) * plan.most == Decimal("1015.5")
+
+
+async def test_consigned_stock_is_on_hand_but_not_available_or_usable(
+    db: WriteSession, main: Location, unit, base, material, lot, sell
+):
+    shop = Location(organization_id=db.organization_id, name="Shop", contact_id=7, consignee=True)
+    db.add(shop)
+    await db.flush()
+    catnip, chamomile, alyx = await _alyx(db, unit, base, material)
+    await lot(catnip.id, "C1", "800")
+    await lot(chamomile.id, "H1", "100")
+    await lot(catnip.id, "C2", "1000", location=shop, expires_on=date(2026, 1, 1))
+    await lot(chamomile.id, "H2", "1000", location=shop)
+    # The shop's own sale, shipped from its shelves, and one from the main location.
+    sold_there = await sell((catnip.id, "300", "1"), location_id=shop.id)
+    sold_here = await sell((catnip.id, "500", "1"))
+
+    figures = await summary.summarise(db, [alyx.id, catnip.id], TODAY)
+    there = figures[catnip.id].locations[shop.id].stock
+
+    assert (there.on_hand, there.committed, there.consigned, there.available) == (1000, 300, 700, 0)
+    assert (there.expired, there.usable) == (0, 0)
+    total = figures[catnip.id].stock
+    assert (total.on_hand, total.consigned, total.available) == (1800, 700, 300)
+    assert (await orders.short(db, sold_there), await orders.short(db, sold_here)) == ({}, {})
+    # Only the main location's stock makes anything: its 100 chamomile is one batch.
+    assert {at: figures[alyx.id].locations[at].could_make for at in figures[alyx.id].locations} == {
+        main.id: Decimal(300)
+    }
+    assert figures[alyx.id].potential == Decimal(300)
+    plan = await runs.plan(db, alyx.id, shop.id, Decimal(1), None, TODAY)
+    assert plan.most == 0
 
 
 async def test_no_recipe_or_no_lines_is_no_potential_and_a_variation_has_one(

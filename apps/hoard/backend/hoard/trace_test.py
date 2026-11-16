@@ -30,7 +30,7 @@ from hoard.records import (
     Shipment,
 )
 from hoard.shipments import Pick
-from hoard.stock import add_product
+from hoard.stock import add_product, transfer
 from hoard.trace import StepKind
 from seneschal_core.db import WriteSession
 
@@ -255,6 +255,50 @@ async def test_a_run_line_naming_no_lot_is_a_step_back_to_none(db: WriteSession,
     found = await trace.back(db, made.chai.id)
 
     assert _steps(found) == [(1, StepKind.RUN, None, made.chai.id, None, True)]
+
+
+async def _consigned(db: WriteSession, made: Chai, main: Location, sell) -> tuple[Location, Lot]:
+    """Move 3 of the chai lot to a consignee, contact 8, and ship 2 of them
+    from its shelves to the shop's customer, contact 12."""
+    shop = Location(organization_id=db.organization_id, name="Shop", contact_id=8, consignee=True)
+    db.add(shop)
+    await db.flush()
+    await transfer(
+        db,
+        made.chai_item,
+        main.id,
+        shop.id,
+        Decimal(3),
+        lot_id=made.chai.id,
+        dated_on=date(2026, 11, 5),
+    )
+    moved = (await db.exec(select(Lot).where(Lot.location_id == shop.id))).one()
+    order = await sell((made.chai_item, "2", "5"), customer_contact_id=12, location_id=shop.id)
+    line_id = (await db.exec(select(OrderLine.id).where(OrderLine.order_id == order.id))).one()
+    shipment = await shipments.add(db, order, shop.id, [Pick(line_id, lot_id=moved.id)])
+    await shipments.ship(db, shipment, date(2026, 11, 6))
+    return shop, moved
+
+
+async def test_a_lot_moved_to_a_consignee_is_followed_there_and_back(
+    db: WriteSession, main: Location, chai, sell
+):
+    made = await chai()
+    shop, moved = await _consigned(db, made, main, sell)
+
+    forward = await trace.forward(db, made.chai.id)
+    back = await trace.back(db, moved.id)
+
+    assert _steps(forward) == [
+        (1, StepKind.TRANSFER, made.chai.id, moved.id, 8, False),
+        (2, StepKind.SHIPMENT, moved.id, None, 12, False),
+    ]
+    assert (forward.steps[0].location_id, forward.steps[0].quantity) == (shop.id, 3)
+    assert _steps(back)[:2] == [
+        (1, StepKind.TRANSFER, made.chai.id, moved.id, None, False),
+        (2, StepKind.RUN, made.spice.id, made.chai.id, None, False),
+    ]
+    assert made.cinnamon.id in back.lot_ids()
 
 
 async def test_a_recall_traces_a_lot_or_each_lot_of_an_item_in_a_date_range(

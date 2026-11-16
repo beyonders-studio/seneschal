@@ -1,8 +1,9 @@
 """A lot's trace, back and forward, and recalls (``hoard.trace``,
 ``hoard.recall``), with their exports.
 
-A step names the other party, a shipment's customer or a purchase's supplier,
-by the community's contact, with the contact's name where Initiative lets the
+A step names the other party, a shipment's customer, a purchase's supplier or
+the contact of the location a transfer moved stock to, by the community's
+contact, with the contact's name where Initiative lets the
 install read it. A recall's files need every party, so they wait for
 Initiative; a trace on a page shows what it has without the names.
 """
@@ -65,10 +66,11 @@ class TraceStepRead(BaseModel):
     """One movement a trace follows."""
 
     kind: StepKind
-    #: The run, shipment or purchase.
+    #: The run, shipment, purchase or transfer.
     record_id: int
-    #: The run's or the purchase's code, or the code of the order a shipment is of.
-    code: str
+    #: The run's or the purchase's code, or the code of the order a shipment
+    #: is of; none for a transfer.
+    code: str | None
     #: The order a shipment is of.
     order_id: int | None
     #: The lot it moved; null for a draw that named none.
@@ -81,8 +83,11 @@ class TraceStepRead(BaseModel):
     item: AdjustmentItem
     quantity: Decimal
     dated_on: date
-    #: A shipment's customer or a purchase's supplier; null for a consumer.
+    #: A shipment's customer, a purchase's supplier, or the contact of the
+    #: location a transfer moved it to; null for a consumer.
     party: TracePartyRead | None
+    #: The location a transfer moved it to.
+    location_id: int | None
     #: Whether it only may have happened: an assumed lot or a draw naming none.
     assumed: bool
     #: How many steps from the traced lot: 1 for its own.
@@ -151,7 +156,7 @@ async def _read_steps(
         .join(Order, col(Order.id) == Shipment.order_id)
         .where(col(Shipment.id).in_(by_kind[StepKind.SHIPMENT]))
     )
-    codes: dict[tuple[StepKind, int], tuple[str, int | None]] = {
+    codes: dict[tuple[StepKind, int], tuple[str | None, int | None]] = {
         **{(StepKind.RUN, id_): (code, None) for id_, code in runs.all()},
         **{(StepKind.PURCHASE, id_): (code, None) for id_, code in purchases.all()},
         **{(StepKind.SHIPMENT, id_): (code, order) for id_, order, code in shipments.all()},
@@ -170,7 +175,7 @@ async def _read_steps(
         return TraceLotRef(id=lot_id, number=numbers[lot_id])
 
     def read(step: TraceStep) -> TraceStepRead:
-        code, order_id = codes[(step.kind, step.record_id)]
+        code, order_id = codes.get((step.kind, step.record_id), (None, None))
         party = None
         if step.contact_id is not None:
             named = names.get(step.contact_id)
@@ -189,6 +194,7 @@ async def _read_steps(
             quantity=step.quantity,
             dated_on=step.dated_on,
             party=party,
+            location_id=step.location_id,
             assumed=step.assumed,
             level=step.level,
         )

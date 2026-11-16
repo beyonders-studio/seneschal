@@ -28,12 +28,14 @@ from hoard.records import (
     StoreLocation,
     Variation,
 )
-from hoard.stock import add_product, on_hand
+from hoard.stock import add_product, on_hand, transfer
 from seneschal_core import organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
 from seneschal_core.organizations import PluginStatus
 from seneschal_core.testing import InitiativeStandIn
+
+DAY = date(2026, 11, 3)
 
 
 @pytest.fixture
@@ -235,6 +237,49 @@ async def test_a_run_using_a_listed_variation_pushes_its_count_and_leaves_orders
     )
     [line] = (await orders.short(db, order)).values()
     assert line == 1
+
+
+async def test_a_transfer_pushes_the_count_at_each_mapped_end_and_none_at_a_consignees(
+    db: WriteSession,
+    store: Store,
+    listing: Listing,
+    shop_location: StoreLocation,
+    main: Location,
+    chai,
+    lot,
+):
+    back_room = Location(organization_id=db.organization_id, name="Back room")
+    consignee = Location(
+        organization_id=db.organization_id, name="Gift shop", contact_id=8, consignee=True
+    )
+    db.add_all([back_room, consignee])
+    await db.flush()
+    warehouse = StoreLocation(
+        organization_id=db.organization_id,
+        store_id=store.id,
+        external_id="loc-2",
+        location_id=back_room.id,
+    )
+    db.add(warehouse)
+    stocked = await lot(chai.id, "C-1", "10")
+    await push.baseline(db, store)
+    push.forget_noted(db)
+
+    await transfer(db, chai.id, main.id, back_room.id, Decimal(4), lot_id=stocked.id, dated_on=DAY)
+
+    assert db.info["hoard.noted_items"] == {db.organization_id: {chai.id}}
+    queued = await push.queue(db, [chai.id])
+    assert sorted((each.store_location_id, each.quantity) for each in queued) == sorted(
+        [(shop_location.id, 6), (warehouse.id, 4)]
+    )
+
+    # Consigned, it leaves the shop's count and is pushed nowhere.
+    await transfer(db, chai.id, main.id, consignee.id, Decimal(6), lot_id=stocked.id, dated_on=DAY)
+    queued = await push.queue(db, [chai.id])
+    assert sorted((each.store_location_id, each.quantity) for each in queued) == sorted(
+        [(shop_location.id, 0), (warehouse.id, 4)]
+    )
+    assert await on_hand(db, chai.id) == 10
 
 
 async def test_nothing_is_queued_for_unmapped_locations_cleared_or_pending_stores(

@@ -11,7 +11,9 @@ Hoard's standard units (``hoard.units``) and each kind's default type, which
 Hoard makes itself the first time each list is read. A standard unit is never
 renamed or removed, and no unit of the organization's own is named like one.
 A default type is renamed but never removed, and a type records have stays
-until they are moved to another.
+until they are moved to another. A location other than the main one may be
+marked a consignee's (``hoard.summary``), once it names its contact and while
+no store's location is mapped to it.
 """
 
 from __future__ import annotations
@@ -44,6 +46,7 @@ from hoard.records import (
     OrganizationSettings,
     Picking,
     Regime,
+    StoreLocation,
     TypeShape,
     Unit,
 )
@@ -85,6 +88,11 @@ class SettingsError(StrEnum):
     SHAPE_UNKNOWN = "SHAPE_UNKNOWN"
     #: A kind's default type stays.
     TYPE_DEFAULT = "TYPE_DEFAULT"
+    #: A consignee's location names the consignee's contact, and is never the
+    #: main location.
+    CONSIGNEE_CONTACT = "CONSIGNEE_CONTACT"
+    #: A store sells the location's stock, so it is not a consignee's.
+    CONSIGNEE_MAPPED = "CONSIGNEE_MAPPED"
 
 
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
@@ -92,8 +100,11 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "ADMIN_ONLY, READ_ONLY, COSTS_HIDDEN"},
     404: {"description": "NOT_FOUND"},
-    409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD, TYPE_DEFAULT"},
-    422: {"description": "NAME_REQUIRED, TYPE_UNKNOWN, SHAPE_UNKNOWN"},
+    409: {
+        "description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD, TYPE_DEFAULT, "
+        "CONSIGNEE_MAPPED"
+    },
+    422: {"description": "NAME_REQUIRED, TYPE_UNKNOWN, SHAPE_UNKNOWN, CONSIGNEE_CONTACT"},
 }
 
 Name = Annotated[str, Field(min_length=1, max_length=200)]
@@ -207,11 +218,14 @@ class SettingsLocationRead(BaseModel):
     main: bool
     #: The Initiative contact holding its address and phone.
     contact_id: int | None
+    #: Whether it is a consignee's, whose stock is consigned.
+    consignee: bool
 
 
 class SettingsLocationCreate(BaseModel):
     name: Name
     contact_id: int | None = None
+    consignee: bool = False
 
 
 class SettingsLocationUpdate(BaseModel):
@@ -219,6 +233,8 @@ class SettingsLocationUpdate(BaseModel):
     name: Name | None
     #: Left as it is unless sent.
     contact_id: int | None = None
+    #: Left as it is unless sent.
+    consignee: bool | None = None
 
 
 class SettingsReasonRead(BaseModel):
@@ -583,11 +599,24 @@ async def list_settings_locations(
     return locations
 
 
+async def _consignee(db: AsyncSession, location: Location) -> None:
+    """Refuse a consignee's location that names no contact, is the main one,
+    or is the location a store's location is mapped to."""
+    if not location.consignee:
+        return
+    if location.contact_id is None or location.main:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.CONSIGNEE_CONTACT)
+    mapped = select(StoreLocation.id).where(StoreLocation.location_id == location.id)
+    if location.id is not None and (await db.exec(mapped)).first() is not None:
+        raise refuse(status.HTTP_409_CONFLICT, SettingsError.CONSIGNEE_MAPPED)
+
+
 @router.post("/locations", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
 async def create_settings_location(
     body: SettingsLocationCreate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsLocationRead:
     location = Location(organization_id=db.organization_id, **body.model_dump())
+    await _consignee(db, location)
     await _save(db, location)
     return SettingsLocationRead.model_validate(location, from_attributes=True)
 
@@ -599,9 +628,12 @@ async def update_settings_location(
     location = await found(db, Location, location_id)
     if body.name is None and not location.main:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.NAME_REQUIRED)
-    await _save(
-        db, location, **body.model_dump(exclude_unset=True, include={"contact_id"}), name=body.name
+    location.sqlmodel_update(
+        body.model_dump(exclude_unset=True, include={"contact_id"})
+        | body.model_dump(exclude_none=True, include={"consignee"})
     )
+    await _consignee(db, location)
+    await _save(db, location, name=body.name)
     return SettingsLocationRead.model_validate(location, from_attributes=True)
 
 

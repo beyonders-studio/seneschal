@@ -204,6 +204,42 @@ async def test_an_admin_reads_the_store_again_and_maps_its_locations(
     assert sold == large.id
 
 
+async def test_a_consignees_location_is_never_mapped_to_a_stores(
+    client, sign_in, db: WriteSession, store: Store, pending: Store
+):
+    corner = Location(organization_id=db.organization_id, name="Corner", contact_id=7)
+    consignee = Location(
+        organization_id=db.organization_id, name="Gift shop", contact_id=8, consignee=True
+    )
+    store_location = StoreLocation(
+        organization_id=db.organization_id, store_id=store.id, external_id="loc-1"
+    )
+    db.add_all([corner, consignee, store_location])
+    await db.commit()
+    await sign_in(client, admin=True)
+
+    refused = await client.put(
+        f"/api/v1/stores/{store.id}/locations/{store_location.id}",
+        json={"location_id": consignee.id},
+    )
+    assert (refused.status_code, refused.json()) == (422, {"detail": "LOCATION_CONSIGNEE"})
+    chosen = await client.post(
+        f"/api/v1/stores/{pending.id}/sync",
+        json={"locations": [{"external_id": "loc-1", "location_id": consignee.id}]},
+    )
+    assert (chosen.status_code, chosen.json()) == (422, {"detail": "LOCATION_CONSIGNEE"})
+
+    mapped = await client.put(
+        f"/api/v1/stores/{store.id}/locations/{store_location.id}",
+        json={"location_id": corner.id},
+    )
+    assert mapped.status_code == 200
+    marked = await client.patch(
+        f"/api/v1/settings/locations/{corner.id}", json={"name": "Corner", "consignee": True}
+    )
+    assert (marked.status_code, marked.json()) == (409, {"detail": "CONSIGNEE_MAPPED"})
+
+
 async def test_mapping_a_location_queues_what_is_available_there(
     client, sign_in, db: WriteSession, store: Store, main: Location, lot
 ):

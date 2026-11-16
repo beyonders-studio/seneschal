@@ -12,7 +12,7 @@ import httpx2
 from hoard import recall, trace
 from hoard.recall import CANADA_COLUMNS, FDA_COLUMNS, Party
 from hoard.records import Location
-from hoard.trace_test import chai, ship  # noqa: F401  (fixtures)
+from hoard.trace_test import _consigned, chai, ship  # noqa: F401  (fixtures)
 from seneschal_core.db import WriteSession
 from seneschal_core.testing import InitiativeStandIn
 
@@ -166,3 +166,23 @@ async def test_the_pdf_writes_every_party_in_the_bundled_font(
 
     assert written.startswith(b"%PDF")
     assert len(written) > 1000
+
+
+async def test_stock_moved_to_a_consignee_is_recalled_from_there_with_its_own_source(
+    db: WriteSession,
+    main: Location,
+    sell,
+    chai,  # noqa: F811
+):
+    made = await chai()
+    await _consigned(db, made, main, sell)
+    gathered = await recall.gather(db, await trace.recall(db, lot_id=made.cinnamon.id))
+    contacts = {**CONTACTS, 8: Party("Gift Shop", "3 Mill Lane", ""), 12: CUSTOMER}
+
+    [row] = list(csv.reader(io.StringIO(recall.fda_csv(gathered, contacts))))[1:]
+    written = recall.pdf(gathered, contacts, date(2026, 11, 12))
+
+    # Shipped from the shop's shelves, of a lot coded where it was made.
+    assert (row[0], row[16], row[24]) == (made.chai.number, "Gift Shop", "Main location")
+    assert 8 in gathered.contact_ids()
+    assert written.startswith(b"%PDF")

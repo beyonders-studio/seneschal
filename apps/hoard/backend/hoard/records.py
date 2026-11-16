@@ -23,6 +23,8 @@
   the unit cost at the time, a reason, notes, and the record that caused it.
   The database keeps stock levels and lot balances the sums of their
   adjustments (``seneschal_core.ledger``).
+* **Transfers**: stock moved from one location to another, each a pair of
+  adjustments, out and in.
 * **Purchases** of materials, from a supplier among the community's contacts,
   with lines that are received into lots.
 * **Stores**: a community's connected store on a sales channel, the store's
@@ -195,6 +197,8 @@ class AdjustmentKind(StrEnum):
     SHIPMENT = "shipment"
     #: What came back of a shipment line, in.
     RETURN = "return"
+    #: One half of a transfer: out of one location, or into the other.
+    TRANSFER = "transfer"
 
 
 class RecordKind(StrEnum):
@@ -502,7 +506,10 @@ class ItemType(OrganizationRow, Stamped, table=True):
 class Location(OrganizationRow, Stamped, table=True):
     """A place stock sits. ``main`` marks the one every change defaults to,
     which has no name until someone gives it one: pages call it by the
-    translated word for the main location."""
+    translated word for the main location. A **consignee's** location is a
+    shop holding the organization's stock to sell, named by its contact:
+    its stock is consigned (``hoard.summary``), and it is never mapped to a
+    store's location."""
 
     __tablename__ = "locations"
     __table_args__ = (
@@ -515,6 +522,10 @@ class Location(OrganizationRow, Stamped, table=True):
             postgresql_where=text("main"),
         ),
         CheckConstraint("name IS NOT NULL OR main", name="ck_locations_name"),
+        CheckConstraint(
+            "NOT consignee OR (contact_id IS NOT NULL AND NOT main)",
+            name="ck_locations_consignee",
+        ),
     )
 
     id: int = identity()
@@ -523,6 +534,8 @@ class Location(OrganizationRow, Stamped, table=True):
     #: The Initiative contact holding its address and phone, which a trace
     #: names it by.
     contact_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Whether it is a consignee's: its contact's, never the main location.
+    consignee: bool = False
 
 
 class Item(OrganizationRow, table=True):
@@ -940,6 +953,18 @@ class StocktakeRow(OrganizationRow, Stamped, table=True):
     counted: Decimal | None = amount(None)
 
 
+class Transfer(OrganizationRow, Stamped, table=True):
+    """Stock moved from one location to another, as one record: an
+    adjustment out of the one and an adjustment into the other, of the same
+    item, the same quantity and the same day, each naming its location's lot
+    of it or, for stock in no lot, none."""
+
+    __tablename__ = "transfers"
+    __table_args__ = (referable("transfers"),)
+
+    id: int = identity()
+
+
 class Adjustment(OrganizationRow, Stamped, table=True):
     """A change to an item's stock at a location, and to a lot's balance when
     it names one. ``unit_cost`` is what one unit cost at the time: typed in for
@@ -961,6 +986,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         reference("adjustments", "shipment_line_id", "shipment_lines", ondelete="CASCADE"),
         reference("adjustments", "return_line_id", "return_lines", ondelete="CASCADE"),
         reference("adjustments", "hold_id", "holds"),
+        reference("adjustments", "transfer_id", "transfers", ondelete="CASCADE"),
         Index("ix_adjustments_item", "organization_id", "item_id", "dated_on", "id"),
         Index("ix_adjustments_production_run", "organization_id", "production_run_id"),
         Index(
@@ -974,6 +1000,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
         UniqueConstraint("production_run_line_id", name="uq_adjustments_production_run_line_id"),
         UniqueConstraint("shipment_line_id", name="uq_adjustments_shipment_line_id"),
         UniqueConstraint("return_line_id", "kind", name="uq_adjustments_return_line_kind"),
+        UniqueConstraint("transfer_id", "location_id", name="uq_adjustments_transfer_location"),
         CheckConstraint("change <> 0", name="ck_adjustments_change"),
         CheckConstraint(
             "(kind = 'purchase') = (purchase_line_id IS NOT NULL)",
@@ -1001,6 +1028,9 @@ class Adjustment(OrganizationRow, Stamped, table=True):
             name="ck_adjustments_return",
         ),
         CheckConstraint("hold_id IS NULL OR kind = 'manual'", name="ck_adjustments_hold"),
+        CheckConstraint(
+            "(kind = 'transfer') = (transfer_id IS NOT NULL)", name="ck_adjustments_transfer"
+        ),
     )
 
     id: int = identity()
@@ -1017,7 +1047,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     #: row, the completed production run (one of its lines consumed, or, with
     #: no line, its output made), the shipped shipment line, or the return
     #: line: what came back, in, and, for what came back damaged, the manual
-    #: adjustment writing it off.
+    #: adjustment writing it off; or the transfer it is half of.
     purchase_line_id: int | None = Field(default=None, sa_type=BigInteger)
     stocktake_row_id: int | None = Field(default=None, sa_type=BigInteger)
     production_run_id: int | None = Field(default=None, sa_type=BigInteger)
@@ -1026,6 +1056,7 @@ class Adjustment(OrganizationRow, Stamped, table=True):
     return_line_id: int | None = Field(default=None, sa_type=BigInteger)
     #: The hold a manual adjustment discards its lot from.
     hold_id: int | None = Field(default=None, sa_type=BigInteger)
+    transfer_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class OrganizationSettings(OrganizationRow, Stamped, table=True):
