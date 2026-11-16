@@ -1,23 +1,9 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ProductVariationRead, RecipeRead } from "@/api/generated/hoard.schemas";
-import { productDetail, SETTINGS } from "@/features/items/testing";
+import type { RecipeRead } from "@/api/generated/hoard.schemas";
+import { productDetail, SETTINGS, variation } from "@/features/items/testing";
 import { openSignedIn, signedIn } from "@/testing";
-
-const variation = (fields: Partial<ProductVariationRead> = {}): ProductVariationRead => ({
-  id: 20,
-  attributes: {},
-  sku: null,
-  is_default: true,
-  price: null,
-  average_cost: null,
-  auto_manufacture: null,
-  on_hand: "0",
-  stock: [],
-  lots: [],
-  ...fields,
-});
 
 const BOX: RecipeRead = {
   id: 4,
@@ -32,6 +18,7 @@ const BOX: RecipeRead = {
   total_unit_id: null,
   batch_quantity: "1.000000",
   batches: "1",
+  cost: null,
   minutes: null,
   notes: null,
   lines: [
@@ -44,6 +31,8 @@ const BOX: RecipeRead = {
       tracking_unit_id: null,
       quantity: "3.000000",
       percent: null,
+      on_hand: "0",
+      cost: null,
     },
   ],
 };
@@ -65,6 +54,8 @@ const LARGE: RecipeRead = {
       tracking_unit_id: 1,
       quantity: "12.000000",
       percent: "100.00",
+      on_hand: "0",
+      cost: null,
     },
   ],
 };

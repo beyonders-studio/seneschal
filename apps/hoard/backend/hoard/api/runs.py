@@ -22,9 +22,9 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy import func
-from sqlmodel import col, or_, select
+from sqlmodel import col, exists, or_, select
 
-from hoard import orders, runs, units
+from hoard import runs, summary, units
 from hoard.api.adjustments import (
     NOT_FOUND,
     AdjustmentItem,
@@ -93,7 +93,7 @@ class RunLineRead(BaseModel):
     #: that hold stock, the earliest expiry first.
     lots: list[RunLot]
     #: Until the run is completed, how much more it takes than is usable at
-    #: the run's location (``hoard.runs.usable``); null when it is not short.
+    #: the run's location (``hoard.summary``); null when it is not short.
     short: Decimal | None = None
     #: What one unit cost on the run's date, once it is completed; sent only to
     #: a member who sees costs, as is ``cost``.
@@ -232,7 +232,7 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
     if row is None:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
     run = row[0]
-    [summary] = await _summary(db, [row], sees_costs)
+    [fields] = await _summary(db, [row], sees_costs)
     lines = (
         await db.exec(
             select(ProductionRunLine)
@@ -270,10 +270,10 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
             choices.setdefault(lot.item_id, []).append(_lot(lot))
     shortages: dict[int, dict[str, Decimal | None]] = {}
     if run.status is not RunStatus.COMPLETED:
-        today = date.today()
-        for item_id in {line.item_id for line in lines}:
+        stock = await summary.stock(db, [line.item_id for line in lines], date.today())
+        for item_id, at in stock.items():
             taken = sum((line.quantity for line in lines if line.item_id == item_id), Decimal(0))
-            can_use = await runs.usable(db, item_id, run.location_id, today)
+            can_use = at.get(run.location_id, summary.Stock()).usable
             shortages[item_id] = {"short": runs.short(taken, can_use)}
     consumed: dict[int, Decimal] = {}
     if sees_costs:
@@ -284,7 +284,7 @@ async def _read(db: OrganizationSession, run_id: int, sees_costs: bool) -> RunRe
         )
         consumed = {line_id: cost for line_id, cost in found.all() if line_id is not None}
     return RunRead(
-        **summary,
+        **fields,
         recipe_id=run.recipe_id,
         recipe_changed=await _recipe_changed(db, run),
         labour_minutes=run.labour_minutes,
@@ -360,15 +360,27 @@ async def list_runs(
     sees_costs: SeesCostsDep,
     page: PageDep,
     run_status: Annotated[RunStatus | None, Query(alias="status")] = None,
+    item_id: Annotated[int | None, Query()] = None,
+    used_item_id: Annotated[int | None, Query()] = None,
 ) -> Page[RunSummary]:
-    """Production runs, those not completed first, then the latest."""
-    query = _runs()
-    counted = select(func.count()).select_from(ProductionRun)
+    """Production runs, those not completed first, then the latest: of one
+    status, making one item, or with a line using one item, when asked."""
+    conditions = []
     if run_status is not None:
-        query = query.where(col(ProductionRun.status) == run_status)
-        counted = counted.where(col(ProductionRun.status) == run_status)
+        conditions.append(col(ProductionRun.status) == run_status)
+    if item_id is not None:
+        conditions.append(col(ProductionRun.item_id) == item_id)
+    if used_item_id is not None:
+        conditions.append(
+            exists().where(
+                col(ProductionRunLine.run_id) == ProductionRun.id,
+                col(ProductionRunLine.item_id) == used_item_id,
+            )
+        )
     rows = await db.exec(
-        query.order_by(
+        _runs()
+        .where(*conditions)
+        .order_by(
             col(ProductionRun.status) == RunStatus.COMPLETED,
             col(ProductionRun.completed_on).desc().nulls_first(),
             col(ProductionRun.id).desc(),
@@ -377,8 +389,9 @@ async def list_runs(
         .limit(page.limit)
     )
     summaries = await _summary(db, list(rows.all()), sees_costs)
+    counted = select(func.count()).select_from(ProductionRun).where(*conditions)
     return Page(
-        items=[RunSummary(**summary) for summary in summaries],
+        items=[RunSummary(**fields) for fields in summaries],
         total=(await db.exec(counted)).one(),
     )
 
@@ -546,7 +559,8 @@ async def preview_run(db: OrganizationSessionDep, body: RunPlan) -> RunPreview:
     made_in = (await units.tracking_units(db, [body.item_id])).get(body.item_id)
     use, using = None, None
     if body.use is not None:
-        can_use = await runs.usable(db, body.use.item_id, location_id, today)
+        held = await summary.stock_at(db, body.use.item_id, location_id, today)
+        can_use = held.usable
         amount = (
             await _tracked(db, body.use, body.use.amount)
             if body.use.amount is not None
@@ -557,7 +571,7 @@ async def preview_run(db: OrganizationSessionDep, body: RunPlan) -> RunPreview:
             unit_id=(await units.tracking_units(db, [body.use.item_id])).get(body.use.item_id),
             amount=amount,
             usable=can_use,
-            expired=await orders.expired(db, body.use.item_id, location_id, today),
+            expired=held.expired,
             most=None,
         )
         if amount <= 0:

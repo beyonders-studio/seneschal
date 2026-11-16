@@ -15,7 +15,8 @@ Everything that converts or scales goes through this module:
 * ratio parts from amounts (:func:`parts`) and amounts relative to the
   smallest (:func:`relative`);
 * scaling by batches, by an output quantity (:func:`scale`, :func:`scaled`) or
-  by an amount of one ingredient (:func:`use`);
+  by an amount of one ingredient (:func:`use`), and the most batches the
+  amounts at hand cover (:func:`covered`, :func:`most_batches`);
 * splitting a quantity in proportion, as receiving part of a purchase line
   does (:func:`split`);
 * shares by weight (:func:`percents`), and the weight a declaration counts
@@ -383,6 +384,24 @@ def scaled(quantity: Decimal, batches: Decimal, *, down: bool = False) -> Decima
     """``quantity`` of a line, ``batches`` over, kept to six places: rounded
     down when ``down``, so it never asks for more than there is."""
     return (quantity * batches).quantize(PLACES, rounding=ROUND_DOWN if down else None)
+
+
+def covered(quantities: Sequence[Decimal], at_hand: Sequence[Decimal]) -> Decimal | None:
+    """The most batches ``at_hand`` covers of each line's ``quantities`` per
+    batch, exactly: the scarcest line's, and nothing of a line with less than
+    nothing at hand. None for no lines. A run plans them rounded down to six
+    places (:func:`most_batches`)."""
+    if not quantities:
+        return None
+    return min(
+        max(have, Decimal(0)) / quantity for quantity, have in zip(quantities, at_hand, strict=True)
+    )
+
+
+def most_batches(covers: Decimal) -> Decimal:
+    """The batches a run plans of what :func:`covered` answers: rounded down
+    to six places, so it never asks for more than there is."""
+    return covers.quantize(PLACES, rounding=ROUND_DOWN)
 
 
 def split(quantity: Decimal, part: Decimal, whole: Decimal) -> tuple[Decimal, Decimal]:

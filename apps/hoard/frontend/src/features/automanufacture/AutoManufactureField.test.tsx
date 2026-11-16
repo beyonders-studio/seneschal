@@ -1,26 +1,11 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { ProductVariationRead } from "@/api/generated/hoard.schemas";
-import { productDetail, SETTINGS } from "@/features/items/testing";
+import { productDetail, SETTINGS, variation } from "@/features/items/testing";
 import { type Answer, openSignedIn, signedIn } from "@/testing";
 
 // The kit's options scroll themselves into view, which jsdom cannot.
 Element.prototype.scrollIntoView ??= () => {};
-
-const variation = (fields: Partial<ProductVariationRead>): ProductVariationRead => ({
-  id: 20,
-  attributes: {},
-  sku: null,
-  is_default: true,
-  price: null,
-  average_cost: null,
-  auto_manufacture: null,
-  on_hand: "0",
-  stock: [],
-  lots: [],
-  ...fields,
-});
 
 const CHAI = productDetail({
   auto_manufacture: "always",

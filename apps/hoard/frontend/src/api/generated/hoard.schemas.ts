@@ -177,12 +177,14 @@ export interface BaseCreate {
 }
 
 /**
- * What is on hand of an item at one location, and its bin there.
+ * An item's stock at one location, and its bin there (``hoard.summary``).
  */
 export interface ItemStockRead {
   location_id: number;
   quantity: string;
   bin: ItemBin | null;
+  could_make: string | null;
+  last_stocktake: string | null;
 }
 
 /**
@@ -448,6 +450,9 @@ export interface BaseDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  potential: string | null;
+  made: string;
+  last_stocktake: string | null;
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;
@@ -1402,6 +1407,9 @@ export interface MaterialDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  potential: string | null;
+  made: string;
+  last_stocktake: string | null;
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;
@@ -1745,6 +1753,14 @@ export interface PagePurchaseSummary {
   total: number;
 }
 
+/**
+ * What a line costs.
+ */
+export interface RecipeLineCost {
+  amount: string | null;
+  last_known: boolean;
+}
+
 export interface RecipeLineRead {
   item: AdjustmentItem;
   unit_id: number | null;
@@ -1754,6 +1770,18 @@ export interface RecipeLineRead {
   tracking_unit_id: number | null;
   quantity: string;
   percent: string | null;
+  on_hand: string;
+  cost: RecipeLineCost | null;
+}
+
+/**
+ * What a recipe's batches cost.
+ */
+export interface RecipeCost {
+  labour: string | null;
+  total: string;
+  incomplete: boolean;
+  unit_cost: string;
 }
 
 /**
@@ -1776,6 +1804,7 @@ export interface RecipeRead {
   batch_quantity: string;
   batches: string;
   lines: RecipeLineRead[];
+  cost: RecipeCost | null;
   id: number;
   output: RecipeOutput;
   output_id: number;
@@ -1827,7 +1856,15 @@ export interface PageRunSummary {
   total: number;
 }
 
-export interface StocktakeSummary {
+/**
+ * What a stocktake expected of one item and counted.
+ */
+export interface StocktakeCount {
+  expected: string | null;
+  counted: string | null;
+}
+
+export interface StocktakeListed {
   id: number;
   kind: CategoryKind;
   location_id: number;
@@ -1841,10 +1878,11 @@ export interface StocktakeSummary {
   finished: boolean;
   created_at: string;
   created_by: string | null;
+  count: StocktakeCount | null;
 }
 
-export interface PageStocktakeSummary {
-  items: StocktakeSummary[];
+export interface PageStocktakeListed {
+  items: StocktakeListed[];
   total: number;
 }
 
@@ -1899,6 +1937,9 @@ export type ProductVariationReadAttributes = { [key: string]: string };
 
 export interface ProductVariationRead {
   on_hand: string;
+  potential: string | null;
+  made: string;
+  last_stocktake: string | null;
   stock: ItemStockRead[];
   lots: ItemLotRead[];
   id: number;
@@ -2172,6 +2213,7 @@ export interface RecipePreview {
   batch_quantity: string;
   batches: string;
   lines: RecipeLineRead[];
+  cost: RecipeCost | null;
   switched: RecipeWriteOutput | null;
 }
 
@@ -3085,6 +3127,7 @@ export type ListAdjustmentsParams = {
 };
 
 export type ListStocktakesParams = {
+  item_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**
@@ -3160,6 +3203,8 @@ export type ReadRecipeParams = {
 
 export type ListRunsParams = {
   status?: RunStatus | null;
+  item_id?: number | null;
+  used_item_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**

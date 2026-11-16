@@ -17,7 +17,9 @@ import { StatusBadge } from "@/features/items/ItemList";
 import { RecipeDialog } from "@/features/recipes/RecipeDialog";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
+import { useMoney } from "@/lib/money";
 import { useSession } from "@/session";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
 import { Field } from "@/ui/field";
@@ -29,10 +31,12 @@ const isQuantity = (text: string) => text.trim() !== "" && Number(text) > 0;
 
 /**
  * A recipe, under `heading` when it has one: what a batch makes and takes,
- * its lines with each one's ratio, amount in the unit it was written in and
- * share by weight, and, but for a bundle, a quantity to scale it to: of what
- * it makes, or of one of its lines. While Hoard may change, it is edited and
- * deleted here.
+ * its lines with each one's ratio, amount in the unit it was written in,
+ * share by weight and what is on hand of it, and, but for a bundle, a
+ * quantity to scale it to: of what it makes, or of one of its lines. To a
+ * member who sees costs, each line's cost, its labour, what the batches cost
+ * and what one unit of what they make costs, as Hoard works them out. While
+ * Hoard may change, it is edited and deleted here.
  */
 export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: string }) {
   const { t } = useTranslation("recipes");
@@ -43,6 +47,7 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
   const quantity = useQuantity();
   const ratio = useRatio();
   const share = useShare();
+  const money = useMoney();
   const [scaleTo, setScaleTo] = useState("");
   // The line whose amount it scales to; null for what it makes.
   const [scaleBy, setScaleBy] = useState<number | null>(null);
@@ -66,6 +71,7 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
   const name = item(recipe);
   const withUnit = (amount: string, unitId: number | null) =>
     [quantity(amount), unitId === null ? "" : unit(unitId)].filter(Boolean).join(" ");
+  const cost = shown.cost;
   const facts = [
     t("card.makes", { quantity: withUnit(shown.batch_quantity, recipe.unit_id) }),
     shown.total !== null &&
@@ -133,6 +139,8 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
               {!bundle && <TableHead className="text-end">{t("card.ratio")}</TableHead>}
               <TableHead className="text-end">{t("card.amount")}</TableHead>
               {!bundle && <TableHead className="text-end">{t("card.share")}</TableHead>}
+              <TableHead className="text-end">{t("hoard:common.onHand")}</TableHead>
+              {cost && <TableHead className="text-end">{t("hoard:common.cost")}</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -158,10 +166,52 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
                     {line.percent === null ? "–" : share(line.percent)}
                   </TableCell>
                 )}
+                <TableCell className="text-end tabular-nums">
+                  {withUnit(line.on_hand, line.tracking_unit_id)}
+                </TableCell>
+                {cost && (
+                  <TableCell className="text-end tabular-nums">
+                    {line.cost?.amount ? (
+                      <span
+                        className="inline-flex items-center gap-2"
+                        title={line.cost.last_known ? t("card.lastKnownHint") : undefined}
+                      >
+                        {line.cost.last_known && (
+                          <Badge variant="outline">{t("card.lastKnown")}</Badge>
+                        )}
+                        {money(line.cost.amount)}
+                      </span>
+                    ) : (
+                      <Badge variant="warning">{t("card.noCost")}</Badge>
+                    )}
+                  </TableCell>
+                )}
               </TableRow>
             ))}
+            {cost?.labour && (
+              <TableRow>
+                <TableCell colSpan={bundle ? 3 : 5}>
+                  {t("card.labour", { count: recipe.minutes ?? 0 })}
+                </TableCell>
+                <TableCell className="text-end tabular-nums">{money(cost.labour)}</TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
+      )}
+      {cost && (
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-sm">
+          {cost.incomplete && <Badge variant="warning">{t("card.incomplete")}</Badge>}
+          <span>{t("card.batchCost", { cost: money(cost.total) })}</span>
+          <span className="font-medium">
+            {recipe.unit_id === null
+              ? t("card.unitCostEach", { cost: money(cost.unit_cost, { exact: true }) })
+              : t("card.unitCost", {
+                  cost: money(cost.unit_cost, { exact: true }),
+                  unit: unit(recipe.unit_id),
+                })}
+          </span>
+        </div>
       )}
       <RecipeDialog
         recipe={recipe}

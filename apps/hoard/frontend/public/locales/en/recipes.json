@@ -39,7 +39,16 @@
     "scaleByOutput": "What it makes",
     "ratio": "Ratio",
     "amount": "Amount",
-    "notWeighed": "Not measured by weight, so it has no share."
+    "notWeighed": "Not measured by weight, so it has no share.",
+    "lastKnown": "Last known",
+    "lastKnownHint": "Out of stock, so costed at what it cost before it ran out.",
+    "noCost": "No cost yet",
+    "labour_one": "Labour, {{count}} minute a batch",
+    "labour_other": "Labour, {{count}} minutes a batch",
+    "incomplete": "A cost is missing",
+    "batchCost": "Batch cost {{cost}}",
+    "unitCost": "Manufacture cost {{cost}} a {{unit}}",
+    "unitCostEach": "Manufacture cost {{cost}} each"
   },
   "dialog": {
     "addTitle": "Recipe for {{name}}",

@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import update
 from sqlmodel import col, select
 
-from hoard import channels, push, store_fields, store_sync
+from hoard import channels, push, store_fields, store_sync, summary
 from hoard.app import JOB_HANDLERS
 from hoard.channels import (
     ConnectError,
@@ -25,7 +25,6 @@ from hoard.channels import (
 )
 from hoard.channels.fake import FakeConnector
 from hoard.channels.hooks import webhook_address
-from hoard.orders import available, committed
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
@@ -240,7 +239,7 @@ async def _outcome(db: WriteSession, store: Store, main: Location) -> dict[str, 
         if listing.item_id is not None
     }
     stock = {
-        (variant, where.name or "main"): await available(db, item_id, where.id)
+        (variant, where.name or "main"): (await summary.stock_at(db, item_id, where.id)).available
         for variant, item_id in sold.items()
         for where in (main, warehouse)
     }
@@ -333,7 +332,7 @@ async def test_a_sync_reads_the_store_into_hoard_and_sends_it_nothing(
     assert (job.state, job.error, job.step) == (JobState.DONE, None, "store_finish")
     assert await _outcome(db, store, main) == EXPECTED
     mug = (await db.exec(select(Listing.item_id).where(Listing.variant_id == "v-mug"))).one()
-    assert mug is not None and await committed(db, mug, main.id) == 2
+    assert mug is not None and (await summary.stock_at(db, mug, main.id)).committed == 2
     # The webhook subscriptions are the one thing the store is told.
     assert (shop.pushes, shop.field_writes, shop.subscriptions) == ([], [], {ADDRESS})
 

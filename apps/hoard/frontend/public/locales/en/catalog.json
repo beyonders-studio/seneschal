@@ -204,6 +204,24 @@
       "title": "Where it starts",
       "quantity": "Starting stock, in {{unit}}",
       "unitCostHint": "What one of it cost. Leave it blank if you don't know."
-    }
+    },
+    "potential": "Potential",
+    "made": "Made",
+    "lastStocktake": "Last stocktake",
+    "couldMake": "Could make"
+  },
+  "history": {
+    "runs": "Production runs",
+    "runsMade": "Made by",
+    "runsUsed": "Used by",
+    "noRunsMade": "No run has made it yet.",
+    "noRunsUsed": "No run has used it yet.",
+    "adjustments": "Adjustments",
+    "noAdjustments": "Nothing has moved its stock yet.",
+    "stocktakes": "Stocktakes",
+    "noStocktakes": "No stocktake has counted it yet.",
+    "expected": "Expected",
+    "counted": "Counted",
+    "notCounted": "Not counted yet"
   }
 }

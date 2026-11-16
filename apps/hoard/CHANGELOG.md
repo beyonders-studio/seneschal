@@ -23,6 +23,9 @@ All notable changes to Hoard are recorded here. The format follows
 - **Start a new base or material with its stock.** Adding one takes its picture, its bin and its starting stock at a location, the main one unless you pick another, with what each unit cost for members who see costs.
 - **A method on a recipe,** shown above its lines.
 - **A labour rate** in Settings, what an hour of work costs, which an admin sets and only members who see costs read.
+- **A base's potential, at a glance:** how much the stock you have could make, beside how much its runs have made and when a stocktake last counted it. A run draws from one location, so potential adds up what each location could make: catnip in one place and chamomile in another make nothing until one is moved. It leaves out what open orders have committed, lots on hold and expired lots, just as **Make as much as** does, so the two always agree. The stock table shows what could be made and the last stocktake at each location.
+- **The recipe, costed.** Each line shows what's on hand and, to members who see costs, what it costs; then labour at the labour rate, the batch's cost and the manufacture cost of one unit. An ingredient that's run out is costed at what it last cost, marked as such, and one that has never had a cost is flagged, with the batch's cost marked incomplete.
+- **A base's and a material's history** on its page: the production runs that made it and those that used it, its adjustments, and the stocktakes that counted it, expected against counted, a page at a time.
 
 ### Changed
 

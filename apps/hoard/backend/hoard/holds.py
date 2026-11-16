@@ -3,7 +3,7 @@ reason among the organization's hold reasons, and perhaps until a ready date.
 
 A lot has at most one open hold. Drawing stock skips a held lot
 (``hoard.stock.draw_lots``), and what is available of an item leaves out what
-its held lots hold (``hoard.orders.available``). A hold ends one of two ways:
+its held lots hold (``hoard.summary``). A hold ends one of two ways:
 released, or discarded, whole or in part, by a manual adjustment that names
 it and its reason. A completed run whose item cures puts its lot on hold,
 curing, ready on the day its cure time sets; ``upkeep`` records
@@ -62,16 +62,6 @@ async def held_lot_ids(
     if location_id is not None:
         query = query.where(Lot.location_id == location_id)
     return set((await db.exec(query)).all())
-
-
-async def on_hold(db: AsyncSession, item_id: int, location_id: int | None = None) -> Decimal:
-    """What an item's held lots hold: at one location, or at all of them."""
-    query = select(func.coalesce(func.sum(func.greatest(Lot.balance, 0)), 0)).where(
-        Lot.item_id == item_id, col(Lot.id).in_(held_lots())
-    )
-    if location_id is not None:
-        query = query.where(Lot.location_id == location_id)
-    return Decimal((await db.exec(query)).one())
 
 
 async def note(db: WriteSession, lot_id: int) -> None:

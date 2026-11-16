@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from hoard import orders
+from hoard import orders, summary
 from hoard.records import Channel, Location, Product, Store, Variation
 from hoard.stock import add_product, add_variation
 from seneschal_core.db import WriteSession
@@ -55,7 +55,7 @@ async def test_a_hand_order_is_sold_to_a_customer_and_cancelled(
         ("Chai", "4.000000"),
         ("Chai", "5.500000"),
     ]
-    assert await orders.committed(db, chai.id) == 3
+    assert (await summary.stock_at(db, chai.id)).committed == 3
 
     again = await client.post(
         "/api/v1/orders", json={"customer_contact_id": 7, "code": order["code"]}
@@ -71,7 +71,7 @@ async def test_a_hand_order_is_sold_to_a_customer_and_cancelled(
         f"/api/v1/orders/{order['id']}/lines/{line}", json={"quantity": "4"}
     )
     assert changed.json()["lines"][0]["quantity"] == "4.000000"
-    assert await orders.committed(db, chai.id) == 4
+    assert (await summary.stock_at(db, chai.id)).committed == 4
     edited = await client.patch(
         f"/api/v1/orders/{order['id']}", json={"due_on": "2026-11-09", "paid": True}
     )
@@ -84,7 +84,7 @@ async def test_a_hand_order_is_sold_to_a_customer_and_cancelled(
 
     cancelled = await client.post(f"/api/v1/orders/{order['id']}/cancel")
     assert cancelled.json()["status"] == "cancelled"
-    assert await orders.committed(db, chai.id) == 0
+    assert (await summary.stock_at(db, chai.id)).committed == 0
     refused = await client.delete(f"/api/v1/orders/{order['id']}/lines/{line}")
     assert (refused.status_code, refused.json()["detail"]) == (409, "ORDER_CANCELLED")
     assert (await client.get("/api/v1/orders", params={"status": "open"})).json()["total"] == 0
@@ -190,7 +190,7 @@ async def test_a_synced_stores_order_changes_only_in_the_store(
     for change in changes():
         refused = await change
         assert (refused.status_code, refused.json()) == (409, {"detail": "MANAGED_BY_STORE"})
-    assert await orders.committed(db, chai.id) == 2
+    assert (await summary.stock_at(db, chai.id)).committed == 2
 
     # Pending, as a store is before its sync and after its sync is removed,
     # its orders are Hoard's to change.

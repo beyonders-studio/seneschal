@@ -10,7 +10,7 @@ from decimal import Decimal
 import pytest
 from sqlmodel import select
 
-from hoard import orders, recipes, shipments
+from hoard import orders, recipes, shipments, summary
 from hoard.orders import OrderError, OrderRefused
 from hoard.records import (
     Channel,
@@ -61,10 +61,10 @@ async def test_open_orders_commit_what_they_have_not_shipped(
     )
     await db.flush()
 
-    assert await orders.committed(db, chai.id) == 10
-    assert await orders.committed(db, chai.id, main.id) == 7
-    assert await orders.committed(db, box.id) == 0
-    assert await orders.available(db, chai.id, main.id) == 13
+    assert (await summary.stock_at(db, chai.id)).committed == 10
+    assert (await summary.stock_at(db, chai.id, main.id)).committed == 7
+    assert (await summary.stock_at(db, box.id)).committed == 0
+    assert (await summary.stock_at(db, chai.id, main.id)).available == 13
 
     # What a pending shipment holds is still committed; once shipped, it is
     # neither committed nor on hand.
@@ -81,11 +81,11 @@ async def test_open_orders_commit_what_they_have_not_shipped(
         )
     )
     await db.flush()
-    assert await orders.committed(db, chai.id, main.id) == 7
+    assert (await summary.stock_at(db, chai.id, main.id)).committed == 7
 
     await shipments.post(db, shipment, date(2026, 11, 3))
-    assert await orders.committed(db, chai.id, main.id) == 3
-    assert await orders.available(db, chai.id, main.id) == 13
+    assert (await summary.stock_at(db, chai.id, main.id)).committed == 3
+    assert (await summary.stock_at(db, chai.id, main.id)).available == 13
 
 
 async def _refused(making) -> OrderError:
@@ -133,8 +133,8 @@ async def test_a_hand_order_sells_variations_and_splits_bundles(
         (chai.id, 6, 0, True),
         (mug.id, 3, 0, True),
     ]
-    assert await orders.committed(db, chai.id) == 7
-    assert await orders.committed(db, boxed.id) == 0
+    assert (await summary.stock_at(db, chai.id)).committed == 7
+    assert (await summary.stock_at(db, boxed.id)).committed == 0
 
     await orders.change_line(db, order, bundle, quantity=Decimal(1))
     parts = (await orders.lines(db, order.id))[4:]
@@ -183,10 +183,10 @@ async def test_an_order_ships_cancels_and_reopens(db: WriteSession, main: Locati
     assert order.status is OrderStatus.OPEN
     await shipments.ship(db, second, date(2026, 11, 5))
     assert order.status is OrderStatus.SHIPPED
-    assert await orders.committed(db, chai.id) == 0
+    assert (await summary.stock_at(db, chai.id)).committed == 0
     await shipments.unship(db, second)
     assert order.status is OrderStatus.OPEN
-    assert await orders.committed(db, chai.id) == 3
+    assert (await summary.stock_at(db, chai.id)).committed == 3
 
     # Cancelling cancels what is pending and keeps what shipped.
     await orders.cancel(db, order)
@@ -195,7 +195,7 @@ async def test_an_order_ships_cancels_and_reopens(db: WriteSession, main: Locati
         ShipmentStatus.CANCELLED,
         ShipmentStatus.SHIPPED,
     )
-    assert await orders.committed(db, chai.id) == 0
+    assert (await summary.stock_at(db, chai.id)).committed == 0
     assert await _refused(orders.cancel(db, order)) is OrderError.ORDER_CANCELLED
     assert await _refused(orders.add_line(db, order, chai.id, Decimal(1))) is (
         OrderError.ORDER_CANCELLED
@@ -206,7 +206,7 @@ async def test_an_order_ships_cancels_and_reopens(db: WriteSession, main: Locati
 
     await orders.reopen(db, order)
     assert order.status is OrderStatus.OPEN
-    assert await orders.committed(db, chai.id) == 3
+    assert (await summary.stock_at(db, chai.id)).committed == 3
     assert await _refused(orders.reopen(db, order)) is OrderError.ORDER_NOT_CANCELLED
     assert await _refused(orders.delete(db, order)) is OrderError.ORDER_SHIPPED
     await shipments.unship(db, first)
@@ -222,8 +222,8 @@ async def test_what_is_on_hold_is_not_available(db: WriteSession, main: Location
 
     await hold(suspect)
 
-    assert await orders.available(db, chai.id, main.id) == 6
-    assert await orders.available(db, chai.id) == 6
+    assert (await summary.stock_at(db, chai.id, main.id)).available == 6
+    assert (await summary.stock_at(db, chai.id)).available == 6
 
 
 async def test_an_open_order_is_short_of_what_its_location_lacks(

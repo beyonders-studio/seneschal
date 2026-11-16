@@ -23,6 +23,7 @@ from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard import summary
 from hoard.api.adjustments import location_or_main
 from hoard.api.deps import HoardError
 from hoard.api.properties import HoardPropertySummary, values_of
@@ -45,7 +46,6 @@ from hoard.records import (
     Recipe,
     RecipeLine,
     RecordKind,
-    StockLevel,
     StocktakeRow,
 )
 from hoard.stock import StockRefused, adjust
@@ -122,11 +122,17 @@ class ItemBin(BaseModel):
 
 
 class ItemStockRead(BaseModel):
-    """What is on hand of an item at one location, and its bin there."""
+    """An item's stock at one location, and its bin there (``hoard.summary``)."""
 
     location_id: int
+    #: What is on hand there.
     quantity: Decimal
     bin: ItemBin | None
+    #: What its recipe could make there from what is usable; null with no
+    #: recipe or no lines.
+    could_make: Decimal | None
+    #: The date of the latest stocktake that counted it there.
+    last_stocktake: date | None
 
 
 class ItemLotRead(BaseModel):
@@ -146,40 +152,69 @@ class ItemLotRead(BaseModel):
 
 
 class ItemHoldings(BaseModel):
-    """An item's stock at each location it has been at or has a bin at, and
-    its lots."""
+    """An item's figures (``hoard.summary``), its stock at each location it
+    has stock at, was counted at, could make some at or has a bin at, and its
+    lots."""
 
     on_hand: Decimal
+    #: What it could make at every location together; null with no recipe or
+    #: no lines.
+    potential: Decimal | None
+    #: What its completed runs made.
+    made: Decimal
+    #: The date of the latest stocktake that counted it.
+    last_stocktake: date | None
     stock: list[ItemStockRead]
     lots: list[ItemLotRead]
 
 
 async def on_hand(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, Decimal]:
     """What is on hand of each item, at all its locations."""
-    totals = await db.exec(
-        select(StockLevel.item_id, func.sum(StockLevel.quantity))
-        .where(col(StockLevel.item_id).in_(list(item_ids)))
-        .group_by(col(StockLevel.item_id))
-    )
-    return {item_id: Decimal(total) for item_id, total in totals}
+    held = await summary.stock(db, item_ids)
+    return {
+        item_id: sum((at.on_hand for at in locations.values()), Decimal(0))
+        for item_id, locations in held.items()
+    }
 
 
 async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemHoldings]:
-    """Each item's stock and bin per location, and its lots, oldest first."""
+    """Each item's figures, its stock and bin per location, and its lots,
+    oldest first."""
     ids = list(item_ids)
-    held = {item_id: ItemHoldings(on_hand=Decimal(0), stock=[], lots=[]) for item_id in ids}
-    levels = await db.exec(select(StockLevel).where(col(StockLevel.item_id).in_(ids)))
-    bins = await db.exec(select(Bin).where(col(Bin.item_id).in_(ids)))
-    at: dict[tuple[int, int], ItemStockRead] = {}
-    for level in levels:
-        at[level.item_id, level.location_id] = ItemStockRead(
-            location_id=level.location_id, quantity=level.quantity, bin=None
+    figures = await summary.summarise(db, ids)
+    held = {
+        item_id: ItemHoldings(
+            on_hand=figures[item_id].stock.on_hand,
+            potential=figures[item_id].potential,
+            made=figures[item_id].made,
+            last_stocktake=figures[item_id].last_stocktake,
+            stock=[],
+            lots=[],
         )
-        held[level.item_id].on_hand += level.quantity
+        for item_id in ids
+    }
+    at: dict[tuple[int, int], ItemStockRead] = {
+        (item_id, location_id): ItemStockRead(
+            location_id=location_id,
+            quantity=there.stock.on_hand,
+            bin=None,
+            could_make=there.could_make,
+            last_stocktake=there.last_stocktake,
+        )
+        for item_id in ids
+        for location_id, there in figures[item_id].locations.items()
+    }
+    bins = await db.exec(select(Bin).where(col(Bin.item_id).in_(ids)))
     for kept in bins:
         row = at.setdefault(
             (kept.item_id, kept.location_id),
-            ItemStockRead(location_id=kept.location_id, quantity=Decimal(0), bin=None),
+            ItemStockRead(
+                location_id=kept.location_id,
+                quantity=Decimal(0),
+                bin=None,
+                could_make=None,
+                last_stocktake=None,
+            ),
         )
         row.bin = ItemBin.model_validate(kept, from_attributes=True)
     for (item_id, _), row in sorted(at.items()):

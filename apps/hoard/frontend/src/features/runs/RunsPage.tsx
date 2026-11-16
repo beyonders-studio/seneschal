@@ -38,15 +38,69 @@ export function RunBadges({ run }: { run: Pick<RunSummary, "status" | "uncosted"
   );
 }
 
+/** Runs, each opening its page: what it makes, its status, what it planned
+ *  and made, its deadline and who it is assigned to, and to a member who sees
+ *  costs, its cost. */
+export function RunsTable({ runs }: { runs: RunSummary[] }) {
+  const { t } = useTranslation("production");
+  const seesCosts = useSeesCosts();
+  const money = useMoney();
+  const { date, item, quantity } = useMovementLabels();
+  const memberName = useMemberNames(runs.map((run) => run.assignee_ref));
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t("runs.code")}</TableHead>
+          <TableHead>{t("runs.making")}</TableHead>
+          <TableHead>{t("runs.statusLabel")}</TableHead>
+          <TableHead className="text-right">{t("runs.planned")}</TableHead>
+          <TableHead className="text-right">{t("runs.actual")}</TableHead>
+          <TableHead>{t("runs.deadline")}</TableHead>
+          <TableHead>{t("runs.assignee")}</TableHead>
+          {seesCosts && <TableHead className="text-right">{t("hoard:common.cost")}</TableHead>}
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {runs.map((run) => (
+          <TableRow key={run.id}>
+            <TableCell>
+              <Link
+                to="/production/runs/$runId"
+                params={{ runId: String(run.id) }}
+                className="font-medium underline-offset-4 hover:underline"
+              >
+                {run.code}
+              </Link>
+            </TableCell>
+            <TableCell>{item(run.item)}</TableCell>
+            <TableCell>
+              <RunBadges run={run} />
+            </TableCell>
+            <TableCell className="text-right">
+              {quantity(run.planned_quantity ?? run.planned_batches)}
+            </TableCell>
+            <TableCell className="text-right">
+              {run.actual_quantity === null ? "" : quantity(run.actual_quantity)}
+            </TableCell>
+            <TableCell>{run.deadline_on ? date(run.deadline_on) : ""}</TableCell>
+            <TableCell>{run.assignee_ref ? memberName(run.assignee_ref) : ""}</TableCell>
+            {seesCosts && (
+              <TableCell className="text-right">{run.cost ? money(run.cost) : ""}</TableCell>
+            )}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 /** The production runs list, under Production: those not completed first,
  *  filtered by status, and opening one. */
 export function RunsPage() {
   const { t } = useTranslation("production");
   const navigate = useNavigate();
   const { read_only } = useSession();
-  const seesCosts = useSeesCosts();
-  const money = useMoney();
-  const { date, item, quantity } = useMovementLabels();
   const [status, setStatus] = useState<RunStatus | null>(null);
   const [page, setPage] = useState(1);
   const [adding, setAdding] = useState(false);
@@ -55,7 +109,6 @@ export function RunsPage() {
     limit: PAGE_SIZE,
     ...(status ? { status } : {}),
   });
-  const memberName = useMemberNames(runs.data?.items.map((run) => run.assignee_ref) ?? []);
 
   const add = (
     <Button onClick={() => setAdding(true)} disabled={read_only}>
@@ -79,50 +132,7 @@ export function RunsPage() {
   else
     body = (
       <>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("runs.code")}</TableHead>
-              <TableHead>{t("runs.making")}</TableHead>
-              <TableHead>{t("runs.statusLabel")}</TableHead>
-              <TableHead className="text-right">{t("runs.planned")}</TableHead>
-              <TableHead className="text-right">{t("runs.actual")}</TableHead>
-              <TableHead>{t("runs.deadline")}</TableHead>
-              <TableHead>{t("runs.assignee")}</TableHead>
-              {seesCosts && <TableHead className="text-right">{t("hoard:common.cost")}</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {runs.data.items.map((run) => (
-              <TableRow key={run.id}>
-                <TableCell>
-                  <Link
-                    to="/production/runs/$runId"
-                    params={{ runId: String(run.id) }}
-                    className="font-medium underline-offset-4 hover:underline"
-                  >
-                    {run.code}
-                  </Link>
-                </TableCell>
-                <TableCell>{item(run.item)}</TableCell>
-                <TableCell>
-                  <RunBadges run={run} />
-                </TableCell>
-                <TableCell className="text-right">
-                  {quantity(run.planned_quantity ?? run.planned_batches)}
-                </TableCell>
-                <TableCell className="text-right">
-                  {run.actual_quantity === null ? "" : quantity(run.actual_quantity)}
-                </TableCell>
-                <TableCell>{run.deadline_on ? date(run.deadline_on) : ""}</TableCell>
-                <TableCell>{run.assignee_ref ? memberName(run.assignee_ref) : ""}</TableCell>
-                {seesCosts && (
-                  <TableCell className="text-right">{run.cost ? money(run.cost) : ""}</TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <RunsTable runs={runs.data.items} />
         {runs.data.total > PAGE_SIZE && (
           <PaginationBar
             page={page}

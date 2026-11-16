@@ -6,6 +6,12 @@ import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
+import {
+  AdjustmentsHistory,
+  LastStocktake,
+  RunsHistory,
+  StocktakesHistory,
+} from "@/features/items/History";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
 import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { ItemPicture } from "@/features/items/ItemPicture";
@@ -53,6 +59,29 @@ const AverageCost = ({ item }: Shown) => {
 const useRefetch = (item: BaseDetail) => {
   const queryClient = useQueryClient();
   return () => void queryClient.invalidateQueries({ queryKey: getReadBaseQueryKey(item.id) });
+};
+
+/** What its recipe could make from what is usable at every location together. */
+const Potential = ({ item }: { item: BaseDetail }) => {
+  const quantity = useQuantity();
+  const unit = useSettingsNames().unit(item.tracking_unit_id);
+  return (
+    item.potential !== null && (
+      <span className="tabular-nums">
+        {quantity(item.potential)} {unit}
+      </span>
+    )
+  );
+};
+
+const Made = ({ item }: { item: BaseDetail }) => {
+  const quantity = useQuantity();
+  const unit = useSettingsNames().unit(item.tracking_unit_id);
+  return (
+    <span className="tabular-nums">
+      {quantity(item.made)} {unit}
+    </span>
+  );
 };
 
 const Stock = ({ item }: { item: BaseDetail }) => (
@@ -117,6 +146,14 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
     ),
   ],
   pageFields: [
+    builtin("potential", "catalog:items.potential", (base) => base.potential, Potential),
+    builtin("made", "catalog:items.made", (base) => base.made, Made),
+    builtin(
+      "last_stocktake",
+      "catalog:items.lastStocktake",
+      (base) => base.last_stocktake,
+      LastStocktake
+    ),
     builtin("picture", "catalog:items.picture", (base) => base.picture_id, Picture),
     builtin(
       "notes",
@@ -138,6 +175,24 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       ({ item }) => <LotsTable lots={item.lots} />
     ),
     builtin(
+      "runs",
+      "catalog:history.runs",
+      (base) => base.id,
+      ({ item }) => <RunsHistory itemId={item.id} made />
+    ),
+    builtin(
+      "adjustments",
+      "catalog:history.adjustments",
+      (base) => base.id,
+      ({ item }) => <AdjustmentsHistory itemId={item.id} />
+    ),
+    builtin(
+      "stocktakes",
+      "catalog:history.stocktakes",
+      (base) => base.id,
+      ({ item }) => <StocktakesHistory itemId={item.id} />
+    ),
+    builtin(
       "documents",
       "documents:section.title",
       (base) => base.id,
@@ -155,6 +210,9 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
           type: "section",
           children: [
             "on_hand",
+            "potential",
+            "made",
+            "last_stocktake",
             "low_stock_limit",
             "sku",
             "category",
@@ -168,8 +226,11 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
         at(5, field("recipe")),
         at(6, field("stock")),
         at(7, field("lots")),
-        at(8, field("documents")),
-        at(9, { type: "byline" }),
+        at(8, field("runs")),
+        at(9, field("adjustments")),
+        at(10, field("stocktakes")),
+        at(11, field("documents")),
+        at(12, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

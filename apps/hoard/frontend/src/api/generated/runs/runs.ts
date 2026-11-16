@@ -55,7 +55,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Production runs, those not completed first, then the latest.
+ * Production runs, those not completed first, then the latest: of one
+ * status, making one item, or with a line using one item, when asked.
  * @summary List Runs
  */
 export const listRuns = (
@@ -101,7 +102,8 @@ export type ListRunsQueryResult = NonNullable<Awaited<ReturnType<typeof listRuns
 export type ListRunsQueryError = ErrorType<HTTPValidationError>;
 
 /**
- * Production runs, those not completed first, then the latest.
+ * Production runs, those not completed first, then the latest: of one
+ * status, making one item, or with a line using one item, when asked.
  * @summary List Runs
  */
 export function useListRuns<
@@ -124,7 +126,8 @@ export function useListRuns<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Production runs, those not completed first, then the latest.
+ * Production runs, those not completed first, then the latest: of one
+ * status, making one item, or with a line using one item, when asked.
  * @summary List Runs
  */
 export function useListRuns<
@@ -147,7 +150,8 @@ export function useListRuns<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Production runs, those not completed first, then the latest.
+ * Production runs, those not completed first, then the latest: of one
+ * status, making one item, or with a line using one item, when asked.
  * @summary List Runs
  */
 export function useListRuns<
@@ -162,7 +166,8 @@ export function useListRuns<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Production runs, those not completed first, then the latest.
+ * Production runs, those not completed first, then the latest: of one
+ * status, making one item, or with a line using one item, when asked.
  * @summary List Runs
  */
 export function useListRuns<

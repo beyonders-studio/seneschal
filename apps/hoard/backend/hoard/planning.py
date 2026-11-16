@@ -15,7 +15,7 @@ cancelled one, with a bundle counted as the parts it sells.
   it, the rate is scaled by how those days last year compared with the
   :data:`RATE_DAYS` days before them.
 * **Suggested runs.** What a variation is short is its expected sales less
-  what is available (``hoard.orders.available``), what is curing (its lots on
+  what is available (``hoard.summary``), what is curing (its lots on
   a curing hold) and what its planned and started runs will make, in whole
   batches of its recipe. A base is short by what the planned, started and
   suggested runs take of it, less the same three; bases are worked out from
@@ -61,7 +61,7 @@ from sqlalchemy import and_, func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import orders, recipes
+from hoard import orders, recipes, summary
 from hoard import recall as recalls
 from hoard.events import item_name
 from hoard.holds import held_lots
@@ -264,7 +264,7 @@ async def plan(db: AsyncSession, today: date) -> Plan:
 
     async def suggest(item_id: int, needed: Decimal, needed_on: date, base: bool) -> None:
         recipe = made_by[item_id]
-        available = await orders.available(db, item_id)
+        available = (await summary.stock_at(db, item_id)).available
         short = needed - available - curing[item_id] - planned[item_id]
         if short <= 0:
             return
@@ -401,7 +401,7 @@ async def materials_short(db: AsyncSession, runs: Iterable[Run]) -> list[Materia
     for material in materials:
         short = (
             needed[material.id]
-            - await orders.available(db, material.id)
+            - (await summary.stock_at(db, material.id)).available
             - Decimal(on_order.get(material.id, 0))
         )
         if short <= 0:
