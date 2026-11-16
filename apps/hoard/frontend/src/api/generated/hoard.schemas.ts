@@ -3191,19 +3191,10 @@ export interface StoreRead {
   imported_at: string | null;
   sync_job_id: number | null;
   locations: StoreLocationRead[];
-  wholesale_segment: string | null;
   listings: number;
   linked: number;
   pushes_queued: number;
   pushes_failed: number;
-}
-
-/**
- * One of the store's customer segments.
- */
-export interface StoreSegmentRead {
-  id: string;
-  name: string;
 }
 
 /**
@@ -3214,10 +3205,6 @@ export interface StoreSegmentRead {
 export interface StoreSyncWrite {
   locations?: StoreLocationChoice[];
   fields?: StoreFieldChoiceWrite[];
-}
-
-export interface StoreWholesaleWrite {
-  segment_id: string | null;
 }
 
 /**

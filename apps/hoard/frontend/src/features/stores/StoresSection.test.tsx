@@ -21,7 +21,6 @@ const SYNCED: StoreRead = {
   state: "synced",
   imported_at: "2026-11-14T09:00:00Z",
   sync_job_id: 8,
-  wholesale_segment: null,
   locations: [{ id: 5, external_id: "loc-1", name: "Shop", location_id: 3 }],
   listings: 4,
   linked: 3,
@@ -142,8 +141,7 @@ describe("StoresSection", () => {
 
     const store = await screen.findByRole("article", { name: "Tea House" });
     within(store).getByRole("button", { name: "Read the store again" });
-    // Where its location sells from, and its wholesale customers.
-    expect(within(store).getAllByRole("combobox")).toHaveLength(2);
+    within(store).getByRole("combobox");
     fireEvent.click(within(store).getByRole("button", { name: "Remove sync" }));
     const confirm = await screen.findByRole("alertdialog", {
       name: "Remove the sync with Tea House?",
@@ -156,33 +154,6 @@ describe("StoresSection", () => {
         asked.some((request) => request.method === "post" && request.url?.endsWith("/unsync"))
       ).toBe(true)
     );
-  });
-
-  it("lets an admin pick the store's segment of wholesale customers", async () => {
-    const asked = await openSignedIn(
-      "/settings",
-      admin,
-      answers(SYNCED, {
-        "GET /api/v1/stores/3/segments": {
-          status: 200,
-          data: [{ id: "gid://shopify/Segment/1", name: "Wholesale" }],
-        },
-        "PUT /api/v1/stores/3/wholesale": {
-          status: 200,
-          data: { ...SYNCED, wholesale_segment: "gid://shopify/Segment/1" },
-        },
-      })
-    );
-
-    const picker = await screen.findByRole("combobox", { name: "Wholesale customers" });
-    expect(picker.textContent).toBe("None: only companies");
-    await waitFor(() => expect(picker).toHaveProperty("disabled", false));
-    await choose("Wholesale customers", "Wholesale");
-
-    await waitFor(() => {
-      const sent = asked.find((request) => request.method === "put");
-      expect(JSON.parse(String(sent?.data))).toEqual({ segment_id: "gid://shopify/Segment/1" });
-    });
   });
 
   it("walks an admin through syncing a pending store, then queues it", async () => {

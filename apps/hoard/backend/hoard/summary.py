@@ -55,7 +55,7 @@ else works these figures out.
   that went out with no cost are counted, and only orders in the
   organization's currency count toward revenue and cost: those in another
   are counted apart. Each line counts in its order's group: **wholesale**
-  for a store's order the store sold wholesale (``hoard.records.Order``),
+  for a store's order a company bought (``hoard.records.Order``),
   **retail** for every other.
 * **Pricing** (:func:`pricing`), of a variation: its cost, of its average or
   last known cost (its contents' for a bundle), the labour a unit of its
@@ -794,7 +794,7 @@ async def sales(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, SalesGro
         # What it sells now; a pending or cancelled order sold what it shipped.
         selling = orders.selling(line) if live else of.shipped
         groups = found[line.item_id]
-        figures = groups.retail if order.wholesale is None else groups.wholesale
+        figures = groups.wholesale if order.wholesale else groups.retail
         figures.sold += min(line.quantity, max(selling, of.shipped))
         figures.shipped += of.shipped - of.returned
         if order.status is OrderStatus.OPEN and line.id in parts:

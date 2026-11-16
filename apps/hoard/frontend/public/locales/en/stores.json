@@ -31,14 +31,6 @@
     "showFields": "Show the fields",
     "hideFields": "Hide the fields"
   },
-  "wholesale": {
-    "label": "Wholesale customers",
-    "hint": "The store's customer segment whose orders count as wholesale. An order a company bought through the store is wholesale either way.",
-    "none": "None: only companies",
-    "saved": "Saved. Hoard is marking the store's orders again.",
-    "saveFailed": "The segment couldn't be saved.",
-    "loadFailed": "The store's segments couldn't be read."
-  },
   "channels": {
     "shopify": "Shopify",
     "woocommerce": "WooCommerce"
@@ -126,8 +118,7 @@
     "STORE_FIELD_UNKNOWN": "The store no longer has that field.",
     "STORE_FIELD_TARGET_INVALID": "That field can't fill that in Hoard.",
     "STORE_FIELD_VALUE_INVALID": "The store's field can't hold that value.",
-    "LOCATION_CONSIGNEE": "That's a consignee's location. No store sells its stock.",
-    "SEGMENT_UNKNOWN": "The store no longer has that segment."
+    "LOCATION_CONSIGNEE": "That's a consignee's location. No store sells its stock."
   },
   "sync": {
     "open": "Sync with {{channel}}",

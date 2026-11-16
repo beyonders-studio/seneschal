@@ -21,8 +21,6 @@ A connector:
   at each location (:meth:`Connector.stock_levels`), for a store's sync;
 * reads the store's orders, with their fulfillments and whether a company
   bought them, and pushes a shipment back as a fulfillment;
-* lists the store's customer segments (:meth:`Connector.segments`), and
-  answers which of some customers are in one (:meth:`Connector.in_segment`);
 * reads a webhook delivery Initiative checked and forwarded as a
   :class:`Nudge`: which record changed, which Hoard refetches, with the body
   of an order's delivery, and reads that body as the order it describes, for
@@ -40,7 +38,7 @@ pages translate.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
@@ -399,15 +397,6 @@ class Connector(Protocol):
     async def push_fulfillment(self, order_id: str, fulfillment: StoreFulfillment) -> str:
         """Record a shipment at the store as a fulfillment of the order's lines,
         and answer the store's id for it."""
-        ...
-
-    async def segments(self) -> dict[str, str]:
-        """The store's customer segments: each one's name, by the store's id."""
-        ...
-
-    async def in_segment(self, segment_id: str, customers: Collection[str]) -> set[str]:
-        """Those of ``customers``, by the store's numbers for them, in a
-        segment now."""
         ...
 
     def parse_webhook(self, headers: Mapping[str, str], body: str) -> Nudge | None:

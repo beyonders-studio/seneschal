@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import AsyncIterator, Collection, Mapping, Sequence
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -78,12 +78,6 @@ class FakeConnector:
     field_store: dict[str, dict[str, str]] = field(default_factory=dict)
     #: Each field value written to it.
     field_writes: list[FieldValue] = field(default_factory=list)
-    #: Its customer segments' names, by id.
-    shop_segments: dict[str, str] = field(default_factory=dict)
-    #: The customers in each segment, by the segment's id.
-    members: dict[str, set[str]] = field(default_factory=dict)
-    #: Each segment asked after, with the customers asked about, in order.
-    membership_reads: list[tuple[str, list[str]]] = field(default_factory=list)
 
     def _checked(self) -> None:
         if self.refuse is not None:
@@ -180,15 +174,6 @@ class FakeConnector:
         made = replace(fulfillment, id=f"fulfillment-{len(self.fulfillments) + 1}")
         self.fulfillments.append((order_id, made))
         return str(made.id)
-
-    async def segments(self) -> dict[str, str]:
-        self._checked()
-        return dict(self.shop_segments)
-
-    async def in_segment(self, segment_id: str, customers: Collection[str]) -> set[str]:
-        self._checked()
-        self.membership_reads.append((segment_id, sorted(customers)))
-        return set(customers) & self.members.get(segment_id, set())
 
     def order_webhook(self, order: StoreOrder) -> tuple[dict[str, str], str]:
         """The headers and body of the webhook the store sends about

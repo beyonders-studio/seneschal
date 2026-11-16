@@ -37,7 +37,6 @@ from hoard.records import (
     StoreNudge,
     StoreProductCopy,
     Variation,
-    WholesaleBuyer,
 )
 from hoard.stock import add_product, on_hand
 from seneschal_core.api import Plugin
@@ -452,7 +451,7 @@ async def test_the_history_import_copies_orders_moving_no_stock_but_what_is_open
     assert store.orders_since is not None
 
 
-async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
+async def test_a_store_order_a_company_bought_is_wholesale(
     db: WriteSession,
     store: Store,
     fake: FakeConnector,
@@ -461,17 +460,13 @@ async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
     organization_id: int,
 ):
     await sold("Tea", "v-tea")
-    store.wholesale_segment = "seg-1"
     await db.commit()
-    fake.members = {"seg-1": {"7"}}
     fake.history = [
         _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", number=f"#{at}", **fields)
-        for at, fields in enumerate(
-            [{"customer": "7"}, {"customer": "8", "company": True}, {"customer": "8"}, {}], 1
-        )
+        for at, fields in enumerate([{"customer": "8", "company": True}, {"customer": "8"}], 1)
     ]
 
-    async def marks() -> dict[str | None, WholesaleBuyer | None]:
+    async def marks() -> dict[str | None, bool]:
         found = await db.exec(
             select(Order.external_id, Order.wholesale).execution_options(populate_existing=True)
         )
@@ -479,34 +474,14 @@ async def test_a_store_order_is_wholesale_when_a_company_or_the_segment_buys_it(
 
     await sync.import_history(plugin, organization_id, store, fake)
 
-    assert await marks() == {
-        "o-1": WholesaleBuyer.SEGMENT,
-        "o-2": WholesaleBuyer.COMPANY,
-        "o-3": None,
-        "o-4": None,
-    }
-    # The store is asked once, after the customers of the orders no company bought.
-    assert fake.membership_reads == [("seg-1", ["7", "8"])]
+    assert await marks() == {"o-1": True, "o-2": False}
 
-    # An order arriving alone asks after its one customer.
-    await sync.copy_order(
-        db, store, fake, _order(_line("l-5", "v-tea", "1"), order_id="o-5", customer="7")
-    )
-    assert fake.membership_reads[1:] == [("seg-1", ["7"])]
-    # Each keeps what it was marked when it arrived, but a company is a company.
-    fake.members = {}
-    for at, fields in ((1, {"customer": "7"}), (3, {"customer": "8", "company": True})):
-        found = _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", **fields)
+    # A copy that no longer names the company keeps the order wholesale.
+    for at, company in ((1, False), (2, True)):
+        found = _order(_line(f"l-{at}", "v-tea", "1"), order_id=f"o-{at}", company=company)
         await sync.copy_order(db, store, fake, found)
     await db.commit()
-    assert await marks() == {
-        "o-1": WholesaleBuyer.SEGMENT,
-        "o-2": WholesaleBuyer.COMPANY,
-        "o-3": WholesaleBuyer.COMPANY,
-        "o-4": None,
-        "o-5": WholesaleBuyer.SEGMENT,
-    }
-    assert len(fake.membership_reads) == 2
+    assert await marks() == {"o-1": True, "o-2": True}
 
 
 async def test_the_worker_refetches_what_each_nudge_names(

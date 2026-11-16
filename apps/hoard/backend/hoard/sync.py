@@ -20,13 +20,8 @@ the one Hoard holds, by the store's ``updated_at``, is skipped. An order that
 first claims its stock makes what it sells where auto-manufacture says so
 (``hoard.automanufacture``).
 
-A store's order is **wholesale** when the store says a company bought it, or
-when it first arrives and its customer is in the store's wholesale segment
-(:attr:`hoard.records.Store.wholesale_segment`): asked of the store for the
-one customer of an order a nudge refetches, and for a batch of orders, once
-for all their customers. Hoard keeps why on the order, never who is in the segment; an
-order keeps the segment's answer from when it arrived until the segment is
-chosen again (``hoard.store_sync``).
+A store's order is **wholesale** once the store says a company bought it
+(its B2B), and Hoard keeps nothing else about the buyer.
 
 A nudge refetches its order from the store. An order the store no longer
 returns, one older than the window it keeps, is copied from the webhook's own
@@ -91,7 +86,6 @@ from hoard.records import (
     StoreLocation,
     StoreNudge,
     Variation,
-    WholesaleBuyer,
 )
 from hoard.shipments import ShipmentRefused
 from hoard.stock import main_location
@@ -154,29 +148,11 @@ async def _location(db: WriteSession, mapped: dict[str, int], found: StoreOrder)
 
 class _Items:
     """The item each of a store's lines sells, through its listing: a product
-    with no listing linked yet is read from the store and matched, once. And
-    whether a customer is in the store's wholesale segment: among ``members``,
-    the customers of a batch of orders the store answered were in it, or else
-    asked of the store."""
+    with no listing linked yet is read from the store and matched, once."""
 
-    def __init__(
-        self,
-        db: WriteSession,
-        store: Store,
-        connector: Connector,
-        members: set[str] | None = None,
-    ) -> None:
+    def __init__(self, db: WriteSession, store: Store, connector: Connector) -> None:
         self.db, self.store, self.connector = db, store, connector
         self.read: set[str] = set()
-        self.members = members
-
-    async def in_segment(self, customer: str | None) -> bool:
-        segment = self.store.wholesale_segment
-        if segment is None or customer is None:
-            return False
-        if self.members is not None:
-            return customer in self.members
-        return customer in await self.connector.in_segment(segment, [customer])
 
     async def _linked(self, line: StoreLine) -> int | None:
         found = await self.db.exec(
@@ -442,7 +418,6 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
         return order
     mapped = await _mapped(db, store)
     before = None if order is None else order.status
-    arrived = order is None
     if order is None:
         order = Order(
             organization_id=db.organization_id,
@@ -463,10 +438,7 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
         currency if len(currency) == 3 and currency.isascii() and currency.isalpha() else None
     )
     order.store_updated_at = found.updated_at or order.store_updated_at
-    if found.company:
-        order.wholesale = WholesaleBuyer.COMPANY
-    elif arrived and await items.in_segment(found.customer):
-        order.wholesale = WholesaleBuyer.SEGMENT
+    order.wholesale = order.wholesale or found.company
     await db.flush()
     selling_changed = await _copy_lines(db, items, order, found)
 
@@ -707,17 +679,8 @@ async def _copy_all(
     """Copy in each order of ``found``, each committed on its own, telling
     ``progress`` every :data:`PRODUCTS_AT_ONCE`. One that fails is left for
     the next reconcile. Answers the store, as read again after a failure, and
-    whether every order was copied. The store is asked once which of the
-    orders' customers are in its wholesale segment."""
-    segment = store.wholesale_segment
-    members = (
-        None
-        if segment is None
-        else await connector.in_segment(
-            segment, {order.customer for order in found if order.customer and not order.company}
-        )
-    )
-    items = _Items(db, store, connector, members)
+    whether every order was copied."""
+    items = _Items(db, store, connector)
     copied = True
     for done, order in enumerate(found, 1):
         try:

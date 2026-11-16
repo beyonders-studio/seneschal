@@ -49,7 +49,6 @@ JOB_HANDLERS: dict[str, jobs.Handler] = {
     export.EXPORT_JOB: export.export,
     store_sync.STORE_SYNC_JOB: store_sync.run,
     store_fields.STORE_FIELDS_JOB: store_sync.run_fields,
-    store_sync.WHOLESALE_JOB: store_sync.run_wholesale,
 }
 
 

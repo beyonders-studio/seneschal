@@ -23,7 +23,6 @@ from hoard.records import (
     Product,
     Store,
     Variation,
-    WholesaleBuyer,
 )
 from hoard.stock import add_product, add_variation, adjust, transfer
 from seneschal_core.db import WriteSession
@@ -215,7 +214,7 @@ async def test_a_product_adds_up_its_variations_retail_and_wholesale_apart(
         (large.id, "2", "8"),
         store_id=store.id,
         external_id="o-1",
-        wholesale=WholesaleBuyer.COMPANY,
+        wholesale=True,
     )
     await db.commit()
     await sign_in(client, (plugin_manifest.SEE_COSTS,))

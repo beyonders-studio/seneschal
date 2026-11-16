@@ -293,15 +293,6 @@ class OrderStatus(StrEnum):
     CANCELLED = "cancelled"
 
 
-class WholesaleBuyer(StrEnum):
-    """Why a store's order is wholesale, as the store said when it was read."""
-
-    #: The store's buyer is a company.
-    COMPANY = "company"
-    #: The customer belongs to the store's wholesale segment.
-    SEGMENT = "segment"
-
-
 class ShipmentStatus(StrEnum):
     """Where a shipment stands. Only a shipped one has moved stock."""
 
@@ -1593,9 +1584,6 @@ class Store(OrganizationRow, Stamped, table=True):
     orders_since: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     products_since: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
     imported_at: datetime | None = Field(default=None, sa_type=DateTime(timezone=True))
-    #: The store's id for the customer segment whose orders are wholesale;
-    #: None for none.
-    wholesale_segment: str | None = None
 
 
 class StoreLocation(OrganizationRow, Stamped, table=True):
@@ -1913,12 +1901,9 @@ class Order(OrganizationRow, Stamped, table=True):
     #: The ISO 4217 code a store's order is in, when the store said; None
     #: for an order in the organization's currency, as one made by hand is.
     currency: str | None = None
-    #: Why a store's order is wholesale; None for a retail one, as a hand
-    #: order always is.
-    wholesale: WholesaleBuyer | None = Field(
-        default=None,
-        sa_column=enum_column(WholesaleBuyer, "wholesale_buyer", nullable=True),
-    )
+    #: Whether the store says a company bought it, which makes it wholesale;
+    #: never for an order made by hand.
+    wholesale: bool = False
 
 
 class OrderLine(OrganizationRow, Stamped, table=True):

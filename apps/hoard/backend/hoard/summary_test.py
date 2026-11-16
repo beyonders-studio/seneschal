@@ -25,7 +25,6 @@ from hoard.records import (
     Stocktake,
     Store,
     Unit,
-    WholesaleBuyer,
 )
 from hoard.stock import add_product, adjust
 from hoard.stocktakes import confirm_row, start_stocktake
@@ -480,12 +479,12 @@ async def test_a_wholesale_orders_lines_count_in_the_wholesale_group(
     db.add(store)
     await db.flush()
     await _ship(db, main, await sell((chai.id, "2", "10")))
-    for buyer, external_id in ((WholesaleBuyer.COMPANY, "o-1"), (WholesaleBuyer.SEGMENT, "o-2")):
+    for external_id in ("o-1", "o-2"):
         await _ship(
             db,
             main,
             await sell(
-                (chai.id, "3", "6"), store_id=store.id, external_id=external_id, wholesale=buyer
+                (chai.id, "3", "6"), store_id=store.id, external_id=external_id, wholesale=True
             ),
         )
     # In another currency: counted apart, in its own group.
@@ -493,7 +492,7 @@ async def test_a_wholesale_orders_lines_count_in_the_wholesale_group(
         (chai.id, "1", "6"),
         store_id=store.id,
         external_id="o-3",
-        wholesale=WholesaleBuyer.SEGMENT,
+        wholesale=True,
         currency="EUR",
     )
     await _ship(db, main, euros)

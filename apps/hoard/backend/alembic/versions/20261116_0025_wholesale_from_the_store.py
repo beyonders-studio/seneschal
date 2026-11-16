@@ -1,6 +1,6 @@
-"""Wholesale read from the store, in place of price points: why a store's
-order is wholesale, and the customer segment a store's wholesale customers
-are in. Price points, each variation's price at them and each contact's go.
+"""Wholesale read from the store, in place of price points: whether a
+company bought a store's order. Price points, each variation's price at them
+and each contact's go.
 
 Every store reads its orders again on its next reconcile, which marks those a
 company bought.
@@ -13,7 +13,6 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
-from sqlalchemy.dialects import postgresql
 
 from seneschal_core.migrations import isolate, referable, reference, stamp
 
@@ -28,17 +27,10 @@ def upgrade() -> None:
     op.drop_table("variation_prices")
     op.drop_table("price_points")
 
-    buyer = postgresql.ENUM("company", "segment", name="wholesale_buyer")
-    buyer.create(op.get_bind())
     op.add_column(
         "orders",
-        sa.Column(
-            "wholesale",
-            postgresql.ENUM(name="wholesale_buyer", create_type=False),
-            nullable=True,
-        ),
+        sa.Column("wholesale", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
-    op.add_column("stores", sa.Column("wholesale_segment", sa.Text(), nullable=True))
 
     # A store with no stamp reads every order its reconcile can (``hoard.sync``).
     op.execute("ALTER TABLE stores NO FORCE ROW LEVEL SECURITY")
@@ -53,9 +45,7 @@ def _amount(name: str) -> sa.Column:
 
 
 def downgrade() -> None:
-    op.drop_column("stores", "wholesale_segment")
     op.drop_column("orders", "wholesale")
-    op.execute("DROP TYPE wholesale_buyer")
 
     op.create_table(
         "price_points",
