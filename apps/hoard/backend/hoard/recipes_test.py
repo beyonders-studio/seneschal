@@ -128,6 +128,9 @@ async def test_a_bundle_holds_only_variations_and_its_own_take_no_recipe(
     bundle = Recipe(product_id=box.id)
 
     assert await _refused(db, bundle, Line(tea.id, Decimal(1))) is RecipeError.RECIPE_LINE_KIND
+    # A bundle counts whole variations, so it is never written by ratio.
+    by_ratio = Recipe(product_id=box.id, by_ratio=True, total=Decimal(2))
+    assert await _refused(db, by_ratio, Line(tin.id, Decimal(1))) is RecipeError.RECIPE_BUNDLE_RATIO
     await recipes.save(db, bundle, [Line(tin.id, Decimal(2))])
 
     assert (await db.get_one(Product, box.id)).bundle

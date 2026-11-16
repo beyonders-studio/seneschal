@@ -82,6 +82,7 @@
     "RECIPE_LINE_REPEATED": "Each item goes in once.",
     "RECIPE_CYCLE": "That would make it from itself.",
     "RECIPE_BUNDLE": "A bundle's products take no {{recipe}} of their own and go into no other {{recipe}}.",
+    "RECIPE_BUNDLE_RATIO": "A bundle holds whole products, so it's written by amount, not by ratio.",
     "RECIPE_EXISTS": "It already has a {{recipe}}.",
     "RECIPE_RATIO_TOTAL": "The ingredients total adds up the lines measured like it, and none is: give it a unit one of them is in."
   }
