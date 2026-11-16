@@ -245,3 +245,76 @@ def test_the_base_records_migration_keeps_product_images_and_starts_items_active
 
     assert images == [("Loaf", None, "image/png")]
     assert statuses == [("active", "archived")]
+
+
+def test_the_types_migration_gives_every_record_its_kinds_default_and_keeps_its_page():
+    def migrate(made: AppDatabase) -> None:
+        upgrade(made.owner_url, made.serving_login, "0018")
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+
+            def row(sql: str, *values: object) -> int:
+                [found] = db.execute(sql, values).fetchone() or ()
+                return found
+
+            org = row(
+                "INSERT INTO organizations (community_ref, plugin_install_id) "
+                "VALUES ('types', 1) RETURNING id"
+            )
+            row(
+                "INSERT INTO organizations (community_ref, plugin_install_id) "
+                "VALUES ('untouched', 1) RETURNING id"
+            )
+            unit = row(
+                "INSERT INTO units (organization_id, name) VALUES (%s, 'g') RETURNING id", org
+            )
+            for kind, table in (("material", "materials"), ("base", "bases")):
+                item = row(
+                    "INSERT INTO items (organization_id, kind) VALUES (%s, %s) RETURNING id",
+                    org,
+                    kind,
+                )
+                db.execute(
+                    f"INSERT INTO {table} (id, organization_id, name, tracking_unit_id) "
+                    "VALUES (%s, %s, %s, %s)",
+                    (item, org, kind, unit),
+                )
+            db.execute("INSERT INTO products (organization_id, name) VALUES (%s, 'Loaf')", (org,))
+            for kind, view in (("material", "detail"), ("material", "table"), ("lot", "detail")):
+                db.execute(
+                    "INSERT INTO layouts (organization_id, kind, view, definition) "
+                    "VALUES (%s, %s, %s, '{}')",
+                    (org, kind, view),
+                )
+
+        upgrade(made.owner_url, made.serving_login)
+
+    with migrated_database("hoard_types", migrate) as made:
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            defaults = db.execute(
+                "SELECT o.community_ref, t.kind::text, t.shape FROM item_types t "
+                "JOIN organizations o ON o.id = t.organization_id "
+                "WHERE t.is_default AND t.name IS NULL ORDER BY 1, 2"
+            ).fetchall()
+            typed = db.execute(
+                "SELECT t.kind::text FROM item_types t WHERE t.id IN ("
+                "SELECT type_id FROM materials UNION ALL SELECT type_id FROM bases "
+                "UNION ALL SELECT type_id FROM products) ORDER BY 1"
+            ).fetchall()
+            pages = db.execute(
+                "SELECT l.kind::text, l.view::text, t.kind::text FROM layouts l "
+                "LEFT JOIN item_types t ON t.id = l.type_id ORDER BY 1, 2"
+            ).fetchall()
+
+    assert defaults == [
+        (ref, kind, shape)
+        for ref in ("types", "untouched")
+        for kind, shape in (("base", "base"), ("material", "ingredient"), ("product", "made"))
+    ]
+    assert typed == [("base",), ("material",), ("product",)]
+    assert pages == [
+        ("lot", "detail", None),
+        ("material", "detail", "material"),
+        ("material", "table", None),
+    ]

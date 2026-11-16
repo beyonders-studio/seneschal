@@ -2,7 +2,9 @@ import { Plus, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ItemStatus } from "@/api/generated/hoard.schemas";
+import { type CategoryKind, ItemStatus } from "@/api/generated/hoard.schemas";
+import { IdSelect } from "@/features/items/IdSelect";
+import { useSettingsNames } from "@/features/settings/names";
 import { useSession } from "@/session";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -18,9 +20,11 @@ import { Switch } from "@/ui/switch";
 /** How many items a list shows at once. */
 const PAGE_SIZE = 50;
 
-/** What a list of items is searched for, and which page of it is shown. */
+/** What a list of items is searched for, of which type, and which page of
+ *  it is shown. */
 export function useItemSearch() {
   const [search, setSearch] = useState("");
+  const [typeId, setTypeId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
   const q = useDebouncedValue(search.trim());
   return {
@@ -30,9 +34,20 @@ export function useItemSearch() {
       setSearch(value);
       setPage(1);
     },
+    typeId,
+    /** So does choosing a type. */
+    setTypeId: (value: number | null) => {
+      setTypeId(value);
+      setPage(1);
+    },
     page,
     setPage,
-    params: { q: q || undefined, offset: (page - 1) * PAGE_SIZE, limit: PAGE_SIZE },
+    params: {
+      q: q || undefined,
+      type_id: typeId ?? undefined,
+      offset: (page - 1) * PAGE_SIZE,
+      limit: PAGE_SIZE,
+    },
   };
 }
 
@@ -43,10 +58,11 @@ export interface ShowArchived {
 }
 
 /**
- * A list of items: its search, its button to add one while Hoard may change
- * (when it has `onAdd`), a switch to show archived items too (when it has
- * `archived`), the table, and a pager. Until there is anything to list,
- * `empty` shows in its place.
+ * A list of items: its search, a filter by type (for a kind of record with
+ * types, `typed`), its button to add one while Hoard may change (when it has
+ * `onAdd`), a switch to show archived items too (when it has `archived`), the
+ * table, and a pager. Until there is anything to list, `empty` shows in its
+ * place.
  */
 export function ItemList({
   search,
@@ -58,6 +74,7 @@ export function ItemList({
   onRetry,
   more,
   archived,
+  typed,
   children,
 }: {
   search: ReturnType<typeof useItemSearch>;
@@ -71,10 +88,12 @@ export function ItemList({
   /** What else can be done with the list, before adding to it. */
   more?: ReactNode;
   archived?: ShowArchived;
+  typed?: CategoryKind;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const { read_only } = useSession();
+  const types = useSettingsNames().typesOf(typed ?? "material");
   const add = !read_only && onAdd && (
     <Button onClick={onAdd}>
       <Plus aria-hidden />
@@ -95,7 +114,7 @@ export function ItemList({
     </div>
   );
   if (failed) return <StatusMessage onRetry={onRetry} />;
-  if (total === 0 && !search.params.q && !archived?.shown)
+  if (total === 0 && !search.params.q && search.typeId === null && !archived?.shown)
     return (
       <StatusMessage
         {...empty}
@@ -126,6 +145,17 @@ export function ItemList({
             onChange={(event) => search.setSearch(event.target.value)}
           />
         </div>
+        {typed && (
+          <div className="w-48">
+            <IdSelect
+              aria-label={t("catalog:items.type")}
+              value={search.typeId}
+              options={types}
+              onChange={search.setTypeId}
+              none={t("catalog:items.allTypes")}
+            />
+          </div>
+        )}
         <div className="flex flex-wrap items-center gap-2">
           {showArchived}
           {more}

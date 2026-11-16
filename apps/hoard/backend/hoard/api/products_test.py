@@ -330,8 +330,17 @@ async def test_hoards_own_fields_change_without_the_store(
     await sign_in(client)
 
     kept = await client.put(f"/api/v1/products/{product.id}", json={"name": "Chai", "cure_days": 3})
+    await sign_in(client, admin=True)
+    bought = await client.post(
+        "/api/v1/settings/types", json={"kind": "product", "name": "Bought", "shape": "bought"}
+    )
+    # Hoard's type is its own, and never reaches the store.
+    typed = await client.put(
+        f"/api/v1/products/{product.id}", json={"name": "Chai", "type_id": bought.json()["id"]}
+    )
 
     assert (kept.status_code, kept.json()["cure_days"]) == (200, 3)
+    assert (typed.status_code, typed.json()["type_id"]) == (200, bought.json()["id"])
 
 
 async def test_a_listed_product_is_archived_rather_than_deleted(
@@ -359,3 +368,58 @@ async def test_a_listed_product_is_archived_rather_than_deleted(
     assert renamed.status_code == 200, renamed.text
     assert (await client.delete(f"{path}/variations/{small.id}")).status_code == 204
     assert (await client.delete(path)).status_code == 204
+
+
+async def test_a_new_product_takes_its_categorys_default_type_and_keeps_its_type(
+    client, sign_in, db: WriteSession
+):
+    await sign_in(client, admin=True)
+    types = "/api/v1/settings/types"
+    made = next(
+        each["id"]
+        for each in (await client.get(types, params={"kind": "product"})).json()
+        if each["is_default"]
+    )
+    bought = (
+        await client.post(types, json={"kind": "product", "name": "Bought", "shape": "bought"})
+    ).json()["id"]
+    tins = (await client.post(types, json={"kind": "material", "name": "Tins"})).json()["id"]
+    drinkware = (
+        await client.post(
+            "/api/v1/settings/categories",
+            json={"kind": "product", "name": "Drinkware", "default_type_id": bought},
+        )
+    ).json()["id"]
+
+    async def add(name: str, **fields) -> dict:
+        return (await client.post("/api/v1/products", json={"name": name, **fields})).json()
+
+    mug = await add("Mug", category_id=drinkware)
+    tumbler = await add("Tumbler", category_id=drinkware, type_id=made)
+    chai = await add("Chai")
+    assert [each["type_id"] for each in (mug, tumbler, chai)] == [bought, made, made]
+    refused = await client.post("/api/v1/products", json={"name": "Tin", "type_id": tins})
+    assert (refused.status_code, refused.json()) == (422, {"detail": "TYPE_UNKNOWN"})
+
+    # A category chosen later, or a category's new default, changes no record's type.
+    moved = await client.put(
+        f"/api/v1/products/{chai['id']}", json={"name": "Chai", "category_id": drinkware}
+    )
+    assert moved.json()["type_id"] == made
+    await client.patch(f"/api/v1/settings/categories/{drinkware}", json={"default_type_id": made})
+    assert (await client.get(f"/api/v1/products/{mug['id']}")).json()["type_id"] == bought
+
+    # A type left out of an edit is kept; a type changed changes only the page.
+    await client.put(
+        f"/api/v1/declarations/product/{mug['id']}",
+        json={"ingredient_name": None, "allergens": ["milk"], "fragrance_allergens": None},
+    )
+    kept = await client.put(f"/api/v1/products/{mug['id']}", json={"name": "Mug"})
+    assert kept.json()["type_id"] == bought
+    await client.put(f"/api/v1/products/{mug['id']}", json={"name": "Mug", "type_id": made})
+    declared = (await client.get(f"/api/v1/declarations/product/{mug['id']}")).json()
+    assert (declared["recorded_allergens"], declared["allergens"]) == (["milk"], ["milk"])
+
+    listed = (await client.get("/api/v1/products", params={"type_id": made})).json()
+    assert [each["name"] for each in listed["items"]] == ["Chai", "Mug", "Tumbler"]
+    assert (await client.get("/api/v1/products", params={"type_id": bought})).json()["total"] == 0

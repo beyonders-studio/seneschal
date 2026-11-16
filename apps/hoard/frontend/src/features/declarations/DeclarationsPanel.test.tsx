@@ -75,7 +75,9 @@ describe("DeclarationsPanel", () => {
     );
 
     await screen.findByText("Linalool 0.5%");
-    expect(screen.queryByText(/Limonene/)).toBeNull();
+    // It records limonene too, below the threshold, so its label leaves it out.
+    screen.getByText("Linalool 0.5% and Limonene 0.0005%");
+    expect(screen.queryByText(/^Limonene/)).toBeNull();
     screen.getByText("Declared past 0.001%, the threshold for a product left on the skin.");
     screen.getByText("Fragrance allergens aren't recorded for Rose water.");
   });

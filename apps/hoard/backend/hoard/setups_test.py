@@ -17,10 +17,12 @@ from hoard.records import (
     Category,
     CategoryKind,
     HoldReason,
+    ItemType,
     OrganizationSettings,
     Picking,
     PropertyDefinition,
     RecordKind,
+    TypeShape,
     Unit,
 )
 from hoard.stock import add_default_hold_reasons
@@ -37,6 +39,7 @@ async def _everything(db: WriteSession) -> list[Any]:
     rows: list[Any] = []
     for model in (
         Unit,
+        ItemType,
         Category,
         PropertyDefinition,
         AdjustmentReason,
@@ -172,3 +175,48 @@ async def test_the_standard_units_are_no_start_and_no_setup_brings_one(db: Write
     assert not await setups.started(db)
     for setup in setups.setups().values():
         assert [unit for unit in setup.units if units.match(unit)] == []
+
+
+async def test_a_setup_names_its_types_and_the_categories_that_default_to_them(
+    db: WriteSession,
+):
+    drinks = setups.setups()["drinks"]
+    typed = replace(
+        drinks,
+        types=(
+            setups.SetupType("bought", CategoryKind.PRODUCT, TypeShape.BOUGHT),
+            setups.SetupType("packaging", CategoryKind.MATERIAL, TypeShape.PACKAGING),
+        ),
+        categories=(
+            setups.SetupCategory(
+                "packaging", (CategoryKind.MATERIAL,), Picking.FIRST_IN, type="packaging"
+            ),
+            setups.SetupCategory("packed_product", (CategoryKind.PRODUCT,), Picking.FIRST_IN),
+        ),
+    )
+    assert {"types.bought", "types.packaging"} <= set(typed.words())
+
+    await setups.add(db, typed, _words(typed))
+    first = await _everything(db)
+    await setups.add(db, typed, _words(typed))
+
+    assert await _everything(db) == first
+    made = {
+        name: (kind, shape)
+        for name, kind, shape in await db.exec(select(ItemType.name, ItemType.kind, ItemType.shape))
+    }
+    assert made == {
+        "<types.bought>": (CategoryKind.PRODUCT, "bought"),
+        "<types.packaging>": (CategoryKind.MATERIAL, "packaging"),
+    }
+    defaults = await db.exec(
+        select(Category.name, ItemType.name).join(
+            ItemType, col(ItemType.id) == col(Category.default_type_id), isouter=True
+        )
+    )
+    assert sorted(defaults.all()) == [
+        ("<categories.packaging>", "<types.packaging>"),
+        ("<categories.packed_product>", None),
+    ]
+    with pytest.raises(ValueError):
+        setups.SetupType("box", CategoryKind.MATERIAL, TypeShape.BUNDLE)

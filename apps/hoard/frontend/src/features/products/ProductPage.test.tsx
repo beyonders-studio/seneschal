@@ -119,4 +119,95 @@ describe("ProductPage", () => {
     });
     expect(asked.some((request) => request.method === "delete")).toBe(false);
   });
+
+  describe("by its type", () => {
+    /** Each kind's default type, and Bought: bought finished. */
+    const typed = {
+      ...opened,
+      "GET /api/v1/settings/types": {
+        status: 200,
+        data: [
+          { id: 32, kind: "product", name: null, shape: "made", is_default: true },
+          { id: 34, kind: "product", name: "Bought", shape: "bought", is_default: false },
+        ],
+      },
+      "GET /api/v1/declarations/product/7": {
+        status: 200,
+        data: {
+          records_own: true,
+          recorded_allergens: null,
+          ingredient_name: null,
+          ingredients: [],
+          unweighed: [],
+          allergens: [],
+          undeclared: ["Chai"],
+          recorded_fragrance: null,
+          fragrance_recorded: false,
+          rinse_off: false,
+          fragrance_threshold: "0.001",
+          fragrance_shares: {},
+          fragrance_allergens: [],
+          fragrance_undeclared: [],
+        },
+      },
+    };
+
+    it("shows a made product's recipe, and hides a bought one's", async () => {
+      await openSignedIn("/stock/products/7", signedIn(), typed);
+      await screen.findByText("Recipe");
+      // Neither shape shows what it records of its own until its page is laid out to.
+      expect(screen.queryByText("Ingredient name")).toBeNull();
+    });
+
+    it("hides a bought product's recipe and what it records of its own", async () => {
+      await openSignedIn("/stock/products/7", signedIn(), {
+        ...typed,
+        "GET /api/v1/products/7": { status: 200, data: { ...CHAI, type_id: 34 } },
+      });
+
+      await screen.findByRole("heading", { name: "Chai" });
+      await screen.findByText("Bought");
+      expect(screen.queryByText("Recipe")).toBeNull();
+      expect(screen.queryByText("Ingredient name")).toBeNull();
+    });
+
+    it("records what it declares where its type's page shows it", async () => {
+      const asked = await openSignedIn("/stock/products/7", signedIn(), {
+        ...typed,
+        "GET /api/v1/layouts/product": {
+          status: 200,
+          data: {
+            layouts: [
+              { kind: "table", is_default: true, hidden: false, definition: {}, updated_at: null },
+              {
+                kind: "product",
+                type_id: 32,
+                definition: { main: [{ type: "field", props: { field: "allergens" } }] },
+                updated_at: "2026-11-15T10:00:00Z",
+              },
+            ],
+          },
+        },
+        "PUT /api/v1/declarations/product/7": { status: 200, data: {} },
+      });
+
+      fireEvent.click(await screen.findByRole("button", { name: "Edit allergens it records" }));
+      const dialog = await screen.findByRole("dialog");
+      within(dialog).getByText(
+        "A product declares these while it has no recipe, whatever its page shows."
+      );
+      fireEvent.click(within(dialog).getByLabelText("Its supplier declares its allergens"));
+      fireEvent.click(within(dialog).getByLabelText("Milk"));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      await waitFor(() =>
+        expect(
+          asked.find((request) => request.method === "put" && request.url?.includes("product/7"))
+            ?.data
+        ).toBe(
+          JSON.stringify({ ingredient_name: null, allergens: ["milk"], fragrance_allergens: null })
+        )
+      );
+    });
+  });
 });

@@ -32,7 +32,7 @@ from hoard import listings, stock
 from hoard.api import items, stores
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
-from hoard.api.settings import found, require_references
+from hoard.api.settings import found, type_of
 from hoard.api.shapes import Page, PageDep
 from hoard.channels import ConnectRefused, StoreProduct, StoreVariant
 from hoard.records import (
@@ -80,7 +80,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
     409: {"description": "LAST_VARIATION, LISTED_IN_STORE"},
-    422: {"description": "CATEGORY_UNKNOWN"},
+    422: {"description": "CATEGORY_UNKNOWN, TYPE_UNKNOWN"},
 }
 #: A change written to the stores that list the product first.
 _CHANGE_LIVE: dict[int | str, dict[str, Any]] = {
@@ -112,6 +112,8 @@ class ProductRead(BaseModel):
     name: str
     status: ItemStatus
     category_id: int | None
+    #: Its type, which decides the page it is shown on.
+    type_id: int
     low_stock_limit: Decimal | None
     #: What is on hand of all its variations, at every location.
     on_hand: Decimal
@@ -161,6 +163,9 @@ class ProductWrite(BaseModel):
     name: items.Text
     status: ItemStatus = ItemStatus.ACTIVE
     category_id: int | None = None
+    #: Its type: as it is made, its category's default type unless sent, and
+    #: its kind's default without one; left as it is unless sent.
+    type_id: int | None = None
     low_stock_limit: items.Amount | None = None
     default_price: items.Amount | None = None
     #: Left as it is unless sent; null takes the organization's.
@@ -206,7 +211,9 @@ def _written(body: ProductWrite | ProductVariationWrite, sees_costs: bool, price
     """What a write changes: its price only from a member who sees costs, and
     auto-manufacture only when it is sent."""
     unsent = {"auto_manufacture"} - body.model_fields_set
-    return body.model_dump(exclude=_hidden(sees_costs, price) | unsent | {"store_versions"})
+    return body.model_dump(
+        exclude=_hidden(sees_costs, price) | unsent | {"store_versions", "type_id"}
+    )
 
 
 async def _on_hand(db: AsyncSession, product_ids: Sequence[int]) -> dict[int, Decimal]:
@@ -350,9 +357,13 @@ async def list_products(
     page: PageDep,
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    type_id: Annotated[int | None, Query()] = None,
 ) -> Page[ProductRead]:
-    """Products by name: those whose name holds ``q``, when it is given."""
+    """Products by name: those whose name holds ``q``, when it is given, of
+    the type ``type_id`` when it is given."""
     query = select(Product)
+    if type_id is not None:
+        query = query.where(Product.type_id == type_id)
     if q:
         query = query.where(col(Product.name).icontains(q, autoescape=True))
     total = (await db.exec(select(func.count()).select_from(query.subquery()))).one()
@@ -388,9 +399,9 @@ async def create_product(
     body: ProductWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> ProductDetail:
     """Add a product with its default variation."""
-    await require_references(db, kind=CategoryKind.PRODUCT, category_id=body.category_id)
     product = Product(name=body.name)
-    product.sqlmodel_update(_written(body, sees_costs, "default_price"))
+    type_id = await type_of(db, CategoryKind.PRODUCT, body.type_id, body.category_id, None)
+    product.sqlmodel_update(_written(body, sees_costs, "default_price") | {"type_id": type_id})
     product, _ = await stock.add_product(db, product)
     await db.commit()
     return await _detail(db, product.id, sees_costs)
@@ -408,7 +419,9 @@ async def update_product(
     """Change a product. A new name or status reaches the synced stores
     listing it first: the name as their title, archiving as archiving."""
     product = await found(db, Product, product_id)
-    await require_references(db, kind=CategoryKind.PRODUCT, category_id=body.category_id)
+    type_id = await type_of(
+        db, CategoryKind.PRODUCT, body.type_id, body.category_id, product.type_id
+    )
     renamed, restated = body.name != product.name, body.status != product.status
     if renamed or restated:
 
@@ -421,7 +434,7 @@ async def update_product(
 
         listed = await _listed(db, product_id)
         await _write_through(db, plugin, session.community_ref, listed, body.store_versions, edit)
-    product.sqlmodel_update(_written(body, sees_costs, "default_price"))
+    product.sqlmodel_update(_written(body, sees_costs, "default_price") | {"type_id": type_id})
     db.add(product)
     await db.commit()
     return await _detail(db, product_id, sees_costs)

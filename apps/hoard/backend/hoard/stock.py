@@ -23,15 +23,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import costing
 from hoard.holds import held_lots
 from hoard.records import (
+    SHAPES,
     Adjustment,
     AdjustmentReason,
     Base,
     Category,
+    CategoryKind,
     DefaultHoldReason,
     DefaultReason,
     HoldReason,
     Item,
     ItemKind,
+    ItemType,
     Listing,
     Location,
     Lot,
@@ -85,6 +88,38 @@ async def add_default_hold_reasons(db: WriteSession) -> None:
     )
 
 
+async def add_default_types(db: WriteSession) -> None:
+    """Give the organization each kind's default type, in its first shape,
+    keeping any it has."""
+    await db.execute(
+        insert(ItemType)
+        .values(
+            [
+                {
+                    "organization_id": db.organization_id,
+                    "kind": kind,
+                    "shape": shapes[0],
+                    "is_default": True,
+                }
+                for kind, shapes in SHAPES.items()
+            ]
+        )
+        .on_conflict_do_nothing(
+            index_elements=["organization_id", "kind"], index_where=text("is_default")
+        )
+    )
+
+
+async def default_type(db: WriteSession, kind: CategoryKind) -> int:
+    """The id of ``kind``'s default type, made the first time it is asked for."""
+    found = select(ItemType.id).where(ItemType.kind == kind, col(ItemType.is_default))
+    type_id = (await db.exec(found)).first()
+    if type_id is None:
+        await add_default_types(db)
+        type_id = (await db.exec(found)).one()
+    return type_id
+
+
 async def _item(db: WriteSession, kind: ItemKind) -> int:
     item = Item(organization_id=db.organization_id, kind=kind)
     db.add(item)
@@ -93,7 +128,8 @@ async def _item(db: WriteSession, kind: ItemKind) -> int:
 
 
 async def add_material(db: WriteSession, material: Material) -> Material:
-    """Add ``material``, as a new item."""
+    """Add ``material``, as a new item, of the default type unless it names one."""
+    material.type_id = material.type_id or await default_type(db, CategoryKind.MATERIAL)
     material.id = await _item(db, ItemKind.MATERIAL)
     material.organization_id = db.organization_id
     db.add(material)
@@ -102,7 +138,8 @@ async def add_material(db: WriteSession, material: Material) -> Material:
 
 
 async def add_base(db: WriteSession, base: Base) -> Base:
-    """Add ``base``, as a new item."""
+    """Add ``base``, as a new item, of the default type unless it names one."""
+    base.type_id = base.type_id or await default_type(db, CategoryKind.BASE)
     base.id = await _item(db, ItemKind.BASE)
     base.organization_id = db.organization_id
     db.add(base)
@@ -120,7 +157,9 @@ async def add_variation(db: WriteSession, variation: Variation) -> Variation:
 
 
 async def add_product(db: WriteSession, product: Product) -> tuple[Product, Variation]:
-    """Add ``product`` with its default variation, which a simple product sells."""
+    """Add ``product`` with its default variation, which a simple product
+    sells, of the default type unless it names one."""
+    product.type_id = product.type_id or await default_type(db, CategoryKind.PRODUCT)
     product.organization_id = db.organization_id
     db.add(product)
     await db.flush()

@@ -12,18 +12,20 @@ export function IdSelect({
   options,
   onChange,
   none,
+  "aria-label": ariaLabel,
 }: {
   value: number | null;
   options: { id: number; name: string }[];
   onChange: (id: number | null) => void;
   none?: string;
+  "aria-label"?: string;
 }) {
   return (
     <Select
       value={value === null ? (none ? NONE : undefined) : String(value)}
       onValueChange={(chosen) => onChange(chosen === NONE ? null : Number(chosen))}
     >
-      <SelectTrigger>
+      <SelectTrigger aria-label={ariaLabel}>
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

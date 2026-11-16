@@ -22,7 +22,7 @@ from hoard.records import (
     Stocktake,
     Unit,
 )
-from hoard.stock import add_product, adjust
+from hoard.stock import add_product, adjust, default_type
 from hoard.stocktakes import confirm_row, start_stocktake
 from seneschal_core.db import WriteSession
 
@@ -67,6 +67,17 @@ async def test_a_base_is_added_edited_and_removed_and_holds_its_properties(
         json={"name": "Syrup", "tracking_unit_id": unit.id, "category_id": tea.id},
     )
     assert (wrong.status_code, wrong.json()) == (422, {"detail": "CATEGORY_UNKNOWN"})
+    # A base takes its kind's default type, and no other kind's type.
+    assert syrup["type_id"] == await default_type(db, CategoryKind.BASE)
+    wrong = await client.put(
+        f"/api/v1/bases/{syrup['id']}",
+        json={
+            "name": "Syrup",
+            "tracking_unit_id": unit.id,
+            "type_id": await default_type(db, CategoryKind.MATERIAL),
+        },
+    )
+    assert (wrong.status_code, wrong.json()) == (422, {"detail": "TYPE_UNKNOWN"})
     edited = await client.put(
         f"/api/v1/bases/{syrup['id']}",
         json={"name": "Syrup", "tracking_unit_id": unit.id, "low_stock_limit": "500"},

@@ -4,7 +4,10 @@ rolled up through recipes to the materials.
 A material declares its ingredient name and the allergens its supplier lists;
 a lot of it declares its own allergens where they are known, and otherwise
 its material's. A base or a variation declares what its recipe's lines do,
-each in proportion to how much of it one unit takes. A bundle product declares
+each in proportion to how much of it one unit takes; a variation without a
+recipe declares what its product records of its own, as a material does, so
+a product bought finished declares, and so does whatever holds it; one whose
+product records nothing is undeclared. A bundle product declares
 what its recipe's variations do, and any other product what its variations do
 together. A lot a production run made declares what the run consumed, lot by
 lot, and so does the run.
@@ -271,12 +274,14 @@ def _fragrance(declared: dict[str, str]) -> dict[str, Decimal] | None:
 
 
 def _material(
-    material: Material,
+    material: Material | Product,
     weight: Decimal | None,
     allergens: list[str] | None,
     fragrance: dict[str, str] | None,
 ) -> _Mix:
-    """One tracking unit of a material, weighing ``weight`` grams when known."""
+    """One tracking unit of a material, or one of a product without a recipe,
+    weighing ``weight`` grams when known. Its declaration is the data it
+    holds, whatever its page shows."""
     mix = _Mix()
     name = material.ingredient_name or material.name
     if weight is None:
@@ -296,6 +301,15 @@ def _material(
         )
         mix.fragrance_recorded = True
     return mix
+
+
+def _records_own(product: Product) -> bool:
+    """Whether a product records any of what it declares without a recipe."""
+    return (
+        product.ingredient_name is not None
+        or product.allergens is not None
+        or product.fragrance_allergens is not None
+    )
 
 
 class Declarations:
@@ -341,10 +355,19 @@ class Declarations:
         else:
             column = Recipe.base_id if item.kind is ItemKind.BASE else Recipe.variation_id
             recipe = (await self.db.exec(select(Recipe).where(column == item_id))).first()
-            if recipe is None:
-                mix.undeclared.add(await item_name(self.db, item_id))
-            else:
+            product = (
+                await self.db.exec(
+                    select(Product)
+                    .join(Variation, col(Variation.product_id) == Product.id)
+                    .where(Variation.id == item_id)
+                )
+            ).first()
+            if recipe is not None:
                 mix = await self._recipe(recipe, seen | {item_id})
+            elif product is not None and _records_own(product):
+                mix = _material(product, None, product.allergens, product.fragrance_allergens)
+            else:
+                mix.undeclared.add(await item_name(self.db, item_id))
         self._items[item_id] = mix
         return mix
 

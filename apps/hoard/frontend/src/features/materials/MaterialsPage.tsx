@@ -22,6 +22,7 @@ export function MaterialsPage() {
     <>
       <ItemList
         search={search}
+        typed="material"
         total={materials.data?.total}
         addLabel={t("materials.add")}
         onAdd={() => setAdding(true)}

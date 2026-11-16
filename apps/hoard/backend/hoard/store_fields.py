@@ -33,8 +33,8 @@ hand.
   (:func:`differing`) and sent only when someone asks (:func:`queue_send`).
 
 Hoard does not know a product's allergens while a material in it has none
-recorded, nor its ingredients while it has no recipe: such a value is never
-sent nor listed.
+recorded, nor its ingredients while it has no recipe and records none of its
+own: such a value is never sent nor listed.
 """
 
 from __future__ import annotations

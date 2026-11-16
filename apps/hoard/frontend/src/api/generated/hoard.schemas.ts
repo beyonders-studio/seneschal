@@ -171,6 +171,7 @@ export interface BaseCreate {
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
+  type_id?: number | null;
   cure_days?: number | null;
   notes?: string | null;
   start?: ItemStart | null;
@@ -462,6 +463,7 @@ export interface BaseDetail {
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
+  type_id: number;
   cure_days: number | null;
   average_cost: string | null;
   notes: string | null;
@@ -477,6 +479,7 @@ export interface BaseRead {
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
+  type_id: number;
   cure_days: number | null;
   on_hand: string;
   average_cost: string | null;
@@ -498,6 +501,7 @@ export interface BaseWrite {
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
+  type_id?: number | null;
   cure_days?: number | null;
   notes?: string | null;
 }
@@ -1074,12 +1078,14 @@ export const RecordKind = {
 
 export interface HoardDetailLayoutRead {
   kind: RecordKind;
+  type_id: number | null;
   definition: HoardDetailLayoutDefinitionOutput;
   updated_at: string | null;
 }
 
 export interface HoardDetailLayoutWrite {
   kind: string;
+  type_id?: number | null;
   definition: HoardDetailLayoutDefinitionInput;
 }
 
@@ -1105,7 +1111,8 @@ export interface HoardListLayoutRead {
 }
 
 /**
- * A kind's table, then its detail.
+ * A kind's table, then its detail: one per type, its kind's default
+ * type's first, for a kind laid out per type.
  */
 export interface HoardLayoutSet {
   layouts: (HoardListLayoutRead | HoardDetailLayoutRead)[];
@@ -1392,6 +1399,7 @@ export interface MaterialCreate {
   unit_weight?: number | string | null;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
+  type_id?: number | null;
   supplier_contact_id?: number | null;
   supplier_code?: string | null;
   notes?: string | null;
@@ -1423,6 +1431,7 @@ export interface MaterialDetail {
   unit_weight: string | null;
   low_stock_limit: string | null;
   category_id: number | null;
+  type_id: number;
   supplier_contact_id: number | null;
   supplier_code: string | null;
   average_cost: string | null;
@@ -1443,6 +1452,7 @@ export interface MaterialRead {
   unit_weight: string | null;
   low_stock_limit: string | null;
   category_id: number | null;
+  type_id: number;
   supplier_contact_id: number | null;
   supplier_code: string | null;
   on_hand: string;
@@ -1469,6 +1479,7 @@ export interface MaterialWrite {
   unit_weight?: number | string | null;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
+  type_id?: number | null;
   supplier_contact_id?: number | null;
   supplier_code?: string | null;
   notes?: string | null;
@@ -1719,6 +1730,7 @@ export interface ProductRead {
   name: string;
   status: ItemStatus;
   category_id: number | null;
+  type_id: number;
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
@@ -1977,6 +1989,7 @@ export interface ProductDetail {
   name: string;
   status: ItemStatus;
   category_id: number | null;
+  type_id: number;
   low_stock_limit: string | null;
   on_hand: string;
   default_price: string | null;
@@ -2039,6 +2052,7 @@ export interface ProductWrite {
   name: string;
   status?: ItemStatus;
   category_id?: number | null;
+  type_id?: number | null;
   low_stock_limit?: number | string | null;
   default_price?: number | string | null;
   auto_manufacture?: AutoManufacture | null;
@@ -2521,6 +2535,7 @@ export interface SettingsCategoryCreate {
    */
   name: string;
   picking?: Picking;
+  default_type_id?: number | null;
 }
 
 export interface SettingsCategoryRead {
@@ -2528,14 +2543,18 @@ export interface SettingsCategoryRead {
   kind: CategoryKind;
   name: string;
   picking: Picking;
+  default_type_id: number | null;
 }
 
 /**
- * The category's name and picking rule: each left as it is unless sent.
+ * The category's name, picking rule and default type: each left as it is
+ * unless sent, the default type cleared with null. A new default type
+ * changes no record's.
  */
 export interface SettingsCategoryUpdate {
   name?: string | null;
   picking?: Picking | null;
+  default_type_id?: number | null;
 }
 
 export interface SettingsLocationCreate {
@@ -2578,6 +2597,48 @@ export interface SettingsReasonWrite {
    * @maxLength 200
    */
   name: string;
+}
+
+/**
+ * What a type's page is drawn as until its layout is changed: a shape
+ * Hoard ships for the kind of record it shapes (:data:`SHAPES`).
+ */
+export type TypeShape = (typeof TypeShape)[keyof typeof TypeShape];
+
+export const TypeShape = {
+  ingredient: "ingredient",
+  packaging: "packaging",
+  base: "base",
+  made: "made",
+  bought: "bought",
+  bundle: "bundle",
+} as const;
+
+export interface SettingsTypeCreate {
+  kind: CategoryKind;
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  shape?: TypeShape | null;
+}
+
+export interface SettingsTypeRead {
+  id: number;
+  kind: CategoryKind;
+  name: string | null;
+  shape: TypeShape;
+  is_default: boolean;
+}
+
+/**
+ * The type's name and shape: each left as it is unless sent. A new shape
+ * changes its page only while its layout is unchanged.
+ */
+export interface SettingsTypeUpdate {
+  name?: string | null;
+  shape?: TypeShape | null;
 }
 
 export interface SettingsUnitRead {
@@ -3077,6 +3138,10 @@ export type ReadUnitConversionParams = {
   to_unit_id: number;
 };
 
+export type ListSettingsTypesParams = {
+  kind?: CategoryKind | null;
+};
+
 export type ListSettingsCategoriesParams = {
   kind?: CategoryKind | null;
 };
@@ -3084,6 +3149,7 @@ export type ListSettingsCategoriesParams = {
 export type ListMaterialsParams = {
   q?: string | null;
   archived?: boolean;
+  type_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**
@@ -3095,6 +3161,7 @@ export type ListMaterialsParams = {
 
 export type ListProductsParams = {
   q?: string | null;
+  type_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**
@@ -3169,9 +3236,14 @@ export type ListPropertiesParams = {
   kind: RecordKind;
 };
 
+export type ResetLayoutParams = {
+  type_id?: number | null;
+};
+
 export type ListBasesParams = {
   q?: string | null;
   archived?: boolean;
+  type_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**

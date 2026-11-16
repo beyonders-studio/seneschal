@@ -4,10 +4,12 @@ kind of business this is: the answer adds its setup, or, for a business Hoard
 has none for, starts blank. Either way it is asked once.
 
 A setup brings units of its own (Hoard's standard units every organization
-has already, ``hoard.units``), categories (its kinds of item, each for the kinds of
-record it sorts, with the rule for which of its lots goes first), properties
-of records, each with its key, adjustment reasons for waste, hold reasons,
-each with its key, and the word for a base. Adding one adds what the
+has already, ``hoard.units``), types of material, base and product (each for
+one kind, in one of its shapes), categories (its kinds of item, each for the
+kinds of record it sorts, with the rule for which of its lots goes first and,
+by key, the type a record made in it takes), properties of records, each with
+its key, adjustment reasons for waste, hold reasons, each with its key, and
+the word for a base. A setup that leaves out ``types`` brings none. Adding one adds what the
 organization does not have and changes nothing it does, so adding it again
 changes nothing. Only an organization that has not yet begun adds one
 (:func:`started`): a setup is chosen once, never added later.
@@ -16,8 +18,8 @@ Everything a setup adds is named in the words of the member who adds it: the
 page sends the words for each of the setup's keys (:meth:`Setup.words`),
 which its locale holds, and people rename them as they like afterwards. A
 property and a hold reason keep their keys, so adding the setup again finds
-them however they were renamed; a unit, a category or an adjustment reason is
-found by its name. A hold reason that is one of the defaults keeps the name
+them however they were renamed; a unit, a type, a category or an adjustment
+reason is found by its name. A hold reason that is one of the defaults keeps the name
 the setup gives it.
 """
 
@@ -36,16 +38,19 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard.records import (
+    SHAPES,
     AdjustmentReason,
     Category,
     CategoryKind,
     HoldReason,
     Item,
+    ItemType,
     OrganizationSettings,
     Picking,
     PropertyDefinition,
     PropertyType,
     RecordKind,
+    TypeShape,
     Unit,
 )
 from seneschal_core.db import WriteSession
@@ -71,11 +76,26 @@ class SetupRefused(Exception):
 
 
 @dataclass(frozen=True)
+class SetupType:
+    key: str
+    kind: CategoryKind
+    #: One of its kind's shapes.
+    shape: TypeShape
+
+    def __post_init__(self) -> None:
+        if self.shape not in SHAPES[self.kind]:
+            raise ValueError(f"{self.key}: {self.shape} is not a shape of {self.kind}")
+
+
+@dataclass(frozen=True)
 class SetupCategory:
     key: str
     kinds: tuple[CategoryKind, ...]
     #: Which of its items' lots goes first.
     picking: Picking
+    #: The key of the setup's type a record made in it takes, for the one of
+    #: its kinds that type is for.
+    type: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +113,7 @@ class Setup:
     #: What it calls a base: :data:`BASE`, or a word of its own.
     base_word: str
     units: tuple[str, ...]
+    types: tuple[SetupType, ...]
     categories: tuple[SetupCategory, ...]
     properties: tuple[SetupProperty, ...]
     #: Why stock is thrown away.
@@ -105,6 +126,7 @@ class Setup:
         return [
             *(["base_word"] if self.base_word != BASE else []),
             *(f"units.{unit}" for unit in self.units),
+            *(f"types.{each.key}" for each in self.types),
             *(f"categories.{category.key}" for category in self.categories),
             *(
                 word
@@ -125,11 +147,18 @@ def _setup(path: Path) -> Setup:
         key=path.stem,
         base_word=data["base_word"],
         units=tuple(data["units"]),
+        types=tuple(
+            SetupType(
+                key=each["key"], kind=CategoryKind(each["kind"]), shape=TypeShape(each["shape"])
+            )
+            for each in data.get("types", ())
+        ),
         categories=tuple(
             SetupCategory(
                 key=each["key"],
                 kinds=tuple(CategoryKind(kind) for kind in each["kinds"]),
                 picking=Picking(each["picking"]),
+                type=each.get("type"),
             )
             for each in data["categories"]
         ),
@@ -192,6 +221,30 @@ async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:
     if missing := set(setup.words()) - words.keys():
         raise SetupRefused(SetupError.WORDS_MISSING) from KeyError(sorted(missing))
     organization = {"organization_id": db.organization_id}
+    if setup.types:
+        await db.execute(
+            insert(ItemType)
+            .values(
+                [
+                    {
+                        **organization,
+                        "kind": each.kind,
+                        "name": words[f"types.{each.key}"],
+                        "shape": each.shape,
+                    }
+                    for each in setup.types
+                ]
+            )
+            .on_conflict_do_nothing()
+        )
+    named = {
+        (kind, name): type_id
+        for type_id, kind, name in await db.exec(select(ItemType.id, ItemType.kind, ItemType.name))
+    }
+    types = {
+        (each.kind, each.key): named.get((each.kind, words[f"types.{each.key}"]))
+        for each in setup.types
+    }
     rows = [
         (Unit, [{"name": words[f"units.{unit}"]} for unit in setup.units]),
         (
@@ -201,6 +254,7 @@ async def add(db: WriteSession, setup: Setup, words: Mapping[str, str]) -> None:
                     "kind": kind,
                     "name": words[f"categories.{category.key}"],
                     "picking": category.picking,
+                    "default_type_id": types.get((kind, category.type)),
                 }
                 for category in setup.categories
                 for kind in category.kinds

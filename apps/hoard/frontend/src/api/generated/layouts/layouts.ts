@@ -26,6 +26,7 @@ import type {
   HoardLayoutSet,
   HoardListLayoutWrite,
   RecordKind,
+  ResetLayoutParams,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -276,17 +277,19 @@ export const useSaveLayout = <TError = ErrorType<void>, TContext = unknown>(
   return useMutation(getSaveLayoutMutationOptions(options), queryClient);
 };
 /**
- * Draw one of a kind's layouts as shipped again, answering with its layouts.
+ * Draw one of a kind's layouts as shipped again, a type's page as its
+ * shape, answering with its layouts.
  * @summary Reset Layout
  */
 export const resetLayout = (
   kind: RecordKind,
   layout: string,
+  params?: ResetLayoutParams,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
   return apiMutator<HoardLayoutSet>(
-    { url: `/api/v1/layouts/${kind}/${layout}`, method: "DELETE", signal },
+    { url: `/api/v1/layouts/${kind}/${layout}`, method: "DELETE", params, signal },
     options
   );
 };
@@ -321,9 +324,9 @@ export const getResetLayoutMutationOptions = <
     Awaited<ReturnType<typeof resetLayout>>,
     ResetLayoutMutationVariables
   > = (props) => {
-    const { kind, layout } = props ?? {};
+    const { kind, layout, params } = props ?? {};
 
-    return resetLayout(kind, layout, requestOptions);
+    return resetLayout(kind, layout, params, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -332,10 +335,15 @@ export const getResetLayoutMutationOptions = <
 export type ResetLayoutMutationResult = NonNullable<Awaited<ReturnType<typeof resetLayout>>>;
 
 export type ResetLayoutMutationError = ErrorType<void>;
-export type ResetLayoutMutationVariables = { kind: RecordKind; layout: string };
+export type ResetLayoutMutationVariables = {
+  kind: RecordKind;
+  layout: string;
+  params?: ResetLayoutParams;
+};
 
 /**
- * Draw one of a kind's layouts as shipped again, answering with its layouts.
+ * Draw one of a kind's layouts as shipped again, a type's page as its
+ * shape, answering with its layouts.
  * @summary Reset Layout
  */
 export const useResetLayout = <TError = ErrorType<void>, TContext = unknown>(

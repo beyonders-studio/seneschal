@@ -17,8 +17,8 @@ globalThis.ResizeObserver ??= class {
   disconnect() {}
 };
 
-/** The settings item pages read: a unit, a category of each kind, the main
- *  location and one more, and the currency. */
+/** The settings item pages read: a unit, a category of each kind, each
+ *  kind's default type, the main location and one more, and the currency. */
 export const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings": {
     status: 200,
@@ -31,8 +31,16 @@ export const SETTINGS: Record<string, Answer> = {
   "GET /api/v1/settings/categories": {
     status: 200,
     data: [
-      { id: 2, kind: "material", name: "Tea", picking: "earliest_expiry" },
-      { id: 3, kind: "product", name: "Drinks", picking: "earliest_expiry" },
+      { id: 2, kind: "material", name: "Tea", picking: "earliest_expiry", default_type_id: null },
+      { id: 3, kind: "product", name: "Drinks", picking: "earliest_expiry", default_type_id: null },
+    ],
+  },
+  "GET /api/v1/settings/types": {
+    status: 200,
+    data: [
+      { id: 30, kind: "material", name: null, shape: "ingredient", is_default: true },
+      { id: 31, kind: "base", name: null, shape: "base", is_default: true },
+      { id: 32, kind: "product", name: null, shape: "made", is_default: true },
     ],
   },
   "GET /api/v1/settings/locations": {
@@ -82,6 +90,7 @@ export const material = (fields: Partial<MaterialRead> = {}): MaterialRead => ({
   unit_weight: null,
   low_stock_limit: null,
   category_id: 2,
+  type_id: 30,
   supplier_contact_id: null,
   supplier_code: null,
   on_hand: "0",
@@ -105,6 +114,7 @@ export const product = (fields: Partial<ProductRead> = {}): ProductRead => ({
   name: "Chai",
   status: "active",
   category_id: 3,
+  type_id: 32,
   low_stock_limit: null,
   on_hand: "0",
   default_price: null,
@@ -148,6 +158,7 @@ export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
   tracking_unit_id: 1,
   low_stock_limit: null,
   category_id: null,
+  type_id: 31,
   cure_days: null,
   on_hand: "0",
   average_cost: null,

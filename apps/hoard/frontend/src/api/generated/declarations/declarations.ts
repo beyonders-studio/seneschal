@@ -284,6 +284,101 @@ export const useUpdateMaterialDeclaration = <TError = ErrorType<void>, TContext 
   return useMutation(getUpdateMaterialDeclarationMutationOptions(options), queryClient);
 };
 /**
+ * Record what a product declares of its own, which it declares while it
+ * has no recipe.
+ * @summary Update Product Declaration
+ */
+export const updateProductDeclaration = (
+  productId: number,
+  declarationMaterialWrite: BodyType<DeclarationMaterialWrite>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<DeclarationRead>(
+    {
+      url: `/api/v1/declarations/product/${productId}`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: declarationMaterialWrite,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateProductDeclarationMutationKey = () => ["updateProductDeclaration"] as const;
+
+export const getUpdateProductDeclarationMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProductDeclaration>>,
+    TError,
+    UpdateProductDeclarationMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProductDeclaration>>,
+  TError,
+  UpdateProductDeclarationMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateProductDeclarationMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProductDeclaration>>,
+    UpdateProductDeclarationMutationVariables
+  > = (props) => {
+    const { productId, data } = props ?? {};
+
+    return updateProductDeclaration(productId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProductDeclarationMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProductDeclaration>>
+>;
+export type UpdateProductDeclarationMutationBody = BodyType<DeclarationMaterialWrite>;
+export type UpdateProductDeclarationMutationError = ErrorType<void>;
+export type UpdateProductDeclarationMutationVariables = {
+  productId: number;
+  data: BodyType<DeclarationMaterialWrite>;
+};
+
+/**
+ * Record what a product declares of its own, which it declares while it
+ * has no recipe.
+ * @summary Update Product Declaration
+ */
+export const useUpdateProductDeclaration = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateProductDeclaration>>,
+      TError,
+      UpdateProductDeclarationMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateProductDeclaration>>,
+  TError,
+  UpdateProductDeclarationMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateProductDeclarationMutationOptions(options), queryClient);
+};
+/**
  * Record what a bought lot's supplier declares of it.
  * @summary Update Lot Declaration
  */
