@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
-from hoard import recipes, runs, summary
+from hoard import purchases, recipes, runs, summary
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
@@ -14,8 +14,11 @@ from hoard.records import (
     Location,
     Product,
     ProductionRun,
+    Purchase,
+    PurchaseLine,
     Recipe,
     Stocktake,
+    Unit,
 )
 from hoard.stock import add_product, adjust
 from hoard.stocktakes import confirm_row, start_stocktake
@@ -263,3 +266,130 @@ def test_a_recipe_costs_its_lines_and_labour_and_says_when_a_cost_is_missing():
     )
 
     assert (doubled.labour, doubled.total, doubled.incomplete) == (None, Decimal(24), False)
+
+
+async def test_on_order_is_what_is_still_to_come_and_says_when_it_is_overdue(
+    db: WriteSession, main: Location, material
+):
+    chamomile = await material("Chamomile")
+    purchase = Purchase(
+        organization_id=db.organization_id,
+        code="P-1",
+        dated_on=date(2026, 11, 8),
+        expected_on=date(2026, 11, 14),
+        location_id=main.id,
+    )
+    db.add(purchase)
+    await db.flush()
+    line = PurchaseLine(
+        organization_id=db.organization_id,
+        purchase_id=purchase.id,
+        item_id=chamomile.id,
+        purchase_quantity=Decimal(1),
+        tracking_quantity=Decimal("453.592"),
+        unit_cost=Decimal("9.07"),
+    )
+    db.add(line)
+    await db.flush()
+
+    await purchases.receive_line(db, line, received_on=date(2026, 11, 10), quantity=Decimal(200))
+    [figures] = (await summary.summarise(db, [chamomile.id], TODAY)).values()
+
+    # Only the part still to come, from a purchase past the day it was due.
+    assert figures.on_order == summary.OnOrder(Decimal("253.592"), overdue=True)
+    purchase.expected_on = TODAY
+    [figures] = (await summary.summarise(db, [chamomile.id], TODAY)).values()
+    assert figures.on_order == summary.OnOrder(Decimal("253.592"), overdue=False)
+
+
+def test_a_window_ends_today_and_starts_as_many_months_back():
+    starts = {window: summary.window_start(window, TODAY) for window in summary.UsageWindow}
+    assert starts == {
+        summary.UsageWindow.WEEK: date(2026, 11, 9),
+        summary.UsageWindow.MONTH: date(2026, 10, 16),
+        summary.UsageWindow.MONTHS_3: date(2026, 8, 16),
+        summary.UsageWindow.MONTHS_6: date(2026, 5, 16),
+        summary.UsageWindow.MONTHS_12: date(2025, 11, 16),
+        summary.UsageWindow.ALL: None,
+    }
+    # A month with no such day starts after its last.
+    assert summary.window_start(summary.UsageWindow.MONTH, date(2026, 3, 31)) == date(2026, 3, 1)
+
+
+async def test_usage_counts_what_purchases_received_and_runs_used_by_their_day(
+    db: WriteSession, main: Location, unit, material, base, buy
+):
+    chamomile = await material("Chamomile")
+    tea = await base("Chamomile blend")
+    await recipes.save(db, Recipe(base_id=tea.id), [recipes.Line(chamomile.id, Decimal(1))])
+    await buy((chamomile, "30", "1"), dated_on=date(2025, 6, 1))
+    await buy((chamomile, "50", "1"), dated_on=date(2026, 10, 1))
+    await buy((chamomile, "100", "1"), dated_on=date(2026, 11, 14))
+    # Received after today: in no window yet.
+    await buy((chamomile, "7", "1"), dated_on=date(2026, 11, 20))
+    await runs.make(db, tea.id, main.id, Decimal(10), date(2026, 8, 1))
+    await runs.make(db, tea.id, main.id, Decimal(20), date(2026, 11, 12))
+    # A loss counts as neither.
+    await adjust(
+        db,
+        Adjustment(
+            item_id=chamomile.id,
+            location_id=main.id,
+            kind=AdjustmentKind.MANUAL,
+            dated_on=date(2026, 11, 13),
+            change=Decimal(-5),
+        ),
+    )
+
+    figures = await summary.summarise(db, [chamomile.id, tea.id], TODAY)
+
+    assert [
+        (usage.window, usage.received, usage.used) for usage in figures[chamomile.id].usage
+    ] == [
+        (summary.UsageWindow.WEEK, 100, 20),
+        (summary.UsageWindow.MONTH, 100, 20),
+        (summary.UsageWindow.MONTHS_3, 150, 20),
+        (summary.UsageWindow.MONTHS_6, 150, 30),
+        (summary.UsageWindow.MONTHS_12, 150, 30),
+        (summary.UsageWindow.ALL, 180, 30),
+    ]
+    # What a run made is not used: the blend has received and used nothing.
+    assert {(usage.received, usage.used) for usage in figures[tea.id].usage} == {(0, 0)}
+
+
+async def test_used_in_lists_each_recipe_holding_it_but_bundles(
+    db: WriteSession, unit, base, material
+):
+    catnip, chamomile, alyx = await _alyx(db, unit, base, material)
+    kilograms = Unit(organization_id=db.organization_id, name="kg", standard="kilogram")
+    db.add(kilograms)
+    await db.flush()
+    _, tin = await add_product(db, Product(name="Chamomile tin"))
+    await recipes.save(
+        db,
+        Recipe(variation_id=tin.id),
+        [recipes.Line(chamomile.id, Decimal("0.05"), kilograms.id)],
+    )
+    _, gift = await add_product(db, Product(name="Gift box"))
+    await recipes.save(
+        db,
+        Recipe(variation_id=gift.id, batch_quantity=Decimal(2)),
+        [recipes.Line(tin.id, Decimal(2))],
+    )
+    pair, _ = await add_product(db, Product(name="Two tins"))
+    await recipes.save(db, Recipe(product_id=pair.id), [recipes.Line(tin.id, Decimal(2))])
+
+    figures = await summary.summarise(db, [chamomile.id, tin.id, catnip.id], TODAY)
+
+    assert [
+        (used.makes, used.batch_quantity, used.amount, used.unit_id)
+        for used in figures[chamomile.id].used_in
+    ] == [
+        (alyx.id, Decimal(300), Decimal(100), unit.id),
+        (tin.id, Decimal(1), Decimal("0.05"), kilograms.id),
+    ]
+    # A product is used in another's recipe, counted in each; the bundle
+    # holding it makes nothing.
+    assert [(used.makes, used.amount, used.unit_id) for used in figures[tin.id].used_in] == [
+        (gift.id, Decimal(2), None)
+    ]

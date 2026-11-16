@@ -23,12 +23,13 @@ from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import summary
-from hoard.api.adjustments import location_or_main
+from hoard import summary, units
+from hoard.api.adjustments import describe_items, location_or_main
 from hoard.api.deps import HoardError
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found
 from hoard.holds import held_lots
+from hoard.recipes import RecipeOutput
 from hoard.records import (
     IMAGE_TYPES,
     MAX_IMAGE_BYTES,
@@ -47,6 +48,7 @@ from hoard.records import (
     RecipeLine,
     RecordKind,
     StocktakeRow,
+    Variation,
 )
 from hoard.stock import StockRefused, adjust
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
@@ -151,6 +153,40 @@ class ItemLotRead(BaseModel):
     properties: list[HoardPropertySummary]
 
 
+class ItemUsage(BaseModel):
+    """What an item received by purchases and what production runs used of
+    it, over one window ending today (``hoard.summary``)."""
+
+    window: summary.UsageWindow
+    received: Decimal
+    used: Decimal
+
+
+class ItemUsedIn(BaseModel):
+    """A recipe holding an item, and what it makes: a base or a variation."""
+
+    recipe_id: int
+    output: RecipeOutput
+    #: The base's or the variation's id.
+    output_id: int
+    #: The product a variation is of.
+    product_id: int | None
+    #: The base's name, or the variation's product's.
+    name: str
+    #: A variation's attributes; none for a base.
+    attributes: dict[str, str]
+    #: Whether the base or the variation's product is archived.
+    archived: bool
+    #: What one batch makes, in ``batch_unit_id``: the base's tracking unit;
+    #: none for a variation, which counts in units of itself.
+    batch_quantity: Decimal
+    batch_unit_id: int | None
+    #: How much one batch takes of the item, in ``unit_id``: the unit its line
+    #: was written in, or the item's tracking unit; none for a variation.
+    amount: Decimal
+    unit_id: int | None
+
+
 class ItemHoldings(BaseModel):
     """An item's figures (``hoard.summary``), its stock at each location it
     has stock at, was counted at, could make some at or has a bin at, and its
@@ -164,6 +200,15 @@ class ItemHoldings(BaseModel):
     made: Decimal
     #: The date of the latest stocktake that counted it.
     last_stocktake: date | None
+    #: What its purchase lines not yet received will bring, in its tracking unit.
+    on_order: Decimal
+    #: Whether a purchase bringing some of it is past the day it was expected.
+    overdue: bool
+    #: What it received and runs used over the last week, 1, 3, 6 and 12
+    #: months, and all time, in that order.
+    usage: list[ItemUsage]
+    #: The recipes holding it, by what they make.
+    used_in: list[ItemUsedIn]
     stock: list[ItemStockRead]
     lots: list[ItemLotRead]
 
@@ -182,12 +227,20 @@ async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemH
     oldest first."""
     ids = list(item_ids)
     figures = await summary.summarise(db, ids)
+    used_in = await _used_in(db, figures)
     held = {
         item_id: ItemHoldings(
             on_hand=figures[item_id].stock.on_hand,
             potential=figures[item_id].potential,
             made=figures[item_id].made,
             last_stocktake=figures[item_id].last_stocktake,
+            on_order=figures[item_id].on_order.quantity,
+            overdue=figures[item_id].on_order.overdue,
+            usage=[
+                ItemUsage.model_validate(usage, from_attributes=True)
+                for usage in figures[item_id].usage
+            ],
+            used_in=used_in[item_id],
             stock=[],
             lots=[],
         )
@@ -230,6 +283,44 @@ async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemH
     for lot, on_hold in lots:
         held[lot.item_id].lots.append(lot_read(lot, on_hold, values[lot.id]))
     return held
+
+
+async def _used_in(
+    db: AsyncSession, figures: dict[int, summary.Summary]
+) -> dict[int, list[ItemUsedIn]]:
+    """The recipes holding each item, described by what they make, by its name."""
+    outputs = {used.makes for summarised in figures.values() for used in summarised.used_in}
+    described = await describe_items(db, outputs)
+    products = dict(
+        (
+            await db.exec(
+                select(Variation.id, Variation.product_id).where(col(Variation.id).in_(outputs))
+            )
+        ).all()
+    )
+    counted = await units.tracking_units(db, outputs)
+    found = {
+        item_id: [
+            ItemUsedIn(
+                recipe_id=used.recipe_id,
+                output=RecipeOutput.VARIATION if used.makes in products else RecipeOutput.BASE,
+                output_id=used.makes,
+                product_id=products.get(used.makes),
+                name=described[used.makes].name,
+                attributes=described[used.makes].attributes,
+                archived=described[used.makes].archived,
+                batch_quantity=used.batch_quantity,
+                batch_unit_id=counted.get(used.makes),
+                amount=used.amount,
+                unit_id=used.unit_id,
+            )
+            for used in summarised.used_in
+        ]
+        for item_id, summarised in figures.items()
+    }
+    for listed in found.values():
+        listed.sort(key=lambda used: (used.name.casefold(), sorted(used.attributes.values())))
+    return found
 
 
 def lot_read(lot: Lot, on_hold: bool, properties: list[HoardPropertySummary]) -> ItemLotRead:

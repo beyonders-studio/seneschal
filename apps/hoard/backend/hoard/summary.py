@@ -19,6 +19,18 @@ else works these figures out.
   reopened counts again once it is completed again.
 * **Last stocktake** at each location, and the latest of them: the date of a
   stocktake that counted it, not one whose row was left uncounted.
+* **On order** (:func:`on_order`): what its purchase lines not yet received
+  will bring, in its tracking unit, so only the part of a split line still to
+  come; and whether any purchase they are on is overdue
+  (``hoard.purchases.overdue``).
+* **Usage** over each :class:`UsageWindow` ending today, and in all: what was
+  **received**, by its purchase adjustments, and **used**, by what production
+  runs consumed, each on the day it happened. Starting stock, losses,
+  corrections, stocktakes, shipments, returns and what a run made count as
+  neither.
+* **Used in**: each recipe holding it that makes a base or a variation, with
+  how much one batch takes in the unit it was written in. A bundle holds
+  variations but makes nothing, so it is left out.
 * **Cost** (:func:`costs`): its average cost (``hoard.costing``), or, while
   that is nothing, its **last known** cost, which is its average before its
   stock last ran out: the unit cost on the latest of its adjustments that has
@@ -29,22 +41,26 @@ else works these figures out.
 
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from enum import StrEnum
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
+from sqlalchemy import select as sa_select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import orders, recipes, units
+from hoard import orders, purchases, recipes, units
 from hoard.holds import held_lots
 from hoard.records import (
     PLACES,
     Adjustment,
+    AdjustmentKind,
     Item,
     Location,
     Lot,
@@ -52,7 +68,10 @@ from hoard.records import (
     OrderLine,
     OrderStatus,
     ProductionRun,
+    Purchase,
+    PurchaseLine,
     Recipe,
+    RecipeLine,
     RunStatus,
     Shipment,
     ShipmentLine,
@@ -250,6 +269,174 @@ def recipe_cost(
     )
 
 
+@dataclass(frozen=True)
+class OnOrder:
+    """What an item's purchase lines not yet received will bring."""
+
+    #: In its tracking unit.
+    quantity: Decimal = Decimal(0)
+    #: Whether a purchase bringing some of it is overdue.
+    overdue: bool = False
+
+
+async def on_order(
+    db: AsyncSession, item_ids: Iterable[int], today: date | None = None
+) -> dict[int, OnOrder]:
+    """What each of ``item_ids`` has on order, as it stands ``today``; an item
+    with nothing on order is left out."""
+    rows = await db.exec(
+        select(col(PurchaseLine.item_id), col(PurchaseLine.tracking_quantity), Purchase)
+        .join(Purchase, col(Purchase.id) == col(PurchaseLine.purchase_id))
+        .where(
+            col(PurchaseLine.item_id).in_(list(item_ids)), col(PurchaseLine.received_on).is_(None)
+        )
+    )
+    found: dict[int, OnOrder] = {}
+    for item_id, quantity, purchase in rows:
+        held = found.get(item_id, OnOrder())
+        found[item_id] = OnOrder(
+            held.quantity + quantity,
+            held.overdue or purchases.overdue(purchase, on_order=True, today=today),
+        )
+    return found
+
+
+class UsageWindow(StrEnum):
+    """A span of days ending today that usage is read over: the last week,
+    the last 1, 3, 6 and 12 months, or all time."""
+
+    WEEK = "week"
+    MONTH = "month"
+    MONTHS_3 = "months_3"
+    MONTHS_6 = "months_6"
+    MONTHS_12 = "months_12"
+    ALL = "all"
+
+
+#: The calendar months each window counted in months spans.
+_MONTHS = {
+    UsageWindow.MONTH: 1,
+    UsageWindow.MONTHS_3: 3,
+    UsageWindow.MONTHS_6: 6,
+    UsageWindow.MONTHS_12: 12,
+}
+
+
+def window_start(window: UsageWindow, today: date) -> date | None:
+    """The first day of ``window`` ending ``today``: the week is today and
+    the six days before it, and a span of months starts the day after the same
+    day that many months before, or after the month's last day when it has no
+    such day. None for all time."""
+    if window is UsageWindow.ALL:
+        return None
+    if window is UsageWindow.WEEK:
+        return today - timedelta(days=6)
+    index = today.year * 12 + today.month - 1 - _MONTHS[window]
+    year, month = index // 12, index % 12 + 1
+    before = date(year, month, min(today.day, calendar.monthrange(year, month)[1]))
+    return before + timedelta(days=1)
+
+
+@dataclass(frozen=True)
+class Usage:
+    """What an item received and what runs used of it over one window."""
+
+    window: UsageWindow
+    received: Decimal
+    used: Decimal
+
+
+async def _usage(db: AsyncSession, item_ids: list[int], today: date) -> dict[int, list[Usage]]:
+    """Each item's usage over every window, in :class:`UsageWindow` order."""
+    received = col(Adjustment.kind) == AdjustmentKind.PURCHASE
+    used = and_(
+        col(Adjustment.kind) == AdjustmentKind.PRODUCTION,
+        col(Adjustment.production_run_line_id).is_not(None),
+    )
+    columns = []
+    for window in UsageWindow:
+        start = window_start(window, today)
+        within = [] if start is None else [col(Adjustment.dated_on) >= start]
+        columns += [
+            func.coalesce(func.sum(Adjustment.change).filter(received, *within), 0),
+            func.coalesce(func.sum(-col(Adjustment.change)).filter(used, *within), 0),
+        ]
+    rows = await db.execute(
+        sa_select(col(Adjustment.item_id), *columns)
+        .where(
+            col(Adjustment.item_id).in_(item_ids),
+            col(Adjustment.dated_on) <= today,
+            or_(received, used),
+        )
+        .group_by(col(Adjustment.item_id))
+    )
+    found = {
+        item_id: [Usage(window, Decimal(0), Decimal(0)) for window in UsageWindow]
+        for item_id in item_ids
+    }
+    for item_id, *sums in rows.all():
+        found[item_id] = [
+            Usage(window, Decimal(sums[2 * at]), Decimal(sums[2 * at + 1]))
+            for at, window in enumerate(UsageWindow)
+        ]
+    return found
+
+
+@dataclass(frozen=True)
+class UsedIn:
+    """A recipe that holds an item and makes a base or a variation."""
+
+    recipe_id: int
+    #: The base or the variation it makes.
+    makes: int
+    #: What a batch makes, in the base's tracking unit or of the variation.
+    batch_quantity: Decimal
+    #: How much one batch takes of the item, in ``unit_id``: the unit the line
+    #: was written in, or its item's tracking unit; none for a variation,
+    #: which counts in units of itself.
+    amount: Decimal
+    unit_id: int | None
+
+
+async def _used_in(db: AsyncSession, item_ids: list[int]) -> dict[int, list[UsedIn]]:
+    """The recipes holding each item, but bundles', oldest first."""
+    holding = (
+        await db.exec(
+            select(Recipe)
+            .where(
+                col(Recipe.id).in_(
+                    select(RecipeLine.recipe_id).where(col(RecipeLine.item_id).in_(item_ids))
+                ),
+                col(Recipe.product_id).is_(None),
+            )
+            .order_by(col(Recipe.id))
+        )
+    ).all()
+    lines = await recipes.lines_of(db, [recipe.id for recipe in holding])
+    known = await recipes.know(db, {line.item_id for held in lines.values() for line in held})
+    found: dict[int, list[UsedIn]] = {item_id: [] for item_id in item_ids}
+    for recipe in holding:
+        held = lines[recipe.id]
+        worked = await recipes.work_out(
+            db,
+            recipe,
+            [recipes.Line(line.item_id, line.written, line.unit_id) for line in held],
+            known,
+        )
+        for line, amount, unit in zip(held, worked.figures.amounts, worked.units, strict=True):
+            if line.item_id in found:
+                found[line.item_id].append(
+                    UsedIn(
+                        recipe_id=recipe.id,
+                        makes=recipe.base_id or recipe.variation_id or 0,
+                        batch_quantity=recipe.batch_quantity,
+                        amount=units.scaled(amount, Decimal(1)),
+                        unit_id=None if unit is None else unit.id,
+                    )
+                )
+    return found
+
+
 @dataclass
 class AtLocation:
     """An item's figures at one location."""
@@ -271,6 +458,10 @@ class Summary:
     potential: Decimal | None
     made: Decimal
     last_stocktake: date | None
+    on_order: OnOrder
+    #: Over every window, in :class:`UsageWindow` order.
+    usage: list[Usage]
+    used_in: list[UsedIn]
 
     @property
     def stock(self) -> Stock:
@@ -316,6 +507,9 @@ async def summarise(
     ids = list(set(item_ids))
     held = await stock(db, ids, today)
     could = await _could_make(db, ids, today)
+    ordered = await on_order(db, ids, today)
+    usage = await _usage(db, ids, today)
+    used_in = await _used_in(db, ids)
     made = dict(
         (
             await db.exec(
@@ -345,6 +539,9 @@ async def summarise(
             potential=sum(could[item_id].values(), Decimal(0)) if item_id in could else None,
             made=Decimal(made.get(item_id) or 0),
             last_stocktake=None,
+            on_order=ordered.get(item_id, OnOrder()),
+            usage=usage[item_id],
+            used_in=used_in[item_id],
         )
     for item_id, location_id, dated_on in counted:
         summary = found[item_id]
