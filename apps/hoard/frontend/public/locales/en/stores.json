@@ -117,7 +117,8 @@
     "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved.",
     "STORE_FIELD_UNKNOWN": "The store no longer has that field.",
     "STORE_FIELD_TARGET_INVALID": "That field can't fill that in Hoard.",
-    "STORE_FIELD_VALUE_INVALID": "The store's field can't hold that value."
+    "STORE_FIELD_VALUE_INVALID": "The store's field can't hold that value.",
+    "LOCATION_CONSIGNEE": "That's a consignee's location. No store sells its stock."
   },
   "sync": {
     "open": "Sync with {{channel}}",

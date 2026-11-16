@@ -15,9 +15,12 @@ import { NamedList, useChangesSettings } from "@/features/settings/NamedList";
 import { useLocationName } from "@/features/settings/names";
 import { SettingsSection } from "@/features/settings/SettingsSection";
 import { errorMessage } from "@/lib/errors";
+import { Badge } from "@/ui/badge";
+import { Label } from "@/ui/label";
+import { Switch } from "@/ui/switch";
 
 /** The places stock is kept: the main location, which stays, and the rest,
- *  each with the contact holding its address. */
+ *  each with the contact holding its address, which may be a consignee's. */
 export function LocationsSection() {
   const { t } = useTranslation("catalog");
   const nameOf = useLocationName();
@@ -32,7 +35,12 @@ export function LocationsSection() {
         rename={(location, name) => updateSettingsLocation(location.id, { name })}
         remove={(location) => deleteSettingsLocation(location.id)}
         removable={(location) => !location.main}
-        detail={(location) => <LocationContact location={location} name={nameOf(location)} />}
+        detail={(location) => (
+          <span className="inline-flex flex-wrap items-center justify-end gap-3">
+            <LocationContact location={location} name={nameOf(location)} />
+            {!location.main && <LocationConsignee location={location} name={nameOf(location)} />}
+          </span>
+        )}
       />
     </SettingsSection>
   );
@@ -60,5 +68,39 @@ function LocationContact({ location, name }: { location: SettingsLocationRead; n
       value={location.contact_id}
       onChange={(contactId) => save.mutate(contactId)}
     />
+  );
+}
+
+/** Whether a location is a consignee's, a shop holding stock to sell, whose
+ *  stock is consigned and never offered to a store. An admin marks it once
+ *  it names its contact; everyone else sees the mark. */
+function LocationConsignee({ location, name }: { location: SettingsLocationRead; name: string }) {
+  const { t } = useTranslation("catalog");
+  const queries = useQueryClient();
+  const changes = useChangesSettings();
+  const save = useMutation({
+    mutationFn: (consignee: boolean) =>
+      updateSettingsLocation(location.id, { name: location.name, consignee }),
+    onSuccess: () => queries.invalidateQueries({ queryKey: getListSettingsLocationsQueryKey() }),
+    onError: (error) => toast.error(errorMessage(error, t, "settings.saveFailed")),
+  });
+  if (!changes)
+    return location.consignee ? (
+      <Badge variant="outline">{t("settings.locations.consignee")}</Badge>
+    ) : null;
+  const id = `consignee-${location.id}`;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <Switch
+        id={id}
+        checked={location.consignee}
+        disabled={location.contact_id === null || save.isPending}
+        onCheckedChange={(consignee) => save.mutate(consignee)}
+        aria-label={t("settings.locations.consigneeOf", { name })}
+      />
+      <Label htmlFor={id} className="text-sm font-normal">
+        {t("settings.locations.consignee")}
+      </Label>
+    </span>
   );
 }

@@ -129,6 +129,9 @@ class ItemStockRead(BaseModel):
     location_id: int
     #: What is on hand there.
     quantity: Decimal
+    #: What of it a consignee holds there for it to sell; nothing at the
+    #: organization's own locations.
+    consigned: Decimal
     bin: ItemBin | None
     #: What its recipe could make there from what is usable; null with no
     #: recipe or no lines.
@@ -193,6 +196,8 @@ class ItemHoldings(BaseModel):
     lots."""
 
     on_hand: Decimal
+    #: What of it consignees hold for it to sell.
+    consigned: Decimal
     #: What open orders need of it and have not shipped; of a bundle's
     #: variation, how many bundles they need.
     committed: Decimal
@@ -240,6 +245,7 @@ async def holdings(
     held = {
         item_id: ItemHoldings(
             on_hand=figures[item_id].stock.on_hand,
+            consigned=figures[item_id].stock.consigned,
             committed=figures[item_id].committed,
             available=figures[item_id].available,
             potential=figures[item_id].potential,
@@ -261,6 +267,7 @@ async def holdings(
         (item_id, location_id): ItemStockRead(
             location_id=location_id,
             quantity=there.stock.on_hand,
+            consigned=there.stock.consigned,
             bin=None,
             could_make=there.could_make,
             last_stocktake=there.last_stocktake,
@@ -275,6 +282,7 @@ async def holdings(
             ItemStockRead(
                 location_id=kept.location_id,
                 quantity=Decimal(0),
+                consigned=Decimal(0),
                 bin=None,
                 could_make=None,
                 last_stocktake=None,

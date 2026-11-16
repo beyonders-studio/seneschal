@@ -27,6 +27,7 @@ import type {
   HTTPValidationError,
   ListAdjustmentsParams,
   PageAdjustmentRead,
+  TransferCreate,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -268,6 +269,97 @@ export const useCreateAdjustment = <TError = ErrorType<void>, TContext = unknown
   TContext
 > => {
   return useMutation(getCreateAdjustmentMutationOptions(options), queryClient);
+};
+/**
+ * Move stock of an item from one location to another, as one transfer at
+ * its average cost, and push its listings what each location holds now.
+ * Answers its two adjustments: out, then in.
+ * @summary Create Transfer
+ */
+export const createTransfer = (
+  transferCreate: BodyType<TransferCreate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<AdjustmentRead[]>(
+    {
+      url: `/api/v1/adjustments/transfers`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: transferCreate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateTransferMutationKey = () => ["createTransfer"] as const;
+
+export const getCreateTransferMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createTransfer>>,
+    TError,
+    CreateTransferMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createTransfer>>,
+  TError,
+  CreateTransferMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateTransferMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createTransfer>>,
+    CreateTransferMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createTransfer(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateTransferMutationResult = NonNullable<Awaited<ReturnType<typeof createTransfer>>>;
+export type CreateTransferMutationBody = BodyType<TransferCreate>;
+export type CreateTransferMutationError = ErrorType<void>;
+export type CreateTransferMutationVariables = { data: BodyType<TransferCreate> };
+
+/**
+ * Move stock of an item from one location to another, as one transfer at
+ * its average cost, and push its listings what each location holds now.
+ * Answers its two adjustments: out, then in.
+ * @summary Create Transfer
+ */
+export const useCreateTransfer = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createTransfer>>,
+      TError,
+      CreateTransferMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createTransfer>>,
+  TError,
+  CreateTransferMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateTransferMutationOptions(options), queryClient);
 };
 /**
  * Change a manual or starting adjustment, and re-derive its item's cost.

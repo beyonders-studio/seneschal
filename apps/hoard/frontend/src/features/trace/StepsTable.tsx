@@ -9,10 +9,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 
 const LINK = "underline-offset-4 hover:underline";
 
-/** The run, order or purchase a step is, opening its page. */
+/** The run, order or purchase a step is, opening its page; or the transfer,
+ *  by the location it moved to. */
 function StepRecord({ step }: { step: TraceStepRead }) {
   const { t } = useTranslation("trace");
-  const label = t(`steps.kinds.${step.kind}`, { code: step.code });
+  const { location } = useMovementLabels();
+  const label = t(`steps.kinds.${step.kind}`, {
+    code: step.code,
+    location: location(step.location_id),
+  });
   if (step.kind === "run")
     return (
       <Link
@@ -33,7 +38,7 @@ function StepRecord({ step }: { step: TraceStepRead }) {
         {label}
       </Link>
     );
-  if (step.order_id === null) return label;
+  if (step.kind === "transfer" || step.order_id === null) return label;
   return (
     <Link to="/orders/$orderId" params={{ orderId: String(step.order_id) }} className={LINK}>
       {label}
@@ -51,8 +56,8 @@ export function LotLink({ lot }: { lot: TraceLotRef | null }) {
   );
 }
 
-/** Who else a step names: a shipment's customer, or a consumer, or a
- *  purchase's supplier. */
+/** Who else a step names: a shipment's customer, or a consumer, a
+ *  purchase's supplier, or the contact of the location stock moved to. */
 export function useStepParty(): (step: TraceStepRead) => string {
   const { t } = useTranslation("trace");
   return (step) => {

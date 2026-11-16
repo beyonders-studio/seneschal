@@ -7,30 +7,43 @@ database keeps stock levels and lot balances from them, and every service that
 changes an item's adjustments re-derives its cost (``hoard.costing``) before it
 returns. A change made outside these services, such as editing or deleting an
 adjustment, is followed by :func:`hoard.costing.rederive` for its item.
+
+**A transfer** (:func:`transfer`) moves stock of an item from one location to
+another as one record: an adjustment out of a lot, or of the stock there in no
+lot, and one into the same lot at the other location, which is made the first
+time, as a copy of it. A lot keeps going to and coming back from the same lot
+at each location. A hold moves with its lot: the lot it moved into is held the
+same way, and a lot moved whole takes its hold with it. A transfer is undone
+by moving the stock back.
 """
 
 from __future__ import annotations
 
 from collections.abc import MutableMapping
+from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
 from sqlalchemy import delete, func, text, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.orm import aliased
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import costing
-from hoard.holds import held_lots
+from hoard.holds import HoldError, held_lots, place
 from hoard.records import (
     SHAPES,
     Adjustment,
+    AdjustmentKind,
     AdjustmentReason,
     Base,
     Category,
     CategoryKind,
     DefaultHoldReason,
     DefaultReason,
+    DocumentLink,
+    Hold,
     HoldReason,
     Item,
     ItemKind,
@@ -41,7 +54,9 @@ from hoard.records import (
     Material,
     Picking,
     Product,
+    PropertyValue,
     StockLevel,
+    Transfer,
     Variation,
 )
 from seneschal_core.db import WriteSession
@@ -52,10 +67,16 @@ class StockError(StrEnum):
 
     NOT_INVENTORIABLE = "NOT_INVENTORIABLE"
     LOT_IN_USE = "LOT_IN_USE"
+    #: A transfer goes to another location than the one it comes from.
+    TRANSFER_SAME_LOCATION = "TRANSFER_SAME_LOCATION"
+    #: The lot named is not of the item, or not at the location moved from.
+    TRANSFER_LOT_ELSEWHERE = "TRANSFER_LOT_ELSEWHERE"
+    #: More is moved than the lot holds, or than the location holds in no lot.
+    TRANSFER_OVER_BALANCE = "TRANSFER_OVER_BALANCE"
 
 
 class StockRefused(Exception):
-    def __init__(self, code: StockError) -> None:
+    def __init__(self, code: StockError | HoldError) -> None:
         super().__init__(code.value)
         self.code = code
 
@@ -286,3 +307,148 @@ async def draw_lots(
     if need > 0:
         draws.append((None, need))
     return draws
+
+
+async def transfer(
+    db: WriteSession,
+    item_id: int,
+    from_location_id: int,
+    to_location_id: int,
+    quantity: Decimal,
+    *,
+    lot_id: int | None = None,
+    dated_on: date,
+) -> Transfer:
+    """Move ``quantity`` of an item from one location to another on
+    ``dated_on``: out of ``lot_id``, or, with none, out of what the location
+    holds in no lot, and no more than either holds. Both halves go at the
+    item's average cost, which the move leaves as it was (``hoard.costing``),
+    and its listings are pushed what each location now holds."""
+    if from_location_id == to_location_id:
+        raise StockRefused(StockError.TRANSFER_SAME_LOCATION)
+    # Locking the item first keeps two moves of its stock from both counting what is there.
+    await db.exec(select(Item.id).where(Item.id == item_id).with_for_update())
+    lot: Lot | None = None
+    if lot_id is not None:
+        lot = await db.get(Lot, lot_id, populate_existing=True)
+        if lot is None or (lot.item_id, lot.location_id) != (item_id, from_location_id):
+            raise StockRefused(StockError.TRANSFER_LOT_ELSEWHERE)
+        held = lot.balance
+    else:
+        if await picking(db, item_id) is Picking.RECORDED:
+            raise StockRefused(HoldError.LOT_REQUIRED)
+        in_lots = await db.exec(
+            select(func.coalesce(func.sum(func.greatest(Lot.balance, 0)), 0)).where(
+                Lot.item_id == item_id, Lot.location_id == from_location_id
+            )
+        )
+        held = await on_hand(db, item_id, from_location_id) - Decimal(in_lots.one())
+    if quantity > held:
+        raise StockRefused(StockError.TRANSFER_OVER_BALANCE)
+    moved = Transfer(organization_id=db.organization_id)
+    db.add(moved)
+    await db.flush()
+    into = None if lot is None else await _lot_at(db, lot, to_location_id)
+    for location_id, change, at in (
+        (from_location_id, -quantity, lot),
+        (to_location_id, quantity, into),
+    ):
+        db.add(
+            Adjustment(
+                organization_id=db.organization_id,
+                item_id=item_id,
+                location_id=location_id,
+                lot_id=None if at is None else at.id,
+                kind=AdjustmentKind.TRANSFER,
+                dated_on=dated_on,
+                change=change,
+                transfer_id=moved.id,
+            )
+        )
+    await db.flush()
+    if lot is not None and into is not None:
+        await _move_hold(db, lot, into, whole=quantity == held)
+    await costing.rederive(db, item_id)
+    return moved
+
+
+async def _lot_at(db: WriteSession, lot: Lot, location_id: int) -> Lot:
+    """``lot``'s lot at another location: the one an earlier transfer moved
+    it into or brought it from, or a copy of it made now, with its
+    properties and documents."""
+    this, other = aliased(Adjustment), aliased(Adjustment)
+    linked = (
+        await db.exec(
+            select(Lot)
+            .join(other, col(other.lot_id) == Lot.id)
+            .join(this, col(this.transfer_id) == col(other.transfer_id))
+            .where(this.lot_id == lot.id, other.location_id == location_id)
+            .order_by(col(Lot.id))
+        )
+    ).first()
+    if linked is not None:
+        return linked
+    copy = Lot(
+        **lot.model_dump(
+            include={
+                "organization_id",
+                "item_id",
+                "number",
+                "dated_on",
+                "expires_on",
+                "notes",
+                "allergens",
+                "fragrance_allergens",
+            }
+        ),
+        location_id=location_id,
+    )
+    db.add(copy)
+    await db.flush()
+    for value in (await db.exec(select(PropertyValue).where(PropertyValue.lot_id == lot.id))).all():
+        db.add(
+            PropertyValue(
+                organization_id=db.organization_id,
+                definition_id=value.definition_id,
+                lot_id=copy.id,
+                value=value.value,
+            )
+        )
+    for link in (await db.exec(select(DocumentLink).where(DocumentLink.lot_id == lot.id))).all():
+        db.add(
+            DocumentLink(organization_id=db.organization_id, file_id=link.file_id, lot_id=copy.id)
+        )
+    await db.flush()
+    return copy
+
+
+async def _move_hold(db: WriteSession, lot: Lot, into: Lot, *, whole: bool) -> None:
+    """Hold ``into`` as ``lot`` is held, a cure's ready date included: ``lot``'s
+    own hold, when all of it moved, or the same hold beside it. A lot on hold
+    already keeps its own."""
+    hold = (
+        await db.exec(select(Hold).where(Hold.lot_id == lot.id, col(Hold.ended).is_(None)))
+    ).first()
+    if (
+        hold is None
+        or (
+            await db.exec(select(Hold.id).where(Hold.lot_id == into.id, col(Hold.ended).is_(None)))
+        ).first()
+    ):
+        return
+    if whole:
+        hold.lot_id = into.id
+        db.add(hold)
+        await db.flush()
+        return
+    await place(
+        db,
+        into,
+        hold.reason_id,
+        ready_on=hold.ready_on,
+        notes=hold.notes,
+        run_id=hold.run_id,
+        order_id=hold.order_id,
+        from_hold_id=hold.id,
+        quiet=True,
+    )

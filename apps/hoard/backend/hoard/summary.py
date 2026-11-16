@@ -5,10 +5,13 @@ else works these figures out.
 * **Stock** at each location (:func:`stock`): what is on hand; what open
   orders **commit** and have not shipped (``hoard.orders``); what held lots
   hold (``hoard.holds``); and what lots past their expiry date hold, but for
-  those on hold. What is **available** is on hand less what is committed and
-  on hold, which is what Hoard tells each store it may sell. What is
+  those on hold. What is **consigned** is what sits at a consignee's
+  location (:attr:`hoard.records.Location.consignee`) for it to sell, less
+  what the consignee's own orders there commit and its lots on hold hold.
+  What is **available** is on hand less what is committed, on hold and
+  consigned, which is what Hoard tells each store it may sell. What is
   **usable** is what is available less what is expired, which is what a run
-  plans to use (``hoard.runs``).
+  plans to use (``hoard.runs``); a consignee's stock is never usable.
 * **Could make** at a location: the most batches its recipe's lines cover
   with what is usable of each there (``hoard.units.covered``), times what a
   batch makes. A run draws its lines from one location, so its **potential**
@@ -133,12 +136,14 @@ class Stock:
     committed: Decimal = Decimal(0)
     on_hold: Decimal = Decimal(0)
     #: What its unheld lots past their expiry date hold; nothing unless the
-    #: day was given.
+    #: day was given, and nothing at a consignee's location.
     expired: Decimal = Decimal(0)
+    #: What is at a consignee's location for it to sell.
+    consigned: Decimal = Decimal(0)
 
     @property
     def available(self) -> Decimal:
-        return self.on_hand - self.committed - self.on_hold
+        return self.on_hand - self.committed - self.on_hold - self.consigned
 
     @property
     def usable(self) -> Decimal:
@@ -150,6 +155,7 @@ class Stock:
             self.committed + other.committed,
             self.on_hold + other.on_hold,
             self.expired + other.expired,
+            self.consigned + other.consigned,
         )
 
 
@@ -203,12 +209,27 @@ async def stock(
         lots.where(col(Lot.item_id).in_(ids), held)
     ):
         found[item_id][location_id].on_hold += Decimal(quantity)
+    consignees = set((await db.exec(select(Location.id).where(col(Location.consignee)))).all())
     if today is not None:
         for item_id, location_id, quantity in await db.exec(
-            lots.where(col(Lot.item_id).in_(ids), ~held, col(Lot.expires_on) < today)
+            lots.where(
+                col(Lot.item_id).in_(ids),
+                ~held,
+                col(Lot.expires_on) < today,
+                col(Lot.location_id).not_in(consignees),
+            )
         ):
             found[item_id][location_id].expired += Decimal(quantity)
+    _consign(found, consignees)
     return found
+
+
+def _consign(found: dict[int, dict[int, Stock]], consignees: set[int]) -> None:
+    """Count what each consignee's location holds for it to sell as consigned."""
+    for locations in found.values():
+        for location_id, at in locations.items():
+            if location_id in consignees:
+                at.consigned = max(at.on_hand - at.committed - at.on_hold, Decimal(0))
 
 
 async def stock_at(
@@ -872,6 +893,7 @@ class Totals:
     """Several items' figures together, such as a product's variations'."""
 
     on_hand: Decimal
+    consigned: Decimal
     committed: Decimal
     available: Decimal
     #: None when none of them has any.
@@ -887,6 +909,7 @@ def total(figures: Iterable[Summary]) -> Totals:
     potentials = [each.potential for each in held if each.potential is not None]
     return Totals(
         on_hand=sum((each.stock.on_hand for each in held), Decimal(0)),
+        consigned=sum((each.stock.consigned for each in held), Decimal(0)),
         committed=sum((each.committed for each in held), Decimal(0)),
         available=sum((each.available for each in held), Decimal(0)),
         potential=sum(potentials, Decimal(0)) if potentials else None,

@@ -13,6 +13,7 @@ export const traceStep = (fields: Partial<TraceStepRead> = {}): TraceStepRead =>
   quantity: "2.000000",
   dated_on: "2026-11-03",
   party: null,
+  location_id: null,
   assumed: false,
   level: 1,
   ...fields,

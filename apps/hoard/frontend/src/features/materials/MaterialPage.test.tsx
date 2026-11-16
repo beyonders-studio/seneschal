@@ -64,6 +64,52 @@ describe("MaterialPage", () => {
     expect(screen.queryByText("Average cost")).toBeNull();
   });
 
+  it("shows what consignees hold and moves stock to another location", async () => {
+    const asked = await openSignedIn("/stock/materials/5", signedIn(), {
+      ...opened,
+      "GET /api/v1/settings/locations": {
+        status: 200,
+        data: [
+          ...(SETTINGS["GET /api/v1/settings/locations"].data as object[]),
+          { id: 12, name: "Gift shop", main: false, contact_id: 4, consignee: true },
+        ],
+      },
+      "GET /api/v1/materials/5": {
+        status: 200,
+        data: {
+          ...OOLONG,
+          stock: [...OOLONG.stock, stockRow(12, "2.000000", { consigned: "2.000000" })],
+        },
+      },
+      "POST /api/v1/adjustments/transfers": { status: 201, data: [] },
+    });
+
+    const [stock] = await screen.findAllByRole("table");
+    within(stock).getByRole("columnheader", { name: "Consigned" });
+    const shop = (await within(stock).findByText("Gift shop")).closest("tr");
+    if (!shop) throw new Error("no shop");
+    expect(within(shop).getAllByText("2 g")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Move stock" }));
+    const dialog = await screen.findByRole("dialog", { name: "Move stock" });
+    expect(within(dialog).getAllByText("L-42, 10 g left")).not.toHaveLength(0);
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "To" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Gift shop" }));
+    fireEvent.change(within(dialog).getByLabelText("Quantity"), { target: { value: "4" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move" }));
+
+    await waitFor(() => {
+      const moved = asked.find((request) => request.url === "/api/v1/adjustments/transfers");
+      expect(JSON.parse(moved?.data ?? "{}")).toMatchObject({
+        item_id: 5,
+        from_location_id: 10,
+        to_location_id: 12,
+        lot_id: 1,
+        quantity: "4",
+      });
+    });
+  });
+
   it("shows what is on order, its usage and the recipes it goes into", async () => {
     const usage = (received: string, used: string) => ({ received, used });
     await openSignedIn("/stock/materials/5", signedIn(), {

@@ -85,13 +85,17 @@ const Made = ({ item }: { item: BaseDetail }) => {
   );
 };
 
-const Stock = ({ item }: { item: BaseDetail }) => (
-  <StockTable
-    stock={item.stock}
-    unit={useSettingsNames().unit(item.tracking_unit_id)}
-    bins={{ itemId: item.id, onChanged: useRefetch(item) }}
-  />
-);
+const Stock = ({ item }: { item: BaseDetail }) => {
+  const refetch = useRefetch(item);
+  return (
+    <StockTable
+      stock={item.stock}
+      unit={useSettingsNames().unit(item.tracking_unit_id)}
+      bins={{ itemId: item.id, onChanged: refetch }}
+      moves={{ items: [item], onChanged: refetch }}
+    />
+  );
+};
 
 const Picture = ({ item }: { item: BaseDetail }) => (
   <ItemPicture item={item} onChanged={useRefetch(item)} />

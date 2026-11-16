@@ -114,6 +114,8 @@ class StoreError(StrEnum):
     STORE_NOT_CONNECTED = "STORE_NOT_CONNECTED"
     #: The location named is not one of the organization's.
     LOCATION_UNKNOWN = "LOCATION_UNKNOWN"
+    #: The location named is a consignee's, whose stock no store sells.
+    LOCATION_CONSIGNEE = "LOCATION_CONSIGNEE"
     #: The store is synced already: its sync is removed first.
     STORE_SYNCED = "STORE_SYNCED"
     #: The store is not synced yet.
@@ -529,7 +531,7 @@ async def read_store_locations(
         **_READ,
         403: {"description": "ADMIN_ONLY, READ_ONLY"},
         409: {"description": "STORE_NOT_CONNECTED, STORE_SYNCED"},
-        422: {"description": "LOCATION_UNKNOWN, STORE_FIELD_TARGET_INVALID"},
+        422: {"description": "LOCATION_UNKNOWN, LOCATION_CONSIGNEE, STORE_FIELD_TARGET_INVALID"},
     },
 )
 async def sync_store(
@@ -547,12 +549,8 @@ async def sync_store(
     if store.imported_at is not None:
         raise refuse(status.HTTP_409_CONFLICT, StoreError.STORE_SYNCED)
     for choice in body.locations:
-        if (
-            not choice.new
-            and choice.location_id is not None
-            and await db.get(Location, choice.location_id) is None
-        ):
-            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.LOCATION_UNKNOWN)
+        if not choice.new and choice.location_id is not None:
+            await _sold_from(db, choice.location_id)
     choices = [
         store_sync.LocationChoice(choice.external_id, choice.location_id, choice.new)
         for choice in body.locations
@@ -608,12 +606,22 @@ async def unsync_store(
     return await _store_read(db, store)
 
 
+async def _sold_from(db: AsyncSession, location_id: int) -> None:
+    """Refuse a location a store may not sell the stock of: one that is not
+    the organization's, or a consignee's."""
+    location = await db.get(Location, location_id)
+    if location is None:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.LOCATION_UNKNOWN)
+    if location.consignee:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.LOCATION_CONSIGNEE)
+
+
 @router.put(
     "/{store_id}/locations/{store_location_id}",
     responses={
         **_READ,
         403: {"description": "ADMIN_ONLY, READ_ONLY"},
-        422: {"description": "LOCATION_UNKNOWN"},
+        422: {"description": "LOCATION_UNKNOWN, LOCATION_CONSIGNEE"},
     },
 )
 async def map_store_location(
@@ -629,8 +637,8 @@ async def map_store_location(
     store_location = await found(db, StoreLocation, store_location_id)
     if store_location.store_id != store.id:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
-    if body.location_id is not None and await db.get(Location, body.location_id) is None:
-        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, StoreError.LOCATION_UNKNOWN)
+    if body.location_id is not None:
+        await _sold_from(db, body.location_id)
     store_location.location_id = body.location_id
     db.add(store_location)
     await db.flush()

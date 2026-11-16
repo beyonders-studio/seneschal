@@ -208,7 +208,9 @@
       "add": "Add location",
       "empty": "No locations yet.",
       "name": "Location",
-      "contact": "Contact for {{name}}"
+      "contact": "Contact for {{name}}",
+      "consignee": "Consignee",
+      "consigneeOf": "{{name}} is a consignee's"
     },
     "reasons": {
       "title": "Adjustment reasons",
@@ -278,7 +280,13 @@
     "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted.",
     "NOT_INVENTORIABLE": "That material carries no stock, so it can't start with any.",
     "SHAPE_UNKNOWN": "That page shape isn't one Hoard ships for this kind of record.",
-    "TYPE_DEFAULT": "Each kind keeps its default type. Rename it instead."
+    "TYPE_DEFAULT": "Each kind keeps its default type. Rename it instead.",
+    "CONSIGNEE_CONTACT": "A consignee's location needs its contact, and the main location can't be one.",
+    "CONSIGNEE_MAPPED": "A store sells this location's stock. Unmap it from the store first.",
+    "TRANSFER_SAME_LOCATION": "Move it to another location.",
+    "TRANSFER_LOT_ELSEWHERE": "That lot isn't at the location it's moving from.",
+    "TRANSFER_OVER_BALANCE": "That's more than is there to move.",
+    "LOT_REQUIRED": "Name the lot to move: this category records every lot."
   },
   "items": {
     "stock": "Stock by location",
@@ -355,6 +363,19 @@
       "takes": "A batch takes",
       "makes": "A batch makes",
       "none": "No {{recipe}} uses it yet."
+    },
+    "consigned": "Consigned",
+    "move": {
+      "title": "Move stock",
+      "from": "From",
+      "to": "To",
+      "quantity": "Quantity",
+      "most": "Up to {{most}}.",
+      "lotLeft": "{{number}}, {{left}} left",
+      "noLot": "No lot, {{left}} left",
+      "hint": "It moves at its average cost. A lot keeps its number, and its hold, at the other location. To undo a move, move the stock back.",
+      "submit": "Move",
+      "failed": "The stock couldn't be moved."
     }
   },
   "history": {

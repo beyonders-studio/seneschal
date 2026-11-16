@@ -17,6 +17,9 @@ both days included.
   none, under no option. Received against sold for one option is the volume
   in against sold of a certification such as fair trade.
 
+A transfer between locations counts as neither received nor lost, and leaves
+the stock's value as it was.
+
 Both count every location together. The mass balance holds quantities alone,
 so every member reads it; cost of goods only a member who sees costs.
 """
@@ -106,7 +109,7 @@ class Balance:
 async def _stock_values(db: AsyncSession, start: date, end: date) -> tuple[Decimal, Decimal]:
     """The stock's value at the start of ``start`` and at the end of ``end``:
     each item's quantity at its moving average on the day, replayed from its
-    adjustments as ``hoard.costing`` derives them."""
+    adjustments as ``hoard.costing`` derives them, passing transfers by."""
     rows = await db.exec(
         select(
             col(Adjustment.item_id),
@@ -114,7 +117,7 @@ async def _stock_values(db: AsyncSession, start: date, end: date) -> tuple[Decim
             col(Adjustment.change),
             col(Adjustment.unit_cost),
         )
-        .where(Adjustment.dated_on <= end)
+        .where(Adjustment.dated_on <= end, Adjustment.kind != AdjustmentKind.TRANSFER)
         .order_by(col(Adjustment.item_id), col(Adjustment.dated_on), col(Adjustment.id))
     )
     opening = closing = Decimal(0)

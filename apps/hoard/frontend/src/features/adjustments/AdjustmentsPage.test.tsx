@@ -17,6 +17,7 @@ const adjustment = (overrides: Partial<AdjustmentRead>): AdjustmentRead => ({
   purchase_id: null,
   stocktake_id: null,
   order_id: null,
+  transfer_id: null,
   created_at: "2026-11-07T09:00:00Z",
   created_by: null,
   updated_at: "2026-11-07T09:00:00Z",
