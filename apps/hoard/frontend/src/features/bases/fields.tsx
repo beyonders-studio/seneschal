@@ -1,10 +1,14 @@
+import { useQueryClient } from "@tanstack/react-query";
+
+import { getReadBaseQueryKey } from "@/api/generated/bases/bases";
 import type { BaseDetail, BaseRead } from "@/api/generated/hoard.schemas";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
+import { ItemPicture } from "@/features/items/ItemPicture";
 import { LotsTable } from "@/features/items/lots";
 import { BaseRecipe } from "@/features/recipes/BaseRecipe";
 import { useSettingsNames } from "@/features/settings/names";
@@ -45,8 +49,22 @@ const AverageCost = ({ item }: Shown) => {
   );
 };
 
+/** Reads a base again once something on its page changed it. */
+const useRefetch = (item: BaseDetail) => {
+  const queryClient = useQueryClient();
+  return () => void queryClient.invalidateQueries({ queryKey: getReadBaseQueryKey(item.id) });
+};
+
 const Stock = ({ item }: { item: BaseDetail }) => (
-  <StockTable stock={item.stock} unit={useSettingsNames().unit(item.tracking_unit_id)} />
+  <StockTable
+    stock={item.stock}
+    unit={useSettingsNames().unit(item.tracking_unit_id)}
+    bins={{ itemId: item.id, onChanged: useRefetch(item) }}
+  />
+);
+
+const Picture = ({ item }: { item: BaseDetail }) => (
+  <ItemPicture item={item} onChanged={useRefetch(item)} />
 );
 
 const field = (id: string) => ({ type: "field", props: { field: id } });
@@ -64,6 +82,12 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       requireable: false,
       value: (base) => base.name,
     },
+    builtin(
+      "status",
+      "catalog:items.status",
+      (base) => base.status,
+      ({ item }) => <StatusBadge status={item.status} />
+    ),
     builtin(
       "sku",
       "hoard:common.sku",
@@ -93,6 +117,13 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
     ),
   ],
   pageFields: [
+    builtin("picture", "catalog:items.picture", (base) => base.picture_id, Picture),
+    builtin(
+      "notes",
+      "hoard:common.notes",
+      (base) => base.notes,
+      ({ item }) => item.notes && <p className="text-sm whitespace-pre-line">{item.notes}</p>
+    ),
     builtin(
       "recipe",
       "recipes:section.title",
@@ -113,7 +144,7 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       ({ item }) => <DocumentsSection of="base" id={item.id} />
     ),
   ],
-  columns: ["name", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
+  columns: ["name", "status", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
   costs: new Set(["average_cost"]),
   spec: detailLayoutSpec({
     kind: "base",
@@ -132,11 +163,13 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
             "average_cost",
           ].map(field),
         }),
-        at(3, field("recipe")),
-        at(4, field("stock")),
-        at(5, field("lots")),
-        at(6, field("documents")),
-        at(7, { type: "byline" }),
+        at(3, field("picture")),
+        at(4, field("notes")),
+        at(5, field("recipe")),
+        at(6, field("stock")),
+        at(7, field("lots")),
+        at(8, field("documents")),
+        at(9, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

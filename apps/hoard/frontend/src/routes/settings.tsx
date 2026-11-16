@@ -7,6 +7,7 @@ import { BackupSection } from "@/features/settings/BackupSection";
 import { CategoriesSection } from "@/features/settings/CategoriesSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { HoldReasonsSection } from "@/features/settings/HoldReasonsSection";
+import { LabourRateSection } from "@/features/settings/LabourRateSection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
@@ -24,6 +25,7 @@ function SettingsPage() {
     <HoardPage title={t("settings.title")}>
       <div className="flex flex-col gap-8">
         <CurrencySection />
+        <LabourRateSection />
         <UnitsSection />
         <CategoriesSection />
         <LocationsSection />

@@ -117,6 +117,8 @@ class RecipeRead(RecipeFigures):
     unit_id: int | None
     #: How long one batch takes.
     minutes: int | None
+    #: Its method, in words.
+    notes: str | None
 
 
 class RecipeLineWrite(BaseModel):
@@ -136,6 +138,7 @@ class RecipeWrite(BaseModel):
     by_ratio: bool = False
     total: items.Positive | None = None
     total_unit_id: int | None = None
+    notes: items.Notes | None = None
     lines: Annotated[list[RecipeLineWrite], Field(max_length=MAX_LINES)]
 
 
@@ -316,6 +319,7 @@ async def _read(
                 attributes=attributes,
                 unit_id=counted.get(recipe.base_id or 0),
                 minutes=recipe.minutes,
+                notes=recipe.notes,
                 **await _figures(db, recipe, held, scale, known, described_lines),
             )
         )
@@ -339,6 +343,7 @@ def _recipe(body: RecipeWrite, recipe: Recipe) -> Recipe:
     recipe.by_ratio = body.by_ratio
     recipe.total = body.total if body.by_ratio else None
     recipe.total_unit_id = body.total_unit_id if body.by_ratio else None
+    recipe.notes = body.notes
     return recipe
 
 

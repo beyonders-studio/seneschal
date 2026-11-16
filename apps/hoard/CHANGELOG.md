@@ -17,6 +17,12 @@ All notable changes to Hoard are recorded here. The format follows
 - **Receive part of a purchase line.** When 200 g of a 453.592 g line arrives, receive just that: it gets its own lot, and the rest stays on order at the same unit cost. The purchase's discount and shipping stay spread as they were. Taking the part back puts it back into the rest while the rest is still on order.
 - **Purchases record when they're expected,** and an open purchase past that day is marked overdue on its page and in the purchases list.
 - **Notes on a purchase,** which search finds. Purchase lines also show each material's SKU and category.
+- **Archive a base or a material,** as you can a product. It leaves the lists, the item pickers and search until you ask for archived ones, and stops warning of low stock. Its stock still counts in stock value, cost of goods and stocktakes, and recipes and open runs that use it keep working, marked archived. Unarchive it and it's back as it was.
+- **Bins.** Record where a base or a material sits at each location, by zone, section and position, from its stock table. A bin stays when the stock there runs out, and two items can share one.
+- **A picture and notes on a base or a material.** Search finds the notes. The picture stays in Hoard and is never sent to a store.
+- **Start a new base or material with its stock.** Adding one takes its picture, its bin and its starting stock at a location, the main one unless you pick another, with what each unit cost for members who see costs.
+- **A method on a recipe,** shown above its lines.
+- **A labour rate** in Settings, what an hour of work costs, which an admin sets and only members who see costs read.
 
 ### Changed
 

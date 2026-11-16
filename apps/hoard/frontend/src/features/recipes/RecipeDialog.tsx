@@ -18,7 +18,7 @@ import {
 } from "@/api/generated/recipes/recipes";
 import { ItemField } from "@/features/adjustments/fields";
 import { useMovementLabels } from "@/features/adjustments/labels";
-import { useQuantity, useRatio, useShare } from "@/features/items/format";
+import { orNull, useQuantity, useRatio, useShare } from "@/features/items/format";
 import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
@@ -35,6 +35,7 @@ import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { useDebouncedValue } from "@/ui/lib/useDebouncedValue";
 import { Switch } from "@/ui/switch";
+import { Textarea } from "@/ui/textarea";
 
 /** What a new recipe makes: one variation, one base, or one bundle product. */
 export type RecipeOutputOf = Pick<RecipeCreate, "variation_id" | "base_id" | "product_id">;
@@ -126,6 +127,7 @@ function RecipeForm({
     : (output ?? {});
   const [batchQuantity, setBatchQuantity] = useState(recipe?.batch_quantity ?? "1");
   const [minutes, setMinutes] = useState(recipe?.minutes?.toString() ?? "");
+  const [notes, setNotes] = useState(recipe?.notes ?? "");
   const [draft, setDraft] = useState<Draft>({
     byRatio: recipe?.by_ratio ?? false,
     total: recipe?.total ?? "",
@@ -169,7 +171,10 @@ function RecipeForm({
   );
 
   const save = useMutation({
-    mutationFn: () => (recipe ? updateRecipe(recipe.id, body()) : createRecipe(body())),
+    mutationFn: () => {
+      const saved = { ...body(), notes: bundle ? null : orNull(notes) };
+      return recipe ? updateRecipe(recipe.id, saved) : createRecipe(saved);
+    },
     onSuccess: async (saved) => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: getListRecipesQueryKey() }),
@@ -281,6 +286,9 @@ function RecipeForm({
                 />
               </Field>
             </div>
+            <Field label={t("dialog.notes")} hint={t("dialog.notesHint")}>
+              <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+            </Field>
           </>
         )}
         <fieldset className="flex flex-col gap-3">

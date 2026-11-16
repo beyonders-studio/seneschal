@@ -1,9 +1,9 @@
 """What Hoard's search finds (``seneschal_core.search``): one source per kind
 of record people look for, each with the page that opens it.
 
-* **Materials**: name; SKU and supplier code; ingredient name and text
-  properties.
-* **Bases**: name; SKU; text properties.
+* **Materials**: name; SKU and supplier code; ingredient name, notes and
+  text properties. Archived materials are archived.
+* **Bases**: name; SKU; notes and text properties. Archived bases are archived.
 * **Products**: name; their variations' SKUs; the variations' attributes, the
   title, type, vendor and tags of each store's copy of them, and text
   properties. Archived products are archived.
@@ -75,8 +75,9 @@ MATERIALS = SearchSource(
     title="r.name",
     path="'/stock/materials/' || r.id",
     codes="ARRAY[r.sku, r.supplier_code]",
-    body=("r.ingredient_name", _text_properties("material_id")),
-    watch=("name", "sku", "supplier_code", "ingredient_name"),
+    body=("r.ingredient_name", "r.notes", _text_properties("material_id")),
+    archived="r.status = 'archived'",
+    watch=("name", "sku", "supplier_code", "ingredient_name", "notes", "status"),
     dependencies=(_properties("material_id"),),
 )
 
@@ -86,8 +87,9 @@ BASES = SearchSource(
     title="r.name",
     path="'/stock/bases/' || r.id",
     codes="ARRAY[r.sku]",
-    body=(_text_properties("base_id"),),
-    watch=("name", "sku"),
+    body=("r.notes", _text_properties("base_id")),
+    archived="r.status = 'archived'",
+    watch=("name", "sku", "notes", "status"),
     dependencies=(_properties("base_id"),),
 )
 

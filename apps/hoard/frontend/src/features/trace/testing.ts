@@ -9,7 +9,7 @@ export const traceStep = (fields: Partial<TraceStepRead> = {}): TraceStepRead =>
   lot: { id: 3, number: "L-3" },
   made_lot: { id: 8, number: "R-7" },
   from_lot: { id: 3, number: "L-3" },
-  item: { id: 5, kind: "material", name: "Oolong", attributes: {} },
+  item: { id: 5, kind: "material", name: "Oolong", attributes: {}, archived: false },
   quantity: "2.000000",
   dated_on: "2026-11-03",
   party: null,

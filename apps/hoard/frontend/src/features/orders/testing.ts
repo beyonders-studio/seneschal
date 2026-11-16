@@ -18,7 +18,7 @@ export const orderLot: OrderLot = {
 /** An order's line: 4 of Chai at $5, nothing of it shipped, and not short. */
 export const orderLine = (overrides: Partial<OrderLineRead> = {}): OrderLineRead => ({
   id: 9,
-  item: { id: 3, kind: "variation", name: "Chai", attributes: {} },
+  item: { id: 3, kind: "variation", name: "Chai", attributes: {}, archived: false },
   quantity: "4.000000",
   current_quantity: "4.000000",
   refunded_quantity: "0.000000",
@@ -38,7 +38,7 @@ export const shipmentLine = (
 ): OrderShipmentLineRead => ({
   id: 11,
   order_line_id: 9,
-  item: { id: 3, kind: "variation", name: "Chai", attributes: {} },
+  item: { id: 3, kind: "variation", name: "Chai", attributes: {}, archived: false },
   quantity: "4.000000",
   lot: null,
   assumed: false,

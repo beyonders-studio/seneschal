@@ -13,6 +13,7 @@ from hoard.events import Event, EventName
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    ItemStatus,
     Location,
     OutboxEvent,
     ProductionRun,
@@ -125,6 +126,11 @@ async def test_stock_falling_to_its_limit_is_recorded_once_until_it_rises_again(
         await events.record_if_low(db, flour.id)
 
     for change in ("-4", "-2", "-1", "6", "-5"):
+        await use(change)
+    # An archived material's stock is never low.
+    flour.status = ItemStatus.ARCHIVED
+    db.add(flour)
+    for change in ("6", "-6"):
         await use(change)
     await db.commit()
 

@@ -1,6 +1,9 @@
 """The organization's settings: its currency, the rules it keeps records for,
-units, categories with their picking rules, locations and adjustment reasons. Every member reads them; only a community admin changes
-them (:data:`~hoard.api.deps.AdminDep`).
+what an hour of work costs, units, categories with their picking rules,
+locations and adjustment reasons. Every member reads them, but for the labour
+rate, which only a member who sees costs reads; only a community admin changes
+them (:data:`~hoard.api.deps.AdminDep`), and the labour rate only one who sees
+costs.
 
 An organization starts with its main location, the default adjustment reasons
 and Hoard's standard units (``hoard.units``), which Hoard makes itself the
@@ -24,7 +27,8 @@ from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import stock, units
-from hoard.api.deps import AdminDep, HoardError
+from hoard.api.adjustments import AdjustmentError
+from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.records import (
     AdjustmentReason,
     AutoManufacture,
@@ -74,7 +78,7 @@ class SettingsError(StrEnum):
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
-    403: {"description": "ADMIN_ONLY, READ_ONLY"},
+    403: {"description": "ADMIN_ONLY, READ_ONLY, COSTS_HIDDEN"},
     404: {"description": "NOT_FOUND"},
     409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD"},
     422: {"description": "NAME_REQUIRED"},
@@ -90,14 +94,19 @@ class SettingsRead(BaseModel):
     auto_manufacture: AutoManufacture
     #: The rules the organization keeps records for.
     regimes: list[Regime]
+    #: What an hour of work costs; null until it is set, and without ``costs``.
+    labour_rate: Decimal | None
 
 
 class SettingsUpdate(BaseModel):
-    """The settings to change: each left as it is unless sent."""
+    """The settings to change: each left as it is unless sent. The labour
+    rate, which may be cleared with null, is refused from a member who
+    doesn't see costs."""
 
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     auto_manufacture: AutoManufacture | None = None
     regimes: list[Regime] | None = None
+    labour_rate: Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=6)] | None = None
 
 
 class SettingsUnitRead(BaseModel):
@@ -247,15 +256,15 @@ async def _made_by_hoard(
 
 
 @router.get("", responses=_READ)
-async def read_settings(db: OrganizationSessionDep) -> SettingsRead:
+async def read_settings(db: OrganizationSessionDep, sees_costs: SeesCostsDep) -> SettingsRead:
     """The organization's settings, each its default until it is changed."""
     settings = (await db.exec(select(OrganizationSettings))).first()
-    return _settings(settings or OrganizationSettings())
+    return _settings(settings or OrganizationSettings(), sees_costs)
 
 
 @router.put("", responses=_CHANGE)
 async def update_settings(
-    body: SettingsUpdate, _admin: AdminDep, db: WriteSessionDep
+    body: SettingsUpdate, _admin: AdminDep, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> SettingsRead:
     """Change the organization's settings."""
     settings = (await db.exec(select(OrganizationSettings))).first() or OrganizationSettings(
@@ -264,14 +273,20 @@ async def update_settings(
     changes = body.model_dump(exclude_none=True)
     if body.regimes is not None:
         changes["regimes"] = [regime for regime in Regime if regime in body.regimes]
+    if "labour_rate" in body.model_fields_set:
+        if not sees_costs:
+            raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
+        changes["labour_rate"] = body.labour_rate
     settings.sqlmodel_update(changes)
     db.add(settings)
     await db.commit()
-    return _settings(settings)
+    await db.refresh(settings)
+    return _settings(settings, sees_costs)
 
 
-def _settings(settings: OrganizationSettings) -> SettingsRead:
-    return SettingsRead.model_validate(settings, from_attributes=True)
+def _settings(settings: OrganizationSettings, sees_costs: bool) -> SettingsRead:
+    read = SettingsRead.model_validate(settings, from_attributes=True)
+    return read if sees_costs else read.model_copy(update={"labour_rate": None})
 
 
 def _unit(unit: Unit) -> SettingsUnitRead:

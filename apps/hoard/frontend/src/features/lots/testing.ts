@@ -11,7 +11,7 @@ export const lotRead = (fields: Partial<LotRead> = {}): LotRead => ({
   balance: "10.000000",
   on_hold: false,
   properties: [],
-  item: { id: 5, kind: "material", name: "Oolong", attributes: {} },
+  item: { id: 5, kind: "material", name: "Oolong", attributes: {}, archived: false },
   product_id: null,
   purchase_line_id: null,
   hold: null,

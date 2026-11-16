@@ -2,7 +2,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { MaterialDetail, MaterialWrite } from "@/api/generated/hoard.schemas";
+import {
+  ItemStatus,
+  type MaterialCreate,
+  type MaterialDetail,
+} from "@/api/generated/hoard.schemas";
 import {
   createMaterial,
   getListMaterialsQueryKey,
@@ -13,9 +17,13 @@ import { useReadUnitConversion } from "@/api/generated/settings/settings";
 import { SupplierPicker } from "@/features/contacts/SupplierPicker";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { StatusField } from "@/features/items/ItemList";
+import { withPicture } from "@/features/items/ItemPicture";
+import { NO_START, StartFields, startBody } from "@/features/items/start";
 import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
+import { useSeesCosts } from "@/lib/permissions";
 import {
   Dialog,
   DialogBody,
@@ -27,10 +35,12 @@ import {
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Switch } from "@/ui/switch";
+import { Textarea } from "@/ui/textarea";
 
 /**
- * Adding a material, or editing `material`, in a dialog. Closing it drops
- * what was typed; saving answers the material as Hoard keeps it.
+ * Adding a material, with its picture, bin and starting stock, or editing
+ * `material`, in a dialog. Closing it drops what was typed; saving answers the
+ * material as Hoard keeps it.
  */
 export function MaterialDialog({
   material,
@@ -69,8 +79,12 @@ function MaterialForm({
 }) {
   const { t } = useTranslation("catalog");
   const queryClient = useQueryClient();
-  const { units, categoriesOf } = useSettingsNames();
+  const seesCosts = useSeesCosts();
+  const { units, unit, categoriesOf } = useSettingsNames();
   const [name, setName] = useState(material?.name ?? "");
+  const [status, setStatus] = useState<ItemStatus>(material?.status ?? ItemStatus.active);
+  const [notes, setNotes] = useState(material?.notes ?? "");
+  const [start, setStart] = useState(NO_START);
   const [sku, setSku] = useState(material?.sku ?? "");
   const [categoryId, setCategoryId] = useState(material?.category_id ?? null);
   const [trackingUnitId, setTrackingUnitId] = useState(material?.tracking_unit_id ?? null);
@@ -87,8 +101,11 @@ function MaterialForm({
   const [supplierId, setSupplierId] = useState(material?.supplier_contact_id ?? null);
   const [supplierCode, setSupplierCode] = useState(material?.supplier_code ?? "");
   const save = useMutation({
-    mutationFn: (body: MaterialWrite) =>
-      material ? updateMaterial(material.id, body) : createMaterial(body),
+    mutationFn: async (body: MaterialCreate) => {
+      if (material) return updateMaterial(material.id, body);
+      const made = await createMaterial(body);
+      return start.picture ? withPicture(made, start.picture, t) : made;
+    },
     onSuccess: async (saved) => {
       queryClient.setQueryData(getReadMaterialQueryKey(saved.id), saved);
       await queryClient.invalidateQueries({ queryKey: getListMaterialsQueryKey() });
@@ -101,6 +118,8 @@ function MaterialForm({
     if (trackingUnitId === null) return;
     save.mutate({
       name: name.trim(),
+      status,
+      notes: orNull(notes),
       sku: orNull(sku),
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
@@ -111,6 +130,7 @@ function MaterialForm({
       inventoriable,
       supplier_contact_id: supplierId,
       supplier_code: orNull(supplierCode),
+      ...(material ? {} : { start: startBody(start, inventoriable, seesCosts) }),
     });
   };
 
@@ -183,10 +203,22 @@ function MaterialForm({
           <Field label={t("materials.supplierCode")}>
             <Input value={supplierCode} onChange={(event) => setSupplierCode(event.target.value)} />
           </Field>
+          {material && <StatusField value={status} onChange={setStatus} />}
         </div>
         <Field label={t("materials.inventoriable")} hint={t("materials.inventoriableHint")}>
           <Switch checked={inventoriable} onCheckedChange={setInventoriable} />
         </Field>
+        <Field label={t("hoard:common.notes")}>
+          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </Field>
+        {!material && (
+          <StartFields
+            value={start}
+            onChange={setStart}
+            unit={unit(trackingUnitId)}
+            stocked={inventoriable}
+          />
+        )}
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
             {errorMessage(save.error, t, "materials.saveFailed")}

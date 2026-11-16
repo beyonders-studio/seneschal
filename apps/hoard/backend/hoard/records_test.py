@@ -8,18 +8,20 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hoard.records import (
     MAX_IMAGE_BYTES,
     Adjustment,
     AdjustmentKind,
     Allergen,
+    Bin,
     CategoryKind,
     Channel,
     DocumentLink,
     Hold,
     HoldEnd,
+    Image,
     Item,
     ItemKind,
     Listing,
@@ -29,7 +31,6 @@ from hoard.records import (
     Order,
     OrderStatus,
     Product,
-    ProductImage,
     PropertyDefinition,
     PropertyType,
     PropertyValue,
@@ -39,7 +40,7 @@ from hoard.records import (
     Store,
     Unit,
 )
-from hoard.stock import add_material
+from hoard.stock import add_material, remove_item
 from hoard.stocktakes import confirm_row, start_stocktake
 from seneschal_core import organizations
 from seneschal_core.db import Database, WriteSession, create_async_engine
@@ -155,34 +156,71 @@ async def test_erasing_an_organization_takes_its_stock_with_it(
         await engine.dispose()
 
 
-async def test_a_product_image_is_an_image_of_at_most_five_megabytes(db: WriteSession):
+async def test_an_image_is_of_a_product_or_one_item_and_at_most_five_megabytes(
+    db: WriteSession, material
+):
     product = Product(organization_id=db.organization_id, name="Loaf")
     db.add(product)
     await db.flush()
+    flour = await material("Flour")
 
-    def image(content_type: str, content: bytes) -> ProductImage:
-        return ProductImage(
+    def image(content_type: str, content: bytes, **of: int) -> Image:
+        return Image(
             organization_id=db.organization_id,
-            product_id=product.id,
             content_type=content_type,
             content=content,
+            **(of or {"product_id": product.id}),
         )
 
     db.add(image("image/png", b"\x89PNG"))
+    db.add(image("image/png", b"\x89PNG"))
+    db.add(image("image/png", b"\x89PNG", item_id=flour.id))
     await db.flush()
-    for refused in (
-        image("text/html", b"<p>"),
-        image("image/png", b""),
-        image("image/png", b"0" * (MAX_IMAGE_BYTES + 1)),
+    for refused, constraint in (
+        (image("text/html", b"<p>"), "ck_images_content_type"),
+        (image("image/png", b""), "ck_images_size"),
+        (image("image/png", b"0" * (MAX_IMAGE_BYTES + 1)), "ck_images_size"),
+        (image("image/png", b"\x89PNG", product_id=product.id, item_id=flour.id), "ck_images_of"),
+        (image("image/png", b"\x89PNG", item_id=flour.id), "uq_images_item"),
     ):
         async with db.begin_nested():
             db.add(refused)
-            with pytest.raises(DBAPIError, match="ck_product_images"):
+            with pytest.raises(DBAPIError, match=constraint):
                 await db.flush()
 
     await db.delete(product)
+    await remove_item(db, flour.id)
     await db.flush()
-    assert (await db.exec(select(ProductImage))).all() == []
+    assert (await db.exec(select(Image))).all() == []
+
+
+async def test_a_bin_outlives_its_stock_and_goes_with_its_location(
+    db: WriteSession, main: Location, material
+):
+    shelf = Location(organization_id=db.organization_id, name="Shelf")
+    db.add(shelf)
+    await db.flush()
+    flour, sugar = await material("Flour"), await material("Sugar")
+    for item, location in ((flour, main), (sugar, main), (flour, shelf)):
+        db.add(
+            Bin(
+                organization_id=db.organization_id,
+                item_id=item.id,
+                location_id=location.id,
+                zone="A",
+                section="2",
+            )
+        )
+    await db.flush()
+    async with db.begin_nested():
+        db.add(Bin(organization_id=db.organization_id, item_id=sugar.id, location_id=shelf.id))
+        with pytest.raises(DBAPIError, match="ck_bins_named"):
+            await db.flush()
+
+    await db.delete(shelf)
+    await db.flush()
+    kept = (await db.exec(select(Bin.item_id).order_by(col(Bin.item_id)))).all()
+    assert kept == [flour.id, sugar.id]
 
 
 async def test_making_keeps_its_shapes(db: WriteSession, main: Location, material, base):

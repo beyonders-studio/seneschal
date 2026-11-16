@@ -106,6 +106,40 @@ describe("Settings", () => {
     expect(screen.queryByLabelText("Currency code")).toBeNull();
     expect(screen.queryByRole("button", { name: /kg/ })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Properties" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Labour rate" })).toBeNull();
+  });
+
+  it("shows the labour rate to a member who sees costs", async () => {
+    await openSignedIn("/settings", signedIn({ page: "settings", permissions: ["use", "costs"] }), {
+      ...SETTINGS,
+      "GET /api/v1/settings": { status: 200, data: { currency: "EUR", labour_rate: "20.000000" } },
+    });
+
+    await screen.findByText("€20.00");
+    expect(screen.queryByLabelText("Per hour")).toBeNull();
+  });
+
+  it("lets an admin who sees costs set the labour rate", async () => {
+    const rated = {
+      ...SETTINGS,
+      "GET /api/v1/settings": { status: 200, data: { currency: "EUR", labour_rate: "20.000000" } },
+      "PUT /api/v1/settings": { status: 200, data: { currency: "EUR", labour_rate: "22.5" } },
+    };
+    const asked = await openSignedIn(
+      "/settings",
+      signedIn({ page: "settings", admin: true, permissions: ["use", "costs"] }),
+      rated
+    );
+    const rate = await screen.findByLabelText("Per hour");
+    await waitFor(() => expect(rate).toHaveProperty("value", "20.000000"));
+    fireEvent.change(rate, { target: { value: "22.5" } });
+    fireEvent.click(within(rate.closest("form") as HTMLElement).getByRole("button"));
+    await waitFor(() =>
+      expect(
+        asked.find((request) => request.method === "put" && request.url === "/api/v1/settings")
+          ?.data
+      ).toBe(JSON.stringify({ labour_rate: "22.5" }))
+    );
   });
 
   it("lets an admin add to them", async () => {

@@ -33,10 +33,10 @@ from hoard.records import (
     Channel,
     FieldOwner,
     FieldTarget,
+    ItemStatus,
     Listing,
     Location,
     Product,
-    ProductStatus,
     PropertyValue,
     PushStatus,
     StockPush,
@@ -278,10 +278,10 @@ EXPECTED = {
     "products": [
         # Hoard's chai takes the store's name, SKU and options; its large
         # variant, matched by nothing, is made on it.
-        ("Masala chai", ProductStatus.ACTIVE, "CHAI-S", {"Size": "Small"}),
-        ("Masala chai", ProductStatus.ACTIVE, "CHAI-L", {"Size": "Large"}),
-        ("Mug", ProductStatus.ACTIVE, "MUG", {}),
-        ("Old tin", ProductStatus.ARCHIVED, None, {}),
+        ("Masala chai", ItemStatus.ACTIVE, "CHAI-S", {"Size": "Small"}),
+        ("Masala chai", ItemStatus.ACTIVE, "CHAI-L", {"Size": "Large"}),
+        ("Mug", ItemStatus.ACTIVE, "MUG", {}),
+        ("Old tin", ItemStatus.ARCHIVED, None, {}),
     ],
     "copies": ["p-chai", "p-mug", "p-old"],
     "stock": {

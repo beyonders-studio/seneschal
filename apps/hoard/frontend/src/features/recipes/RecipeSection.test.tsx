@@ -33,9 +33,10 @@ const BOX: RecipeRead = {
   batch_quantity: "1.000000",
   batches: "1",
   minutes: null,
+  notes: null,
   lines: [
     {
-      item: { id: 30, kind: "variation", name: "Tin of oolong", attributes: {} },
+      item: { id: 30, kind: "variation", name: "Tin of oolong", attributes: {}, archived: false },
       unit_id: null,
       written: "3.000000",
       amount: "3.000000",
@@ -56,7 +57,7 @@ const LARGE: RecipeRead = {
   unit_id: null,
   lines: [
     {
-      item: { id: 5, kind: "material", name: "Black tea", attributes: {} },
+      item: { id: 5, kind: "material", name: "Black tea", attributes: {}, archived: false },
       unit_id: 1,
       written: "12.000000",
       amount: "12.000000",

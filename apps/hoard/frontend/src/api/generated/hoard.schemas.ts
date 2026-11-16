@@ -37,6 +37,7 @@ export interface AdjustmentItem {
   kind: ItemKind;
   name: string;
   attributes: AdjustmentItemAttributes;
+  archived: boolean;
 }
 
 /**
@@ -125,11 +126,63 @@ export const AutoManufacture = {
 } as const;
 
 /**
- * What is on hand of an item at one location.
+ * Whether a product, a material or a base is in use. An archived one
+ * leaves lists, pickers and search unless they ask for it; its stock,
+ * history and the recipes naming it stay as they were.
+ */
+export type ItemStatus = (typeof ItemStatus)[keyof typeof ItemStatus];
+
+export const ItemStatus = {
+  active: "active",
+  archived: "archived",
+} as const;
+
+/**
+ * Where an item sits at a location; any part may be left out.
+ */
+export interface ItemBin {
+  zone?: string | null;
+  section?: string | null;
+  position?: string | null;
+}
+
+/**
+ * Where a new material or base starts: at a location, the main one unless
+ * another is named, with its bin there and its starting stock.
+ */
+export interface ItemStart {
+  location_id?: number | null;
+  quantity?: number | string | null;
+  unit_cost?: number | string | null;
+  bin?: ItemBin | null;
+}
+
+/**
+ * A base as it is added, with where it starts.
+ */
+export interface BaseCreate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  status?: ItemStatus;
+  sku?: string | null;
+  tracking_unit_id: number;
+  low_stock_limit?: number | string | null;
+  category_id?: number | null;
+  cure_days?: number | null;
+  notes?: string | null;
+  start?: ItemStart | null;
+}
+
+/**
+ * What is on hand of an item at one location, and its bin there.
  */
 export interface ItemStockRead {
   location_id: number;
   quantity: string;
+  bin: ItemBin | null;
 }
 
 /**
@@ -387,7 +440,7 @@ export interface ItemLotRead {
 }
 
 /**
- * A base, with its stock and lots at each location.
+ * A base, with its stock, bin and lots at each location.
  */
 export interface BaseDetail {
   created_at: string;
@@ -399,18 +452,22 @@ export interface BaseDetail {
   lots: ItemLotRead[];
   id: number;
   name: string;
+  status: ItemStatus;
   sku: string | null;
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
   cure_days: number | null;
   average_cost: string | null;
+  notes: string | null;
   properties: HoardPropertySummary[];
+  picture_id: number | null;
 }
 
 export interface BaseRead {
   id: number;
   name: string;
+  status: ItemStatus;
   sku: string | null;
   tracking_unit_id: number;
   low_stock_limit: string | null;
@@ -418,6 +475,7 @@ export interface BaseRead {
   cure_days: number | null;
   on_hand: string;
   average_cost: string | null;
+  notes: string | null;
   properties: HoardPropertySummary[];
 }
 
@@ -430,11 +488,13 @@ export interface BaseWrite {
    * @maxLength 200
    */
   name: string;
+  status?: ItemStatus;
   sku?: string | null;
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
   cure_days?: number | null;
+  notes?: string | null;
 }
 
 /**
@@ -1195,6 +1255,14 @@ export interface HoldRelease {
   ended_on?: string | null;
 }
 
+export interface ItemPictureRead {
+  id: number;
+  content_type: string;
+  size: number;
+  created_at: string;
+  created_by: string | null;
+}
+
 export type JobReadArgs = { [key: string]: unknown };
 
 export type JobState = (typeof JobState)[keyof typeof JobState];
@@ -1302,7 +1370,31 @@ export interface LotRead {
 }
 
 /**
- * A material, with its stock and lots at each location.
+ * A material as it is added, with where it starts.
+ */
+export interface MaterialCreate {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  status?: ItemStatus;
+  sku?: string | null;
+  inventoriable?: boolean;
+  tracking_unit_id: number;
+  purchase_unit_id?: number | null;
+  purchase_conversion?: number | string;
+  unit_weight?: number | string | null;
+  low_stock_limit?: number | string | null;
+  category_id?: number | null;
+  supplier_contact_id?: number | null;
+  supplier_code?: string | null;
+  notes?: string | null;
+  start?: ItemStart | null;
+}
+
+/**
+ * A material, with its stock, bin and lots at each location.
  */
 export interface MaterialDetail {
   created_at: string;
@@ -1314,6 +1406,7 @@ export interface MaterialDetail {
   lots: ItemLotRead[];
   id: number;
   name: string;
+  status: ItemStatus;
   sku: string | null;
   inventoriable: boolean;
   tracking_unit_id: number;
@@ -1325,12 +1418,15 @@ export interface MaterialDetail {
   supplier_contact_id: number | null;
   supplier_code: string | null;
   average_cost: string | null;
+  notes: string | null;
   properties: HoardPropertySummary[];
+  picture_id: number | null;
 }
 
 export interface MaterialRead {
   id: number;
   name: string;
+  status: ItemStatus;
   sku: string | null;
   inventoriable: boolean;
   tracking_unit_id: number;
@@ -1343,6 +1439,7 @@ export interface MaterialRead {
   supplier_code: string | null;
   on_hand: string;
   average_cost: string | null;
+  notes: string | null;
   properties: HoardPropertySummary[];
 }
 
@@ -1355,6 +1452,7 @@ export interface MaterialWrite {
    * @maxLength 200
    */
   name: string;
+  status?: ItemStatus;
   sku?: string | null;
   inventoriable?: boolean;
   tracking_unit_id: number;
@@ -1365,6 +1463,7 @@ export interface MaterialWrite {
   category_id?: number | null;
   supplier_contact_id?: number | null;
   supplier_code?: string | null;
+  notes?: string | null;
 }
 
 export type MeTheme = (typeof MeTheme)[keyof typeof MeTheme] | null;
@@ -1607,17 +1706,10 @@ export interface PageOrderSummary {
   total: number;
 }
 
-export type ProductStatus = (typeof ProductStatus)[keyof typeof ProductStatus];
-
-export const ProductStatus = {
-  active: "active",
-  archived: "archived",
-} as const;
-
 export interface ProductRead {
   id: number;
   name: string;
-  status: ProductStatus;
+  status: ItemStatus;
   category_id: number | null;
   low_stock_limit: string | null;
   on_hand: string;
@@ -1692,6 +1784,7 @@ export interface RecipeRead {
   attributes: RecipeReadAttributes;
   unit_id: number | null;
   minutes: number | null;
+  notes: string | null;
 }
 
 export interface PageRecipeRead {
@@ -1841,7 +1934,7 @@ export interface ProductDetail {
   updated_by: string | null;
   id: number;
   name: string;
-  status: ProductStatus;
+  status: ItemStatus;
   category_id: number | null;
   low_stock_limit: string | null;
   on_hand: string;
@@ -1903,7 +1996,7 @@ export interface ProductWrite {
    * @maxLength 200
    */
   name: string;
-  status?: ProductStatus;
+  status?: ItemStatus;
   category_id?: number | null;
   low_stock_limit?: number | string | null;
   default_price?: number | string | null;
@@ -2036,6 +2129,7 @@ export interface RecipeCreate {
   by_ratio?: boolean;
   total?: number | string | null;
   total_unit_id?: number | null;
+  notes?: string | null;
   /** @maxItems 200 */
   lines: RecipeLineWriteInput[];
   variation_id?: number | null;
@@ -2059,6 +2153,7 @@ export interface RecipeWriteOutput {
   by_ratio?: boolean;
   total?: string | null;
   total_unit_id?: number | null;
+  notes?: string | null;
   /** @maxItems 200 */
   lines: RecipeLineWriteOutput[];
 }
@@ -2090,6 +2185,7 @@ export interface RecipeWriteInput {
   by_ratio?: boolean;
   total?: number | string | null;
   total_unit_id?: number | null;
+  notes?: string | null;
   /** @maxItems 200 */
   lines: RecipeLineWriteInput[];
 }
@@ -2425,6 +2521,7 @@ export interface SettingsRead {
   currency: string;
   auto_manufacture: AutoManufacture;
   regimes: Regime[];
+  labour_rate: string | null;
 }
 
 export interface SettingsReasonRead {
@@ -2458,12 +2555,15 @@ export interface SettingsUnitWrite {
 }
 
 /**
- * The settings to change: each left as it is unless sent.
+ * The settings to change: each left as it is unless sent. The labour
+ * rate, which may be cleared with null, is refused from a member who
+ * doesn't see costs.
  */
 export interface SettingsUpdate {
   currency?: string | null;
   auto_manufacture?: AutoManufacture | null;
   regimes?: Regime[] | null;
+  labour_rate?: number | string | null;
 }
 
 export type SetupAddWords = { [key: string]: string };
@@ -2941,6 +3041,7 @@ export type ListSettingsCategoriesParams = {
 
 export type ListMaterialsParams = {
   q?: string | null;
+  archived?: boolean;
   /** @minimum 0 */
   offset?: number;
   /**
@@ -3027,6 +3128,7 @@ export type ListPropertiesParams = {
 
 export type ListBasesParams = {
   q?: string | null;
+  archived?: boolean;
   /** @minimum 0 */
   offset?: number;
   /**

@@ -70,6 +70,71 @@ describe("MaterialsPage", () => {
     screen.getByRole("button", { name: "Add material" });
   });
 
+  it("shows archived materials only when asked", async () => {
+    const asked = await openSignedIn("/stock/materials", signedIn(), {
+      ...SETTINGS,
+      ...list(material({ status: "archived" })),
+    });
+
+    fireEvent.click(await screen.findByRole("switch", { name: "Show archived" }));
+
+    const oolong = (await screen.findByRole("link", { name: "Oolong" })).closest("tr");
+    if (!oolong) throw new Error("no row");
+    within(oolong).getByText("Archived");
+    const listed = asked.filter((request) => request.url === "/api/v1/materials");
+    expect(listed.map((request) => request.params)).toEqual([
+      { offset: 0, limit: 50 },
+      { offset: 0, limit: 50, archived: true },
+    ]);
+  });
+
+  it("adds a material with its notes, bin and starting stock at the main location", async () => {
+    const asked = await openSignedIn(
+      "/stock/materials",
+      signedIn({ permissions: ["use", SEE_COSTS] }),
+      {
+        ...SETTINGS,
+        ...list(),
+        "POST /api/v1/materials": { status: 201, data: { ...material(), stock: [], lots: [] } },
+        "GET /api/v1/materials/5": { status: 200, data: { ...material(), stock: [], lots: [] } },
+      }
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Add material" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add material" });
+
+    fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Oolong" } });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Counted in" }));
+    fireEvent.click(await screen.findByRole("option", { name: /^g/ }));
+    fireEvent.change(within(dialog).getByLabelText("Notes"), { target: { value: "Keep sealed" } });
+    fireEvent.change(within(dialog).getByLabelText("Starting stock, in g"), {
+      target: { value: "500" },
+    });
+    fireEvent.change(within(dialog).getByLabelText("Unit cost"), { target: { value: "0.04" } });
+    fireEvent.change(within(dialog).getByLabelText("Zone"), { target: { value: " Shelf A " } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(
+        JSON.parse(
+          String(
+            asked.find(
+              (request) => request.url === "/api/v1/materials" && request.method === "post"
+            )?.data
+          )
+        )
+      ).toMatchObject({
+        name: "Oolong",
+        notes: "Keep sealed",
+        start: {
+          location_id: null,
+          quantity: "500",
+          unit_cost: "0.04",
+          bin: { zone: "Shelf A", section: null, position: null },
+        },
+      })
+    );
+  });
+
   it("finds a unit by its aliases, and offers only an admin a new one", async () => {
     await openSignedIn("/stock/materials", signedIn(), { ...SETTINGS, ...UNITS, ...list() });
     fireEvent.click(await screen.findByRole("button", { name: "Add material" }));

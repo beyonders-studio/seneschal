@@ -21,6 +21,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  BaseCreate,
   BaseDetail,
   BaseWrite,
   HTTPValidationError,
@@ -49,7 +50,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Bases by name: those whose name or SKU holds ``q``, when it is given.
+ * Bases by name: those whose name or SKU holds ``q``, when it is given,
+ * and archived ones only when asked for.
  * @summary List Bases
  */
 export const listBases = (
@@ -92,7 +94,8 @@ export type ListBasesQueryResult = NonNullable<Awaited<ReturnType<typeof listBas
 export type ListBasesQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
- * Bases by name: those whose name or SKU holds ``q``, when it is given.
+ * Bases by name: those whose name or SKU holds ``q``, when it is given,
+ * and archived ones only when asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -115,7 +118,8 @@ export function useListBases<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Bases by name: those whose name or SKU holds ``q``, when it is given.
+ * Bases by name: those whose name or SKU holds ``q``, when it is given,
+ * and archived ones only when asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -138,7 +142,8 @@ export function useListBases<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Bases by name: those whose name or SKU holds ``q``, when it is given.
+ * Bases by name: those whose name or SKU holds ``q``, when it is given,
+ * and archived ones only when asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -153,7 +158,8 @@ export function useListBases<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Bases by name: those whose name or SKU holds ``q``, when it is given.
+ * Bases by name: those whose name or SKU holds ``q``, when it is given,
+ * and archived ones only when asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -177,10 +183,11 @@ export function useListBases<
 }
 
 /**
+ * Add a base, with its bin and starting stock where it starts.
  * @summary Create Base
  */
 export const createBase = (
-  baseWrite: BodyType<BaseWrite>,
+  baseCreate: BodyType<BaseCreate>,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
@@ -189,7 +196,7 @@ export const createBase = (
       url: `/api/v1/bases`,
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      data: baseWrite,
+      data: baseCreate,
       signal,
     },
     options
@@ -235,11 +242,14 @@ export const getCreateBaseMutationOptions = <
 };
 
 export type CreateBaseMutationResult = NonNullable<Awaited<ReturnType<typeof createBase>>>;
-export type CreateBaseMutationBody = BodyType<BaseWrite>;
+export type CreateBaseMutationBody = BodyType<BaseCreate>;
 export type CreateBaseMutationError = ErrorType<void>;
-export type CreateBaseMutationVariables = { data: BodyType<BaseWrite> };
+export type CreateBaseMutationVariables = { data: BodyType<BaseCreate> };
 
-/** @summary Create Base */
+/**
+ * Add a base, with its bin and starting stock where it starts.
+ * @summary Create Base
+ */
 export const useCreateBase = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<

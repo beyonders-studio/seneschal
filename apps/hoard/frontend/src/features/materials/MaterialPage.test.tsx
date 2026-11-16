@@ -13,8 +13,8 @@ const OOLONG = materialDetail({
   purchase_conversion: "250.000000",
   average_cost: "2.000000",
   stock: [
-    { location_id: 10, quantity: "10.000000" },
-    { location_id: 11, quantity: "3.000000" },
+    { location_id: 10, quantity: "10.000000", bin: null },
+    { location_id: 11, quantity: "3.000000", bin: null },
   ],
   lots: [
     {

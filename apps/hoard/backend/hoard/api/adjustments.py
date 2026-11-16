@@ -31,6 +31,7 @@ from hoard.records import (
     AdjustmentReason,
     Base,
     ItemKind,
+    ItemStatus,
     Location,
     Material,
     Product,
@@ -80,6 +81,8 @@ class AdjustmentItem(BaseModel):
     #: A variation's attributes, such as ``{"size": "large"}``; none for a
     #: material or a base.
     attributes: dict[str, str]
+    #: Whether the material, the base or the variation's product is archived.
+    archived: bool
 
 
 async def describe_items(
@@ -89,24 +92,30 @@ async def describe_items(
     ids = sorted(set(item_ids))
     if not ids:
         return {}
-    materials = await db.exec(select(Material.id, Material.name).where(col(Material.id).in_(ids)))
-    bases = await db.exec(select(Base.id, Base.name).where(col(Base.id).in_(ids)))
+    materials = await db.exec(
+        select(Material.id, Material.name, Material.status).where(col(Material.id).in_(ids))
+    )
+    bases = await db.exec(select(Base.id, Base.name, Base.status).where(col(Base.id).in_(ids)))
     variations = await db.exec(
-        select(Variation.id, Product.name, Variation.attributes)
+        select(Variation.id, Product.name, Product.status, Variation.attributes)
         .join(Product, col(Product.id) == col(Variation.product_id))
         .where(col(Variation.id).in_(ids))
     )
-    described = {
-        id_: AdjustmentItem(id=id_, kind=ItemKind.MATERIAL, name=name, attributes={})
-        for id_, name in materials.all()
-    }
-    for id_, name in bases.all():
-        described[id_] = AdjustmentItem(id=id_, kind=ItemKind.BASE, name=name, attributes={})
-    for id_, name, attributes in variations.all():
-        described[id_] = AdjustmentItem(
-            id=id_, kind=ItemKind.VARIATION, name=name, attributes=attributes
+    found = [
+        *((ItemKind.MATERIAL, *row, {}) for row in materials.all()),
+        *((ItemKind.BASE, *row, {}) for row in bases.all()),
+        *((ItemKind.VARIATION, *row) for row in variations.all()),
+    ]
+    return {
+        id_: AdjustmentItem(
+            id=id_,
+            kind=kind,
+            name=name,
+            attributes=attributes,
+            archived=status is ItemStatus.ARCHIVED,
         )
-    return described
+        for kind, id_, name, status, attributes in found
+    }
 
 
 async def known[T](db: OrganizationSession, model: type[T], id_: int) -> T:

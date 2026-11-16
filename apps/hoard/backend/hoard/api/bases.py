@@ -2,9 +2,11 @@
 stock per location.
 
 A base's average cost is sent only to a member who sees costs; none is taken,
-since the runs that make it set it (``hoard.costing``). Its recipe is kept
-under ``/recipes``. Its tracking unit is fixed once anything records a number
-in it.
+since the runs that make it set it (``hoard.costing``), but for the unit cost
+of the stock a new base starts with. Its recipe is kept under ``/recipes``,
+and its bins and picture under ``/items``. Its tracking unit is fixed once
+anything records a number in it. An archived base is listed only when asked
+for.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found, refused_as, require_references
 from hoard.api.shapes import Page, PageDep
-from hoard.records import Base, CategoryKind, Item, RecordKind
+from hoard.records import Base, CategoryKind, Item, ItemStatus, RecordKind
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
 
 router = APIRouter(prefix="/bases", tags=["bases"])
@@ -44,6 +46,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
 class BaseRead(BaseModel):
     id: int
     name: str
+    status: ItemStatus
     sku: str | None
     #: The unit stock is counted in.
     tracking_unit_id: int
@@ -55,23 +58,35 @@ class BaseRead(BaseModel):
     on_hand: Decimal
     #: The moving average cost of one tracking unit; null without ``costs``.
     average_cost: Decimal | None
+    notes: str | None
     #: What it holds of the properties people add to bases.
     properties: list[HoardPropertySummary]
 
 
 class BaseDetail(BaseRead, items.ItemHoldings, items.ItemStamps):
-    """A base, with its stock and lots at each location."""
+    """A base, with its stock, bin and lots at each location."""
+
+    #: Its picture's id, which reads it (``/items/{id}/picture/{picture_id}``).
+    picture_id: int | None
 
 
 class BaseWrite(BaseModel):
     """A base as it is added, or as an edit leaves it."""
 
     name: items.Text
+    status: ItemStatus = ItemStatus.ACTIVE
     sku: items.OptionalText = None
     tracking_unit_id: int
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
     cure_days: items.CureDays | None = None
+    notes: items.Notes | None = None
+
+
+class BaseCreate(BaseWrite):
+    """A base as it is added, with where it starts."""
+
+    start: items.ItemStart | None = None
 
 
 def _read(
@@ -97,7 +112,11 @@ async def _detail(db: AsyncSession, base_id: int, sees_costs: bool) -> BaseDetai
     held = (await items.holdings(db, [base_id]))[base_id]
     values = (await values_of(db, RecordKind.BASE, [base_id]))[base_id]
     return BaseDetail.model_validate(
-        {**_read(base, item, held.on_hand, sees_costs, values), **held.model_dump()}
+        {
+            **_read(base, item, held.on_hand, sees_costs, values),
+            **held.model_dump(),
+            "picture_id": await items.picture_id(db, base_id),
+        }
     )
 
 
@@ -107,7 +126,7 @@ async def _write(db: AsyncSession, base: Base, body: BaseWrite) -> None:
     )
     if base.id is not None:
         await items.require_tracking_unit(db, base.id, base.tracking_unit_id, body.tracking_unit_id)
-    base.sqlmodel_update(body.model_dump())
+    base.sqlmodel_update(body.model_dump(exclude={"start"}))
 
 
 @router.get("", responses=_READ)
@@ -116,9 +135,13 @@ async def list_bases(
     page: PageDep,
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    archived: Annotated[bool, Query()] = False,
 ) -> Page[BaseRead]:
-    """Bases by name: those whose name or SKU holds ``q``, when it is given."""
+    """Bases by name: those whose name or SKU holds ``q``, when it is given,
+    and archived ones only when asked for."""
     query = select(Base, Item).join(Item, col(Item.id) == col(Base.id))
+    if not archived:
+        query = query.where(Base.status == ItemStatus.ACTIVE)
     if q:
         query = query.where(
             or_(
@@ -155,10 +178,15 @@ async def read_base(
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
-async def create_base(body: BaseWrite, db: WriteSessionDep, sees_costs: SeesCostsDep) -> BaseDetail:
+async def create_base(
+    body: BaseCreate, db: WriteSessionDep, sees_costs: SeesCostsDep
+) -> BaseDetail:
+    """Add a base, with its bin and starting stock where it starts."""
     base = Base(name=body.name, tracking_unit_id=body.tracking_unit_id)
     await _write(db, base, body)
     await stock.add_base(db, base)
+    if body.start is not None:
+        await items.start(db, base.id, body.start, sees_costs)
     await db.commit()
     return await _detail(db, base.id, sees_costs)
 

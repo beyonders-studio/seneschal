@@ -8,13 +8,17 @@ import {
   getReadBaseQueryKey,
   updateBase,
 } from "@/api/generated/bases/bases";
-import type { BaseDetail, BaseWrite } from "@/api/generated/hoard.schemas";
+import { type BaseCreate, type BaseDetail, ItemStatus } from "@/api/generated/hoard.schemas";
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { StatusField } from "@/features/items/ItemList";
+import { withPicture } from "@/features/items/ItemPicture";
+import { NO_START, StartFields, startBody } from "@/features/items/start";
 import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
+import { useSeesCosts } from "@/lib/permissions";
 import {
   Dialog,
   DialogBody,
@@ -25,10 +29,12 @@ import {
 } from "@/ui/dialog";
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { Textarea } from "@/ui/textarea";
 
 /**
- * Adding a base, or editing `base`, in a dialog. Closing it drops what was
- * typed; saving answers the base as Hoard keeps it.
+ * Adding a base, with its picture, bin and starting stock, or editing `base`,
+ * in a dialog. Closing it drops what was typed; saving answers the base as
+ * Hoard keeps it.
  */
 export function BaseDialog({
   base,
@@ -61,15 +67,23 @@ export function BaseDialog({
 function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDetail) => void }) {
   const { t } = useTranslation("catalog");
   const queryClient = useQueryClient();
-  const { categoriesOf } = useSettingsNames();
+  const seesCosts = useSeesCosts();
+  const { categoriesOf, unit } = useSettingsNames();
   const [name, setName] = useState(base?.name ?? "");
+  const [status, setStatus] = useState<ItemStatus>(base?.status ?? ItemStatus.active);
+  const [notes, setNotes] = useState(base?.notes ?? "");
+  const [start, setStart] = useState(NO_START);
   const [sku, setSku] = useState(base?.sku ?? "");
   const [categoryId, setCategoryId] = useState(base?.category_id ?? null);
   const [trackingUnitId, setTrackingUnitId] = useState(base?.tracking_unit_id ?? null);
   const [lowStockLimit, setLowStockLimit] = useState(base?.low_stock_limit ?? "");
   const [cureDays, setCureDays] = useState(base?.cure_days?.toString() ?? "");
   const save = useMutation({
-    mutationFn: (body: BaseWrite) => (base ? updateBase(base.id, body) : createBase(body)),
+    mutationFn: async (body: BaseCreate) => {
+      if (base) return updateBase(base.id, body);
+      const made = await createBase(body);
+      return start.picture ? withPicture(made, start.picture, t) : made;
+    },
     onSuccess: async (saved) => {
       queryClient.setQueryData(getReadBaseQueryKey(saved.id), saved);
       await queryClient.invalidateQueries({ queryKey: getListBasesQueryKey() });
@@ -82,11 +96,14 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
     if (trackingUnitId === null) return;
     save.mutate({
       name: name.trim(),
+      status,
+      notes: orNull(notes),
       sku: orNull(sku),
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
       low_stock_limit: orNull(lowStockLimit),
       cure_days: days(cureDays),
+      ...(base ? {} : { start: startBody(start, true, seesCosts) }),
     });
   };
 
@@ -122,7 +139,12 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
             />
           </Field>
           <CureDaysField value={cureDays} onChange={setCureDays} />
+          {base && <StatusField value={status} onChange={setStatus} />}
         </div>
+        <Field label={t("hoard:common.notes")}>
+          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </Field>
+        {!base && <StartFields value={start} onChange={setStart} unit={unit(trackingUnitId)} />}
         {save.isError && (
           <p role="alert" className="text-sm text-destructive">
             {errorMessage(save.error, t, "bases.saveFailed")}

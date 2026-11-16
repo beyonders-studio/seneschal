@@ -1,25 +1,43 @@
 """What the pages of materials, bases and products share: the fields they
-take, who made a record and changed it, and an item's stock and lots at each
-location."""
+take, who made a record and changed it, an item's stock, bin and lots at each
+location, and the pictures Hoard keeps.
+
+Under ``/items``, a material's or a base's bin at a location is set, and its
+one picture kept: one of :data:`~hoard.records.IMAGE_TYPES` of at most
+:data:`~hoard.records.MAX_IMAGE_BYTES`, as a product's images are. A picture
+is never offered to a store.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Annotated
+from enum import StrEnum
+from typing import Annotated, Any
 
-from fastapi import status
+from fastapi import APIRouter, Request, Response, status
 from pydantic import BaseModel, Field
-from sqlalchemy import func
+from sqlalchemy import delete, func
+from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from hoard.api.adjustments import location_or_main
+from hoard.api.deps import HoardError
 from hoard.api.properties import HoardPropertySummary, values_of
-from hoard.api.settings import SettingsError
+from hoard.api.settings import SettingsError, found
 from hoard.holds import held_lots
 from hoard.records import (
+    IMAGE_TYPES,
+    MAX_IMAGE_BYTES,
     Adjustment,
+    AdjustmentKind,
+    Bin,
+    Image,
+    Item,
+    ItemKind,
+    Location,
     Lot,
     ProductionRun,
     ProductionRunLine,
@@ -30,7 +48,47 @@ from hoard.records import (
     StockLevel,
     StocktakeRow,
 )
-from seneschal_core.api import refuse
+from hoard.stock import StockRefused, adjust
+from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
+from seneschal_core.db import WriteSession
+
+router = APIRouter(prefix="/items", tags=["items"])
+
+
+class ImageError(StrEnum):
+    """Why a picture was refused."""
+
+    #: Not a picture Hoard keeps: a GIF, JPEG, PNG or WebP image.
+    IMAGE_TYPE = "IMAGE_TYPE"
+    #: Larger than a picture may be.
+    IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"
+
+
+#: How each image type's content starts, but WebP's (:func:`_is_image`).
+_SIGNATURES = {
+    "image/gif": (b"GIF87a", b"GIF89a"),
+    "image/jpeg": (b"\xff\xd8\xff",),
+    "image/png": (b"\x89PNG\r\n\x1a\n",),
+}
+
+_READ: dict[int | str, dict[str, Any]] = {
+    401: {"description": "NOT_AUTHENTICATED"},
+    404: {"description": "NOT_FOUND"},
+}
+_CHANGE: dict[int | str, dict[str, Any]] = {**_READ, 403: {"description": "READ_ONLY"}}
+#: Taking an image: the request's body is the image itself, sent with its own type.
+IMAGE_BODY: dict[str, Any] = {
+    "requestBody": {
+        "required": True,
+        "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+    }
+}
+IMAGE_REFUSALS: dict[int | str, dict[str, Any]] = {
+    413: {"description": "IMAGE_TOO_LARGE"},
+    415: {"description": "IMAGE_TYPE"},
+}
+#: How an image is served.
+IMAGE_HEADERS = {"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"}
 
 #: A name or code someone types.
 Text = Annotated[str, Field(min_length=1, max_length=200)]
@@ -41,6 +99,8 @@ Amount = Annotated[Decimal, Field(ge=0, max_digits=20, decimal_places=6)]
 Positive = Annotated[Decimal, Field(gt=0, max_digits=20, decimal_places=6)]
 #: How many days what a run makes cures before it is used or sold.
 CureDays = Annotated[int, Field(gt=0, le=3650)]
+#: Words someone writes about a record.
+Notes = Annotated[str, Field(max_length=2000)]
 
 
 class ItemStamps(BaseModel):
@@ -53,11 +113,20 @@ class ItemStamps(BaseModel):
     updated_by: str | None
 
 
+class ItemBin(BaseModel):
+    """Where an item sits at a location; any part may be left out."""
+
+    zone: OptionalText = None
+    section: OptionalText = None
+    position: OptionalText = None
+
+
 class ItemStockRead(BaseModel):
-    """What is on hand of an item at one location."""
+    """What is on hand of an item at one location, and its bin there."""
 
     location_id: int
     quantity: Decimal
+    bin: ItemBin | None
 
 
 class ItemLotRead(BaseModel):
@@ -77,7 +146,8 @@ class ItemLotRead(BaseModel):
 
 
 class ItemHoldings(BaseModel):
-    """An item's stock at each location it has been at, and its lots."""
+    """An item's stock at each location it has been at or has a bin at, and
+    its lots."""
 
     on_hand: Decimal
     stock: list[ItemStockRead]
@@ -95,18 +165,25 @@ async def on_hand(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, Decima
 
 
 async def holdings(db: AsyncSession, item_ids: Iterable[int]) -> dict[int, ItemHoldings]:
-    """Each item's stock per location and its lots, oldest first."""
+    """Each item's stock and bin per location, and its lots, oldest first."""
     ids = list(item_ids)
     held = {item_id: ItemHoldings(on_hand=Decimal(0), stock=[], lots=[]) for item_id in ids}
-    levels = await db.exec(
-        select(StockLevel)
-        .where(col(StockLevel.item_id).in_(ids))
-        .order_by(col(StockLevel.location_id))
-    )
+    levels = await db.exec(select(StockLevel).where(col(StockLevel.item_id).in_(ids)))
+    bins = await db.exec(select(Bin).where(col(Bin.item_id).in_(ids)))
+    at: dict[tuple[int, int], ItemStockRead] = {}
     for level in levels:
-        item = held[level.item_id]
-        item.stock.append(ItemStockRead(location_id=level.location_id, quantity=level.quantity))
-        item.on_hand += level.quantity
+        at[level.item_id, level.location_id] = ItemStockRead(
+            location_id=level.location_id, quantity=level.quantity, bin=None
+        )
+        held[level.item_id].on_hand += level.quantity
+    for kept in bins:
+        row = at.setdefault(
+            (kept.item_id, kept.location_id),
+            ItemStockRead(location_id=kept.location_id, quantity=Decimal(0), bin=None),
+        )
+        row.bin = ItemBin.model_validate(kept, from_attributes=True)
+    for (item_id, _), row in sorted(at.items()):
+        held[item_id].stock.append(row)
     lots = (
         await db.exec(
             select(Lot, col(Lot.id).in_(held_lots()))
@@ -144,3 +221,161 @@ async def require_tracking_unit(db: AsyncSession, item_id: int, was: int, now: i
     ):
         if (await db.exec(held.limit(1))).first() is not None:
             raise refuse(status.HTTP_409_CONFLICT, SettingsError.TRACKING_UNIT_IN_USE)
+
+
+async def _set_bin(db: WriteSession, item_id: int, location_id: int, bin: ItemBin) -> None:
+    """Keep ``bin`` as the item's at the location; one with no part left removes it."""
+    kept = (
+        await db.exec(select(Bin).where(Bin.item_id == item_id, Bin.location_id == location_id))
+    ).first()
+    if not bin.model_dump(exclude_none=True):
+        if kept is not None:
+            await db.delete(kept)
+        return
+    kept = kept or Bin(organization_id=db.organization_id, item_id=item_id, location_id=location_id)
+    kept.sqlmodel_update(bin.model_dump())
+    db.add(kept)
+
+
+class ItemStart(BaseModel):
+    """Where a new material or base starts: at a location, the main one unless
+    another is named, with its bin there and its starting stock."""
+
+    location_id: int | None = None
+    #: How much it starts with, which is its starting adjustment.
+    quantity: Positive | None = None
+    #: What one of it cost; taken only from a member who sees costs, and
+    #: nothing otherwise.
+    unit_cost: Amount | None = None
+    bin: ItemBin | None = None
+
+
+async def start(db: WriteSession, item_id: int, body: ItemStart, sees_costs: bool) -> None:
+    """Give a new item its bin and starting stock, refusing (409
+    ``NOT_INVENTORIABLE``) stock for a material that carries none."""
+    location_id = await location_or_main(db, body.location_id)
+    if body.bin is not None:
+        await _set_bin(db, item_id, location_id, body.bin)
+    if body.quantity is None:
+        return
+    adjustment = Adjustment(
+        item_id=item_id,
+        location_id=location_id,
+        kind=AdjustmentKind.STARTING,
+        dated_on=date.today(),
+        change=body.quantity,
+        unit_cost=(body.unit_cost or Decimal(0)) if sees_costs else Decimal(0),
+    )
+    try:
+        await adjust(db, adjustment)
+    except StockRefused as refused:
+        raise refuse(status.HTTP_409_CONFLICT, refused.code) from None
+
+
+@router.put(
+    "/{item_id}/bins/{location_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE
+)
+async def set_item_bin(item_id: int, location_id: int, body: ItemBin, db: WriteSessionDep) -> None:
+    """Set where an item sits at a location. One with no part removes it."""
+    await found(db, Item, item_id)
+    await found(db, Location, location_id)
+    await _set_bin(db, item_id, location_id, body)
+    await db.commit()
+
+
+def _is_image(content_type: str, content: bytes) -> bool:
+    """Whether ``content`` starts as an image of ``content_type`` does."""
+    if content_type == "image/webp":
+        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+    return content.startswith(_SIGNATURES[content_type])
+
+
+async def image_content(request: Request) -> tuple[str, bytes]:
+    """The image the request carries and its type, or a refusal."""
+    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
+    if content_type not in IMAGE_TYPES:
+        raise refuse(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, ImageError.IMAGE_TYPE)
+    content = bytearray()
+    async for chunk in request.stream():
+        content.extend(chunk)
+        if len(content) > MAX_IMAGE_BYTES:
+            raise refuse(status.HTTP_413_CONTENT_TOO_LARGE, ImageError.IMAGE_TOO_LARGE)
+    if not _is_image(content_type, bytes(content)):
+        raise refuse(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, ImageError.IMAGE_TYPE)
+    return content_type, bytes(content)
+
+
+#: An image's description, without its content.
+IMAGES = sa_select(
+    col(Image.id),
+    col(Image.position),
+    col(Image.content_type),
+    func.octet_length(col(Image.content)).label("size"),
+    col(Image.created_at),
+    col(Image.created_by),
+)
+
+
+class ItemPictureRead(BaseModel):
+    id: int
+    content_type: str
+    #: Its size in bytes.
+    size: int
+    created_at: datetime
+    created_by: str | None
+
+
+async def picture_id(db: AsyncSession, item_id: int) -> int | None:
+    """The id of a material's or a base's picture, when it has one."""
+    return (await db.exec(select(Image.id).where(Image.item_id == item_id))).first()
+
+
+async def _pictured(db: AsyncSession, item_id: int) -> None:
+    """Refuse (404) anything but a material or a base: a variation is
+    pictured by its product's images."""
+    item = await found(db, Item, item_id)
+    if item.kind is ItemKind.VARIATION:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+
+
+@router.put(
+    "/{item_id}/picture",
+    responses={**_CHANGE, **IMAGE_REFUSALS},
+    openapi_extra=IMAGE_BODY,
+)
+async def set_item_picture(item_id: int, request: Request, db: WriteSessionDep) -> ItemPictureRead:
+    """Picture a material or a base, in place of any picture it had. The body
+    is the image itself, sent with its own type."""
+    await _pictured(db, item_id)
+    content_type, content = await image_content(request)
+    await db.execute(delete(Image).where(col(Image.item_id) == item_id))
+    image = Image(
+        organization_id=db.organization_id,
+        item_id=item_id,
+        content_type=content_type,
+        content=content,
+    )
+    db.add(image)
+    await db.commit()
+    row = (await db.execute(IMAGES.where(col(Image.id) == image.id))).one()
+    return ItemPictureRead.model_validate(row, from_attributes=True)
+
+
+@router.get(
+    "/{item_id}/picture/{picture_id}",
+    response_class=Response,
+    responses={**_READ, 200: {"description": "The image", "content": {"image/*": {}}}},
+)
+async def read_item_picture(item_id: int, picture_id: int, db: OrganizationSessionDep) -> Response:
+    """The picture itself."""
+    image = await found(db, Image, picture_id)
+    if image.item_id != item_id:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    return Response(content=image.content, media_type=image.content_type, headers=IMAGE_HEADERS)
+
+
+@router.delete("/{item_id}/picture", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
+async def delete_item_picture(item_id: int, db: WriteSessionDep) -> None:
+    await _pictured(db, item_id)
+    await db.execute(delete(Image).where(col(Image.item_id) == item_id))
+    await db.commit()

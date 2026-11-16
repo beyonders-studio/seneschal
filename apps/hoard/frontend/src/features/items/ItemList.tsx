@@ -2,13 +2,18 @@ import { Plus, Search } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ItemStatus } from "@/api/generated/hoard.schemas";
 import { useSession } from "@/session";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
 import { useDebouncedValue } from "@/ui/lib/useDebouncedValue";
 import { PaginationBar } from "@/ui/pagination-bar";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { StatusMessage } from "@/ui/status-message";
+import { Switch } from "@/ui/switch";
 
 /** How many items a list shows at once. */
 const PAGE_SIZE = 50;
@@ -31,10 +36,17 @@ export function useItemSearch() {
   };
 }
 
+/** Whether a list shows its archived items too, and turning that on and off. */
+export interface ShowArchived {
+  shown: boolean;
+  onShownChange: (shown: boolean) => void;
+}
+
 /**
  * A list of items: its search, its button to add one while Hoard may change
- * (when it has `onAdd`), the table, and a pager. Until there is anything to list, `empty` shows in
- * its place.
+ * (when it has `onAdd`), a switch to show archived items too (when it has
+ * `archived`), the table, and a pager. Until there is anything to list,
+ * `empty` shows in its place.
  */
 export function ItemList({
   search,
@@ -45,6 +57,7 @@ export function ItemList({
   failed,
   onRetry,
   more,
+  archived,
   children,
 }: {
   search: ReturnType<typeof useItemSearch>;
@@ -57,6 +70,7 @@ export function ItemList({
   onRetry: () => void;
   /** What else can be done with the list, before adding to it. */
   more?: ReactNode;
+  archived?: ShowArchived;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -67,9 +81,34 @@ export function ItemList({
       {addLabel}
     </Button>
   );
+  const showArchived = archived && (
+    <div className="flex items-center gap-2">
+      <Switch
+        id="show-archived"
+        checked={archived.shown}
+        onCheckedChange={(shown) => {
+          archived.onShownChange(shown);
+          search.setPage(1);
+        }}
+      />
+      <Label htmlFor="show-archived">{t("catalog:items.showArchived")}</Label>
+    </div>
+  );
   if (failed) return <StatusMessage onRetry={onRetry} />;
-  if (total === 0 && !search.params.q)
-    return <StatusMessage {...empty} action={add || undefined} />;
+  if (total === 0 && !search.params.q && !archived?.shown)
+    return (
+      <StatusMessage
+        {...empty}
+        action={
+          (add || showArchived) && (
+            <div className="flex flex-wrap items-center justify-center gap-4">
+              {add}
+              {showArchived}
+            </div>
+          )
+        }
+      />
+    );
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -87,7 +126,8 @@ export function ItemList({
             onChange={(event) => search.setSearch(event.target.value)}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {showArchived}
           {more}
           {add}
         </div>
@@ -112,4 +152,38 @@ export function ItemList({
 export function LowStockBadge() {
   const { t } = useTranslation("catalog");
   return <Badge variant="warning">{t("items.low")}</Badge>;
+}
+
+/** Marks an archived product, material or base; an active one carries no mark. */
+export function StatusBadge({ status }: { status: ItemStatus }) {
+  const { t } = useTranslation("catalog");
+  if (status === "active") return null;
+  return <Badge variant="outline">{t(`items.statuses.${status}`)}</Badge>;
+}
+
+/** Whether a product, material or base is active or archived. */
+export function StatusField({
+  value,
+  onChange,
+}: {
+  value: ItemStatus;
+  onChange: (status: ItemStatus) => void;
+}) {
+  const { t } = useTranslation("catalog");
+  return (
+    <Field label={t("items.status")}>
+      <Select value={value} onValueChange={(next) => onChange(next as ItemStatus)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {Object.values(ItemStatus).map((status) => (
+            <SelectItem key={status} value={status}>
+              {t(`items.statuses.${status}`)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </Field>
+  );
 }

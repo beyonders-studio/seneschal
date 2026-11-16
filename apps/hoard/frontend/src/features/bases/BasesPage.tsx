@@ -14,7 +14,8 @@ export function BasesPage() {
   const { t } = useTranslation("catalog");
   const navigate = useNavigate();
   const search = useItemSearch();
-  const bases = useListBases(search.params);
+  const [archived, setArchived] = useState(false);
+  const bases = useListBases({ ...search.params, ...(archived && { archived }) });
   const [adding, setAdding] = useState(false);
 
   return (
@@ -32,6 +33,7 @@ export function BasesPage() {
         failed={bases.isError}
         onRetry={() => void bases.refetch()}
         more={<LayoutsButton of={BASES} rows={bases.data?.items ?? []} />}
+        archived={{ shown: archived, onShownChange: setArchived }}
       >
         <RecordTable of={BASES} items={bases.data?.items ?? []} />
         {bases.data?.items.length === 0 && (

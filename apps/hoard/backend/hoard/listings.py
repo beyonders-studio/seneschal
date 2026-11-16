@@ -46,10 +46,10 @@ from hoard.channels import StoreProduct, StoreVariant
 from hoard.records import (
     Item,
     ItemKind,
+    ItemStatus,
     Listing,
     MatchedBy,
     Product,
-    ProductStatus,
     Store,
     StoreLocation,
     StoreProductCopy,
@@ -96,7 +96,7 @@ async def _by_title(
         select(Product.id)
         .where(
             func.lower(func.trim(Product.name)) == _key(product.title),
-            Product.status == ProductStatus.ACTIVE,
+            Product.status == ItemStatus.ACTIVE,
         )
         .limit(2)
     )
@@ -280,9 +280,7 @@ async def _take(db: WriteSession, product: StoreProduct, held: list[Listing]) ->
         if listing.item_id is not None:
             continue
         if owner is None:
-            status = (
-                ProductStatus.ARCHIVED if product.status == "archived" else ProductStatus.ACTIVE
-            )
+            status = ItemStatus.ARCHIVED if product.status == "archived" else ItemStatus.ACTIVE
             owner, spare = await stock.add_product(db, Product(name=product.title, status=status))
         variation = spare or await stock.add_variation(db, Variation(product_id=owner.id))
         spare = None

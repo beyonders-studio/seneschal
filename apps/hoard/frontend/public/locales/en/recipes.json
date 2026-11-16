@@ -48,6 +48,8 @@
     "batchQuantity": "One batch makes",
     "batchQuantityHint": "In the unit it's counted in.",
     "minutes": "Minutes a batch takes",
+    "notes": "Method",
+    "notesHint": "How it's made, shown above its lines.",
     "lines": "What a batch takes",
     "holds": "What it holds",
     "item": "Item {{number}}",

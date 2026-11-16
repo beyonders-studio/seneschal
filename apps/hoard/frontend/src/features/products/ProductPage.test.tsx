@@ -24,14 +24,17 @@ const CHAI = productDetail({
   on_hand: "6.000000",
   default_price: "12.000000",
   variations: [
-    variation({ on_hand: "4.000000", stock: [{ location_id: 10, quantity: "4.000000" }] }),
+    variation({
+      on_hand: "4.000000",
+      stock: [{ location_id: 10, quantity: "4.000000", bin: null }],
+    }),
     variation({
       id: 21,
       attributes: { size: "Large" },
       is_default: false,
       price: "15.000000",
       on_hand: "2.000000",
-      stock: [{ location_id: 11, quantity: "2.000000" }],
+      stock: [{ location_id: 11, quantity: "2.000000", bin: null }],
     }),
   ],
 });
