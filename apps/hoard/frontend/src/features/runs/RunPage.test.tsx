@@ -13,6 +13,9 @@ const lot = { id: 4, number: "L-1", expires_on: null, balance: "10.000000" };
 const line = (overrides: Partial<RunLineRead> = {}): RunLineRead => ({
   id: 9,
   item: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
+  sku: "FL-1",
+  picture_id: 12,
+  unit_id: 1,
   quantity: "4.000000",
   lot: null,
   assumed: false,
@@ -37,10 +40,14 @@ const run = (overrides: Partial<RunRead> = {}): RunRead => ({
   uncosted: false,
   recipe_id: 2,
   recipe_changed: false,
+  recipe_notes: null,
+  notes: null,
   labour_minutes: null,
+  made_for: null,
   expires_on: null,
   output_lot: null,
   lines: [line()],
+  shipped: [],
   created_at: "2026-11-01T09:00:00Z",
   created_by: "member-ref",
   updated_at: "2026-11-01T09:00:00Z",
@@ -49,8 +56,9 @@ const run = (overrides: Partial<RunRead> = {}): RunRead => ({
 });
 
 const ANSWERS = {
-  "GET /api/v1/settings": { status: 200, data: { currency: "USD" } },
+  ...SETTINGS,
   "GET /api/v1/members": { status: 200, data: [] },
+  "GET /api/v1/documents": { status: 200, data: [] },
 };
 
 describe("RunPage", () => {
@@ -89,6 +97,7 @@ describe("RunPage", () => {
 
     await screen.findByText("Assumed");
     expect(screen.getByText("$8.00", { selector: "dd" })).toBeTruthy();
+    screen.getByText("$2.00 / g");
     expect(screen.getByRole("button", { name: "Reopen" })).toBeTruthy();
     const completing = asked.find((request) => request.url?.endsWith("/complete"));
     expect(JSON.parse(completing?.data)).toEqual({
@@ -107,8 +116,67 @@ describe("RunPage", () => {
     });
 
     await screen.findByText("This run is uncosted");
-    expect(screen.queryByText("Cost of what it consumed")).toBeNull();
+    expect(screen.queryByText("Materials cost")).toBeNull();
+    expect(screen.queryByText("Labour cost")).toBeNull();
     expect(screen.queryByRole("columnheader", { name: "Unit cost" })).toBeNull();
+  });
+});
+
+describe("RunPage, what it shows beside", () => {
+  it("shows its figures, items, notes, the order it was made for and the orders it shipped to", async () => {
+    await openSignedIn(
+      "/production/runs/5",
+      signedIn({ page: "production", permissions: ["use", "costs"] }),
+      {
+        ...ANSWERS,
+        "GET /api/v1/runs/5": {
+          status: 200,
+          data: run({
+            status: "completed",
+            actual_quantity: "7.000000",
+            completed_on: "2026-11-03",
+            cost: "8.000000",
+            labour_cost: "45.000000",
+            notes: "Oven 2",
+            recipe_notes: "Knead, then rest.",
+            made_for: { id: 31, code: "O-31" },
+            output_lot: { id: 6, number: "R-0005", expires_on: null, balance: "4.000000" },
+            lines: [line({ lot, lots: [], unit_cost: "0.0555", cost: "0.222000" })],
+            shipped: [
+              {
+                id: 40,
+                order: { id: 31, code: "O-31" },
+                ordered_on: "2026-11-04",
+                store_customer: "C-77",
+                shipped_on: "2026-11-05",
+                item: { id: 8, kind: "variation", name: "Bread", attributes: {}, archived: false },
+                quantity: "3.000000",
+                assumed: true,
+                total: "15.000000",
+              },
+            ],
+          }),
+        },
+      }
+    );
+
+    await screen.findByRole("heading", { name: "Run R-0005" });
+    expect(screen.getByText("$45.00", { selector: "dd" })).toBeTruthy();
+    screen.getByText("FL-1");
+    expect(document.querySelector('img[src="/api/v1/items/3/picture/12"]')).toBeTruthy();
+    await screen.findByText("$0.0555 / g");
+    screen.getByText("Oven 2");
+    screen.getByText("Knead, then rest.");
+    screen.getByText("Made for order");
+    const shipped = screen.getByRole("heading", { name: "Orders from this batch" });
+    const table = shipped.parentElement as HTMLElement;
+    within(table).getByText("Customer C-77 in the store");
+    within(table).getByText("$15.00");
+    within(table).getByText("Assumed");
+    expect(within(table).getByRole("link", { name: "O-31" }).getAttribute("href")).toBe(
+      "/orders/31"
+    );
+    await screen.findByText("No documents linked yet.");
   });
 });
 

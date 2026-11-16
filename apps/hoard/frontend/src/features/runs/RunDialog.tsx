@@ -36,6 +36,7 @@ import { Label } from "@/ui/label";
 import { useDebouncedValue } from "@/ui/lib/useDebouncedValue";
 import { type Member, MemberPicker, type SearchMembers } from "@/ui/member-picker";
 import { Switch } from "@/ui/switch";
+import { Textarea } from "@/ui/textarea";
 
 /** Whether `text` is a number above zero, as the API takes one. */
 const isPositive = (text: string) => text.trim() !== "" && Number(text) > 0;
@@ -43,7 +44,7 @@ const isPositive = (text: string) => text.trim() !== "" && Number(text) > 0;
 /**
  * Opens a production run, or changes `run`: what it makes (only when opening
  * it), its code, planned batches and location (until it is completed), its
- * deadline, expiry, assignee and labour. Answers the run saved.
+ * deadline, expiry, assignee, labour and notes. Answers the run saved.
  */
 export function RunDialog({
   open,
@@ -107,6 +108,7 @@ function RunForm({ run, onSaved }: { run?: RunRead; onSaved: (saved: RunRead) =>
   const [expires, setExpires] = useState(run?.expires_on ?? "");
   const [assignee, setAssignee] = useState(run?.assignee_ref ?? null);
   const [labour, setLabour] = useState(run?.labour_minutes?.toString() ?? "");
+  const [notes, setNotes] = useState(run?.notes ?? "");
   const [startNow, setStartNow] = useState(false);
   // Making as much as one line allows: that line, the amount to use (what is
   // usable when blank) and its unit (its item's tracking unit when null).
@@ -150,6 +152,7 @@ function RunForm({ run, onSaved }: { run?: RunRead; onSaved: (saved: RunRead) =>
       expires_on: expires || null,
       assignee_ref: assignee,
       labour_minutes: labour ? Number(labour) : null,
+      notes: notes.trim() || null,
     };
     try {
       let saved: RunRead;
@@ -263,6 +266,9 @@ function RunForm({ run, onSaved }: { run?: RunRead; onSaved: (saved: RunRead) =>
             />
           </Field>
         </div>
+        <Field label={t("hoard:common.notes")}>
+          <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
+        </Field>
         {!run && (
           <div className="flex items-center gap-2">
             <Checkbox
