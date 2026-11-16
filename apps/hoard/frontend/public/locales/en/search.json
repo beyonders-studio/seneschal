@@ -8,7 +8,7 @@
   },
   "kinds": {
     "material": "Material",
-    "base": "Base",
+    "base": "{{Base}}",
     "product": "Product",
     "lot": "Lot",
     "run": "Production run",
@@ -19,7 +19,7 @@
   },
   "tabs": {
     "material": "Materials",
-    "base": "Bases",
+    "base": "{{Bases}}",
     "product": "Products",
     "lot": "Lots",
     "run": "Production runs",

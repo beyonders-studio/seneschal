@@ -1,7 +1,7 @@
 {
   "runs": {
     "emptyTitle": "No production runs yet",
-    "emptyBody": "Your production runs will be here: what you make, from which recipe, and the lots each run produces.",
+    "emptyBody": "Your production runs will be here: what you make, from which {{recipe}}, and the lots each run produces.",
     "pageTitle": "Production run",
     "title": "Run {{code}}",
     "add": "New run",
@@ -60,8 +60,8 @@
       "short": "{{quantity}} short"
     },
     "statusLabel": "Status",
-    "recipeChangedTitle": "Its recipe has changed",
-    "recipeChangedBody": "The recipe was saved since this run was planned. The run keeps the lines it was planned with; change them here if they should follow.",
+    "recipeChangedTitle": "Its {{recipe}} has changed",
+    "recipeChangedBody": "The {{recipe}} was saved since this run was planned. The run keeps the lines it was planned with; change them here if they should follow.",
     "plan": {
       "asMuch": "Make as much as one ingredient allows",
       "asMuchHint": "Use up an amount of one ingredient: every other line scales with it.",
@@ -77,13 +77,13 @@
     }
   },
   "errors": {
-    "RUN_NO_RECIPE": "That has no recipe to make it from. Add one first.",
+    "RUN_NO_RECIPE": "That has no {{recipe}} to make it from. Add one first.",
     "RUN_COMPLETED": "The run is completed. Reopen it to change what it used.",
     "RUN_NOT_COMPLETED": "The run isn't completed.",
     "RUN_STARTED": "The run has already started.",
     "RUN_CODE_TAKEN": "Another run has that code.",
     "RUN_LOT_MISMATCH": "That lot isn't one of this item at the run's location.",
     "LOT_IN_USE": "Something else has drawn on the lot this run made, so it can't be reopened.",
-    "RUN_NOT_IN_RECIPE": "That ingredient isn't in its recipe."
+    "RUN_NOT_IN_RECIPE": "That ingredient isn't in its {{recipe}}."
   }
 }

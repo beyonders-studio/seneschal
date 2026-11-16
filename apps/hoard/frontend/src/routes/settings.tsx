@@ -14,6 +14,7 @@ import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
 import { TypesSection } from "@/features/settings/TypesSection";
 import { UnitsSection } from "@/features/settings/UnitsSection";
+import { WordsSection } from "@/features/settings/WordsSection";
 import { StoresSection } from "@/features/stores/StoresSection";
 import { TrackingSection } from "@/features/tracking/TrackingSection";
 
@@ -27,6 +28,7 @@ function SettingsPage() {
     <HoardPage title={t("settings.title")}>
       <div className="flex flex-col gap-8">
         <CurrencySection />
+        <WordsSection />
         <CostSettingSection setting="labour_rate" />
         <CostSettingSection setting="overhead" />
         <PricePointsSection />

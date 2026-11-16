@@ -2741,6 +2741,8 @@ export interface SettingsPricePointWrite {
 
 export interface SettingsRead {
   currency: string;
+  base_word: string | null;
+  recipe_word: string | null;
   auto_manufacture: AutoManufacture;
   regimes: Regime[];
   labour_rate: string | null;
@@ -2820,12 +2822,15 @@ export interface SettingsUnitWrite {
 }
 
 /**
- * The settings to change: each left as it is unless sent. The labour
- * rate and the overhead, which may be cleared with null, are refused from a
- * member who doesn't see costs.
+ * The settings to change: each left as it is unless sent. The words for
+ * a base and a recipe, the labour rate and the overhead may be cleared with
+ * null; the labour rate and the overhead are refused from a member who
+ * doesn't see costs.
  */
 export interface SettingsUpdate {
   currency?: string | null;
+  base_word?: string | null;
+  recipe_word?: string | null;
   auto_manufacture?: AutoManufacture | null;
   regimes?: Regime[] | null;
   labour_rate?: number | string | null;

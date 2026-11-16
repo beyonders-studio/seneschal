@@ -142,13 +142,15 @@ describe("Settings", () => {
       signedIn({ page: "settings", admin: true, permissions: ["use", "costs"] }),
       rated
     );
-    // The form is drawn again once the rate loads, so each step finds it afresh.
+    // The form is drawn again once the rate loads, and Settings is held back
+    // while its sections load their words, so each step finds it afresh and
+    // waits for it to show.
     const rate = () => screen.getByLabelText("Per hour");
     await waitFor(() => expect(rate()).toHaveProperty("value", "20.000000"));
     fireEvent.change(rate(), { target: { value: "22.5" } });
     await waitFor(() => expect(rate()).toHaveProperty("value", "22.5"));
     fireEvent.click(
-      within(rate().closest("form") as HTMLElement).getByRole("button", { name: "Save" })
+      await within(rate().closest("form") as HTMLElement).findByRole("button", { name: "Save" })
     );
     await waitFor(() =>
       expect(
@@ -177,7 +179,7 @@ describe("Settings", () => {
     expect(retail?.textContent).toBe("Retail100%€0.300%");
     await waitFor(() => expect(screen.getByLabelText("Percent")).toHaveProperty("value", "12.5"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Add price point" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Add price point" }));
     const dialog = await screen.findByRole("dialog", { name: "Add price point" });
     fireEvent.change(within(dialog).getByLabelText("Price point"), {
       target: { value: "Wholesale" },

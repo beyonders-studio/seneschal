@@ -1,26 +1,26 @@
 {
   "recipes": {
-    "emptyTitle": "No recipes yet",
-    "emptyBody": "Your recipes will be here: what goes into each product and base, and how much one batch makes. Add one on a base's or a product's page.",
+    "emptyTitle": "No {{recipes}} yet",
+    "emptyBody": "Your {{recipes}} will be here: what goes into each product and {{base}}, and how much one batch makes. Add one on a {{base}}'s or a product's page.",
     "output": "Makes",
     "kind": "Kind",
     "batch": "One batch",
     "lines": "Lines",
     "kinds": {
       "variation": "Product",
-      "base": "Base",
+      "base": "{{Base}}",
       "bundle": "Bundle"
     }
   },
   "section": {
-    "title": "Recipe",
-    "of": "Recipe for {{variation}}",
+    "title": "{{Recipe}}",
+    "of": "{{Recipe}} for {{variation}}",
     "bundle": "Holds",
-    "empty": "No recipe yet.",
-    "emptyOf": "No recipe for {{variation}} yet.",
-    "add": "Add recipe",
+    "empty": "No {{recipe}} yet.",
+    "emptyOf": "No {{recipe}} for {{variation}} yet.",
+    "add": "Add {{recipe}}",
     "makeBundle": "Make it a bundle",
-    "bundleHint": "A bundle sells other products together, such as a gift box, in place of a recipe."
+    "bundleHint": "A bundle sells other products together, such as a gift box, in place of a {{recipe}}."
   },
   "card": {
     "makes": "One batch makes {{quantity}}",
@@ -30,10 +30,10 @@
     "item": "Item",
     "share": "By weight",
     "noLines": "Nothing in it yet.",
-    "removeTitle": "Delete the recipe for {{name}}?",
+    "removeTitle": "Delete the {{recipe}} for {{name}}?",
     "removeBundleTitle": "Stop selling {{name}} as a bundle?",
     "removeBody": "Its lines go with it. Production runs made from it keep what they used.",
-    "removeFailed": "Couldn't delete the recipe.",
+    "removeFailed": "Couldn't delete the {{recipe}}.",
     "total": "ingredients total {{quantity}}",
     "scaleBy": "Scale by",
     "scaleByOutput": "What it makes",
@@ -51,8 +51,8 @@
     "unitCostEach": "Manufacture cost {{cost}} each"
   },
   "dialog": {
-    "addTitle": "Recipe for {{name}}",
-    "addTitleOf": "Recipe for {{name}}, {{variation}}",
+    "addTitle": "{{Recipe}} for {{name}}",
+    "addTitleOf": "{{Recipe}} for {{name}}, {{variation}}",
     "bundleTitle": "What {{name}} holds",
     "batchQuantity": "One batch makes",
     "batchQuantityHint": "In the unit it's counted in.",
@@ -65,7 +65,7 @@
     "quantity": "Quantity",
     "addLine": "Add line",
     "removeLine": "Remove item {{number}}",
-    "saveFailed": "Couldn't save the recipe.",
+    "saveFailed": "Couldn't save the {{recipe}}.",
     "byRatio": "Written by ratio",
     "byRatioHint": "Give each ingredient's parts and the batch's ingredients total, in place of each amount.",
     "total": "Ingredients total",
@@ -75,14 +75,14 @@
     "makesHint": "In the unit it's counted in; lower it for what's lost in making.",
     "parts": "Parts",
     "unit": "Unit",
-    "previewFailed": "Hoard couldn't work this recipe out yet."
+    "previewFailed": "Hoard couldn't work this {{recipe}} out yet."
   },
   "errors": {
-    "RECIPE_LINE_KIND": "A recipe holds materials that keep stock, bases and products, but not a bundle, which has no stock of its own; a bundle holds products.",
+    "RECIPE_LINE_KIND": "A {{recipe}} holds materials that keep stock, {{bases}} and products, but not a bundle, which has no stock of its own; a bundle holds products.",
     "RECIPE_LINE_REPEATED": "Each item goes in once.",
     "RECIPE_CYCLE": "That would make it from itself.",
-    "RECIPE_BUNDLE": "A bundle's products take no recipe of their own and go into no other recipe.",
-    "RECIPE_EXISTS": "It already has a recipe.",
+    "RECIPE_BUNDLE": "A bundle's products take no {{recipe}} of their own and go into no other {{recipe}}.",
+    "RECIPE_EXISTS": "It already has a {{recipe}}.",
     "RECIPE_RATIO_TOTAL": "The ingredients total adds up the lines measured like it, and none is: give it a unit one of them is in."
   }
 }

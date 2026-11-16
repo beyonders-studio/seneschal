@@ -42,6 +42,56 @@ const bundled: BackendModule = {
   },
 };
 
+/** The words a community may name for itself in Settings. */
+export const COMMUNITY_WORDS = ["base", "recipe"] as const;
+export type CommunityWord = (typeof COMMUNITY_WORDS)[number];
+
+/** The community's own words; null for one it hasn't named. */
+const named: Record<CommunityWord, string | null> = { base: null, recipe: null };
+
+/** The event that follows a change to the community's words, which every
+ *  page's words re-read on. */
+const WORDS_CHANGED = "communityWordsChanged";
+
+const capitalized = (word: string) =>
+  word.charAt(0).toLocaleUpperCase(i18n.resolvedLanguage) + word.slice(1);
+
+/**
+ * `{{base}}`, `{{bases}}`, `{{recipe}}` and `{{recipes}}` in any of Hoard's
+ * words, and each with a capital (`{{Recipe}}`) where a sentence starts with
+ * it: the community's own word as typed, singular and plural alike, or, until
+ * it names one, the reader's language's (`hoard:words.<word>`). Each is read
+ * as a string is translated, so it follows the reader's language.
+ */
+const communityWords = Object.defineProperties(
+  {},
+  Object.fromEntries(
+    COMMUNITY_WORDS.flatMap((word) =>
+      [word, `${word}s`].flatMap((form) =>
+        [false, true].map((capital) => [
+          capital ? capitalized(form) : form,
+          {
+            enumerable: true,
+            get: () => {
+              const said =
+                named[word] ?? i18n.t(`hoard:words.${form}`, { skipInterpolation: true });
+              return capital ? capitalized(said) : said;
+            },
+          },
+        ])
+      )
+    )
+  )
+);
+
+/** Take the community's own words, from its settings; null for one it hasn't
+ *  named. Every page's words follow. */
+export function setCommunityWords(words: Record<CommunityWord, string | null>) {
+  if (COMMUNITY_WORDS.every((word) => named[word] === words[word])) return;
+  Object.assign(named, words);
+  i18n.emit(WORDS_CHANGED);
+}
+
 void i18n
   .use(bundled)
   .use(initReactI18next)
@@ -53,7 +103,8 @@ void i18n
     nonExplicitSupportedLngs: true,
     defaultNS: "hoard",
     ns: ["hoard"],
-    interpolation: { escapeValue: false },
+    interpolation: { escapeValue: false, defaultVariables: communityWords },
+    react: { bindI18n: `languageChanged ${WORDS_CHANGED}` },
   });
 
 i18n.on("languageChanged", () => {

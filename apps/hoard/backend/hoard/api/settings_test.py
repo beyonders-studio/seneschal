@@ -23,6 +23,8 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     await sign_in(client)
     assert (await client.get("/api/v1/settings")).json() == {
         "currency": "USD",
+        "base_word": None,
+        "recipe_word": None,
         "auto_manufacture": "off",
         "regimes": [],
         "labour_rate": None,
@@ -38,6 +40,8 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     changed = await client.put("/api/v1/settings", json={"auto_manufacture": "out_of_stock"})
     assert changed.json() == {
         "currency": "EUR",
+        "base_word": None,
+        "recipe_word": None,
         "auto_manufacture": "out_of_stock",
         "regimes": [],
         "labour_rate": None,
@@ -50,6 +54,28 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     assert ticked.json()["regimes"] == ["us_cosmetics", "eu_cosmetics"]
     unknown = await client.put("/api/v1/settings", json={"regimes": ["moon_food"]})
     assert unknown.status_code == 422
+
+
+async def test_an_admin_names_bases_and_recipes(client, sign_in):
+    await sign_in(client)
+    refused = await client.put("/api/v1/settings", json={"recipe_word": "formula"})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
+
+    await sign_in(client, admin=True)
+    named = await client.put(
+        "/api/v1/settings", json={"recipe_word": " bill of materials ", "base_word": "blend"}
+    )
+    assert (named.json()["recipe_word"], named.json()["base_word"]) == (
+        "bill of materials",
+        "blend",
+    )
+    blank = await client.put("/api/v1/settings", json={"recipe_word": " "})
+    assert blank.status_code == 422
+    # A word is kept until it is cleared, and one cleared reads as unnamed.
+    kept = await client.put("/api/v1/settings", json={"currency": "CAD"})
+    assert kept.json()["recipe_word"] == "bill of materials"
+    cleared = await client.put("/api/v1/settings", json={"recipe_word": None})
+    assert (cleared.json()["recipe_word"], cleared.json()["base_word"]) == (None, "blend")
 
 
 @pytest.mark.parametrize("setting", ["labour_rate", "overhead"])

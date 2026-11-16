@@ -154,7 +154,7 @@
     }
   },
   "fields": {
-    "explain": "The store keeps extra data about its products in fields of its own. Pick what each one fills in Hoard. A property is kept in step with the store both ways. Allergens and ingredient lists are worked out from Hoard's recipes: the sync only compares them, and nothing is sent to the store.",
+    "explain": "The store keeps extra data about its products in fields of its own. Pick what each one fills in Hoard. A property is kept in step with the store both ways. Allergens and ingredient lists are worked out from Hoard's {{recipes}}: the sync only compares them, and nothing is sent to the store.",
     "none": "The store defines no fields for its products.",
     "loadFailed": "The store's fields couldn't be read.",
     "storeField": "Store field",
@@ -165,8 +165,8 @@
     },
     "count_one": "{{count}} has a value",
     "count_other": "{{count}} have a value",
-    "allergens": "Allergens, from recipes",
-    "ingredients": "Ingredient list, from recipes",
+    "allergens": "Allergens, from {{recipes}}",
+    "ingredients": "Ingredient list, from {{recipes}}",
     "property": "Property: {{name}}",
     "newProperty": "A new property: {{name}} ({{type}})",
     "out": "Leave it out",
@@ -192,7 +192,7 @@
     "saved": "Field saved.",
     "saveFailed": "The field couldn't be saved.",
     "differing": "Differing values",
-    "differingHint": "Hoard works these out from recipes, and they differ from what {{channel}} shows. Nothing is sent until you send it.",
+    "differingHint": "Hoard works these out from {{recipes}}, and they differ from what {{channel}} shows. Nothing is sent until you send it.",
     "product": "Product",
     "inHoard": "In Hoard",
     "inStore": "In {{channel}}",
