@@ -11,7 +11,11 @@ import { useSettingsNames } from "@/features/settings/names";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
 /** What a recipe makes, as a link to its page. */
-function Output({ recipe }: { recipe: RecipeRead }) {
+export function OutputLink({
+  recipe,
+}: {
+  recipe: Pick<RecipeRead, "output" | "output_id" | "product_id" | "name" | "attributes">;
+}) {
   const { item } = useMovementLabels();
   const name = item(recipe);
   if (recipe.output === "base")
@@ -72,7 +76,7 @@ export function RecipesPage() {
             {recipes.data?.items.map((recipe) => (
               <TableRow key={recipe.id}>
                 <TableCell>
-                  <Output recipe={recipe} />
+                  <OutputLink recipe={recipe} />
                 </TableCell>
                 <TableCell>{t(`recipes.kinds.${recipe.output}`)}</TableCell>
                 <TableCell className="text-end tabular-nums">

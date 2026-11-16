@@ -254,7 +254,29 @@
     "lastStocktake": "Last stocktake",
     "couldMake": "Could make",
     "type": "Type",
-    "allTypes": "All types"
+    "allTypes": "All types",
+    "onOrder": "On order",
+    "usage": {
+      "title": "Usage and purchases",
+      "window": "Over",
+      "received": "Received",
+      "used": "Used",
+      "windows": {
+        "week": "The last week",
+        "month": "The last month",
+        "months_3": "The last 3 months",
+        "months_6": "The last 6 months",
+        "months_12": "The last 12 months",
+        "all": "All time"
+      }
+    },
+    "usedIn": {
+      "title": "Used in",
+      "recipe": "Recipe for",
+      "takes": "A batch takes",
+      "makes": "A batch makes",
+      "none": "No recipe uses it yet."
+    }
   },
   "history": {
     "runs": "Production runs",

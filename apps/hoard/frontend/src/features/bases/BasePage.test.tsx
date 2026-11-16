@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { RecipeRead } from "@/api/generated/hoard.schemas";
-import { base, baseDetail, SETTINGS, stockRow } from "@/features/items/testing";
+import { base, baseDetail, product, SETTINGS, stockRow } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
 
@@ -215,6 +215,8 @@ describe("BasePage", () => {
 
     await screen.findByText("1,050 g");
     screen.getByText("590 g");
+    screen.getByText("The last 12 months");
+    screen.getByText("No recipe uses it yet.");
     const back = (await screen.findByText("600 g")).closest("tr");
     if (!back) throw new Error("no row");
     within(back).getByText("Back room");
@@ -373,6 +375,30 @@ describe("RecipeDialog", () => {
     await waitFor(() =>
       expect(asked.some((request) => request.url === "/api/v1/recipes/preview")).toBe(true)
     );
+  });
+
+  it("offers products' variations as lines, but never a bundle's", async () => {
+    await openSignedIn("/stock/bases/8", signedIn(), {
+      ...opened,
+      ...recipes(),
+      "GET /api/v1/materials": { status: 200, data: { items: [], total: 0 } },
+      "GET /api/v1/bases": { status: 200, data: { items: [base()], total: 1 } },
+      "GET /api/v1/products": {
+        status: 200,
+        data: {
+          items: [product({ name: "Infuser" }), product({ id: 8, name: "Gift set", bundle: true })],
+          total: 2,
+        },
+      },
+    });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add recipe" }));
+    const dialog = await screen.findByRole("dialog", { name: "Recipe for Chai spice" });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Item 1" }));
+
+    await screen.findByRole("option", { name: /Infuser/ });
+    screen.getByRole("option", { name: /Chai spice/ });
+    expect(screen.queryByRole("option", { name: /Gift set/ })).toBeNull();
   });
 });
 
