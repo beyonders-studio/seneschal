@@ -18,6 +18,7 @@ import { ConfirmDialog } from "@/ui/confirm-dialog";
 export function ItemHeader({
   back,
   title,
+  subtitle,
   marks,
   onEdit,
   remove,
@@ -27,6 +28,8 @@ export function ItemHeader({
 }: {
   back: { to: "/stock/materials" | "/stock/bases" | "/stock/products"; label: string };
   title: string;
+  /** What stands under its name, such as its SKU. */
+  subtitle?: ReactNode;
   marks?: ReactNode;
   onEdit: () => void;
   remove: () => Promise<unknown>;
@@ -77,6 +80,7 @@ export function ItemHeader({
           </div>
         )}
       </div>
+      {subtitle && <p className="text-sm text-muted-foreground">{subtitle}</p>}
       {kept ? (
         <ConfirmDialog
           open={removing}

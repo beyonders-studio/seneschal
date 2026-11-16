@@ -506,6 +506,8 @@ export interface BaseDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  committed: string;
+  available: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -593,6 +595,10 @@ export interface ContactCreate {
    */
   name: string;
   is_organization?: boolean;
+}
+
+export interface ContactPricePointWrite {
+  price_point_id: number | null;
 }
 
 /**
@@ -1334,6 +1340,19 @@ export interface ItemPictureRead {
   created_by: string | null;
 }
 
+/**
+ * What the order lines charging for an item earned, and what what they
+ * shipped cost, in the organization's currency (``hoard.summary``).
+ */
+export interface ItemProfit {
+  revenue: string;
+  cost: string;
+  profit: string;
+  share: string | null;
+  uncosted: number;
+  left_out: number;
+}
+
 export type JobReadArgs = { [key: string]: unknown };
 
 export type JobState = (typeof JobState)[keyof typeof JobState];
@@ -1474,6 +1493,8 @@ export interface MaterialDetail {
   updated_at: string;
   updated_by: string | null;
   on_hand: string;
+  committed: string;
+  available: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -1998,10 +2019,60 @@ export const Picking = {
   recorded: "recorded",
 } as const;
 
+/**
+ * A variation at a price point.
+ */
+export interface PointPriceRead {
+  price_point_id: number;
+  typed: string | null;
+  suggested: string | null;
+  price: string | null;
+  fee: string;
+  commission: string | null;
+  margin: string | null;
+  margin_share: string | null;
+}
+
+/**
+ * What one of a variation costs, by its parts.
+ */
+export interface PriceCost {
+  goods: string;
+  last_known: boolean;
+  labour: string | null;
+  overhead: string | null;
+  total: string;
+}
+
+/**
+ * A product's variations' figures added up.
+ */
+export interface ProductTotals {
+  committed: string;
+  available: string;
+  potential: string | null;
+  made: string;
+  sold: string;
+  shipped: string;
+  on_order: string;
+  overdue: boolean;
+  profit: ItemProfit | null;
+}
+
+/**
+ * A variation's cost and its price at each price point, by name.
+ */
+export interface VariationPricing {
+  cost: PriceCost | null;
+  points: PointPriceRead[];
+}
+
 export type ProductVariationReadAttributes = { [key: string]: string };
 
 export interface ProductVariationRead {
   on_hand: string;
+  committed: string;
+  available: string;
   potential: string | null;
   made: string;
   last_stocktake: string | null;
@@ -2022,6 +2093,10 @@ export interface ProductVariationRead {
   supplier_code: string | null;
   purchase_unit_id: number | null;
   purchase_conversion: string;
+  sold: string;
+  shipped: string;
+  profit: ItemProfit | null;
+  pricing: VariationPricing | null;
 }
 
 /**
@@ -2060,6 +2135,7 @@ export interface ProductDetail {
   traceability_list: boolean;
   rinse_off: boolean;
   properties: HoardPropertySummary[];
+  totals: ProductTotals;
   variations: ProductVariationRead[];
   store_products: ProductStoreProduct[];
 }
@@ -2644,11 +2720,31 @@ export interface SettingsLocationUpdate {
   contact_id?: number | null;
 }
 
+export interface SettingsPricePointRead {
+  id: number;
+  name: string;
+  markup: string | null;
+  listing_fee: string | null;
+  commission: string | null;
+}
+
+export interface SettingsPricePointWrite {
+  /**
+   * @minLength 1
+   * @maxLength 200
+   */
+  name: string;
+  markup?: number | string;
+  listing_fee?: number | string;
+  commission?: number | string;
+}
+
 export interface SettingsRead {
   currency: string;
   auto_manufacture: AutoManufacture;
   regimes: Regime[];
   labour_rate: string | null;
+  overhead: string | null;
 }
 
 export interface SettingsReasonRead {
@@ -2725,14 +2821,15 @@ export interface SettingsUnitWrite {
 
 /**
  * The settings to change: each left as it is unless sent. The labour
- * rate, which may be cleared with null, is refused from a member who
- * doesn't see costs.
+ * rate and the overhead, which may be cleared with null, are refused from a
+ * member who doesn't see costs.
  */
 export interface SettingsUpdate {
   currency?: string | null;
   auto_manufacture?: AutoManufacture | null;
   regimes?: Regime[] | null;
   labour_rate?: number | string | null;
+  overhead?: number | string | null;
 }
 
 export type SetupAddWords = { [key: string]: string };
@@ -3177,6 +3274,14 @@ export interface UnitConversion {
   factor: string | null;
 }
 
+/**
+ * A variation's price at a price point: null leaves it to the
+ * suggested price.
+ */
+export interface VariationPriceWrite {
+  price: number | string | null;
+}
+
 export type Healthz200 = { [key: string]: string };
 
 export type Readyz200 = { [key: string]: string };
@@ -3227,6 +3332,7 @@ export type ListMaterialsParams = {
 
 export type ListProductsParams = {
   q?: string | null;
+  archived?: boolean;
   type_id?: number | null;
   /** @minimum 0 */
   offset?: number;
@@ -3238,6 +3344,7 @@ export type ListProductsParams = {
 };
 
 export type ListPurchasesParams = {
+  item_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**
@@ -3355,6 +3462,7 @@ export type ListRunsParams = {
 export type ListOrdersParams = {
   status?: OrderStatus | null;
   store_customer?: string | null;
+  item_id?: number | null;
   /** @minimum 0 */
   offset?: number;
   /**

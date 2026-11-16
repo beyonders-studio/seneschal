@@ -23,7 +23,8 @@ export type LineAction = { kind: "add" } | { kind: "edit"; line: OrderLineRead }
 
 /**
  * The dialog `action` opens on a hand order's lines: a variation sold, how
- * many, and at what price, the variation's own when none is typed. Closing it
+ * many, and at what price: when none is typed, its price at the customer's
+ * price point, or else its own. Closing it
  * drops what was typed; `onSaved` takes the order as it is after.
  */
 export function LineDialog({

@@ -3,10 +3,14 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useListAdjustments } from "@/api/generated/adjustments/adjustments";
+import { useListOrders } from "@/api/generated/orders/orders";
+import { useListPurchases } from "@/api/generated/purchases/purchases";
 import { useListRuns } from "@/api/generated/runs/runs";
 import { useListStocktakes } from "@/api/generated/stocktakes/stocktakes";
 import { AdjustmentsTable } from "@/features/adjustments/AdjustmentsPage";
 import { useMovementLabels } from "@/features/adjustments/labels";
+import { OrdersTable } from "@/features/orders/OrdersPage";
+import { PurchasesTable } from "@/features/purchases/PurchasesPage";
 import { RunsTable } from "@/features/runs/RunsPage";
 import { PaginationBar } from "@/ui/pagination-bar";
 import { StatusMessage } from "@/ui/status-message";
@@ -120,6 +124,35 @@ export function AdjustmentsHistory({ itemId }: { itemId: number }) {
       empty={t("history.noAdjustments")}
     >
       {(items) => <AdjustmentsTable adjustments={items} />}
+    </HistoryPage>
+  );
+}
+
+/** The orders selling an item, a bundle's part included, the latest first. */
+export function OrdersHistory({ itemId }: { itemId: number }) {
+  const { t } = useTranslation("catalog");
+  const { page, setPage, params } = useHistoryPage();
+  const orders = useListOrders({ ...params, item_id: itemId });
+  return (
+    <HistoryPage list={orders} page={page} onPageChange={setPage} empty={t("history.noOrders")}>
+      {(items) => <OrdersTable orders={items} />}
+    </HistoryPage>
+  );
+}
+
+/** The purchases buying an item, the latest first. */
+export function PurchasesHistory({ itemId }: { itemId: number }) {
+  const { t } = useTranslation("catalog");
+  const { page, setPage, params } = useHistoryPage();
+  const purchases = useListPurchases({ ...params, item_id: itemId });
+  return (
+    <HistoryPage
+      list={purchases}
+      page={page}
+      onPageChange={setPage}
+      empty={t("history.noPurchases")}
+    >
+      {(items) => <PurchasesTable purchases={items} />}
     </HistoryPage>
   );
 }

@@ -2,6 +2,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import {
+  getReadContactPricePointQueryKey,
+  useReadContactPricePoint,
+  useSetContactPricePoint,
+} from "@/api/generated/contacts/contacts";
 import type { OrderRead } from "@/api/generated/hoard.schemas";
 import {
   getListOrdersQueryKey,
@@ -9,11 +14,14 @@ import {
   useCreateOrder,
   useUpdateOrder,
 } from "@/api/generated/orders/orders";
+import { useListSettingsPricePoints } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
 import { LocationField } from "@/features/adjustments/fields";
 import { today } from "@/features/adjustments/labels";
 import { ContactPicker } from "@/features/contacts/ContactPicker";
+import { IdSelect } from "@/features/items/IdSelect";
 import { errorMessage } from "@/lib/errors";
+import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import {
@@ -140,6 +148,7 @@ function OrderForm({ order, onSaved }: { order?: OrderRead; onSaved: (saved: Ord
           </Field>
         </div>
         {!fromStore && <ContactPicker of="customers" value={customer} onChange={setCustomer} />}
+        {!fromStore && customer !== null && <CustomerPricePoint contactId={customer} />}
         <LocationField value={location} onChange={setLocation} />
         <Field label={t("order.deliveryAddress")}>
           <Textarea value={address} onChange={(event) => setAddress(event.target.value)} />
@@ -170,5 +179,34 @@ function OrderForm({ order, onSaved }: { order?: OrderRead; onSaved: (saved: Ord
         </Button>
       </DialogFooter>
     </form>
+  );
+}
+
+/** The price point a customer buys at, to a member who sees costs, changed
+ *  as it is picked: a hand order's new lines start at its prices. */
+function CustomerPricePoint({ contactId }: { contactId: number }) {
+  const { t } = useTranslation("orders");
+  const seesCosts = useSeesCosts();
+  const queries = useQueryClient();
+  const points = useListSettingsPricePoints({ query: { enabled: seesCosts } }).data;
+  const held = useReadContactPricePoint(contactId, { query: { enabled: seesCosts } }).data;
+  const set = useSetContactPricePoint({
+    mutation: {
+      onSuccess: (saved) =>
+        queries.setQueryData(getReadContactPricePointQueryKey(contactId), saved),
+      onError: (error) => toast.error(errorMessage(error, t, "customers.pricePointFailed")),
+    },
+  });
+  if (!seesCosts || !points?.length || !held) return null;
+  return (
+    <Field label={t("customers.pricePoint")} hint={t("customers.pricePointHint")}>
+      <IdSelect
+        aria-label={t("customers.pricePoint")}
+        value={held.price_point_id}
+        options={points}
+        none={t("customers.defaultPrices")}
+        onChange={(id) => set.mutate({ contactId, data: { price_point_id: id } })}
+      />
+    </Field>
   );
 }

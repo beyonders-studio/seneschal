@@ -14,7 +14,8 @@ export function ProductsPage() {
   const { t } = useTranslation("catalog");
   const navigate = useNavigate();
   const search = useItemSearch();
-  const products = useListProducts(search.params);
+  const [archived, setArchived] = useState(false);
+  const products = useListProducts({ ...search.params, ...(archived && { archived }) });
   const [adding, setAdding] = useState(false);
 
   return (
@@ -33,6 +34,7 @@ export function ProductsPage() {
         failed={products.isError}
         onRetry={() => void products.refetch()}
         more={<LayoutsButton of={PRODUCTS} rows={products.data?.items ?? []} />}
+        archived={{ shown: archived, onShownChange: setArchived }}
       >
         <RecordTable of={PRODUCTS} items={products.data?.items ?? []} />
         {products.data?.items.length === 0 && (
