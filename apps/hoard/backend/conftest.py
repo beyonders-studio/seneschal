@@ -129,7 +129,8 @@ Line = tuple[Material, str, str]
 @pytest.fixture
 def buy(db: WriteSession, main: Location) -> Callable[..., Awaitable[Purchase]]:
     """Buy ``lines`` on one purchase received at the main location, receiving
-    each line in turn. A line's purchase and tracking quantities are the same."""
+    each line in turn on the purchase's date. A line's purchase and tracking
+    quantities are the same."""
 
     async def buy(*lines: Line, dated_on: date = date(2026, 11, 1), **fields: Any) -> Purchase:
         purchase = Purchase(
@@ -152,7 +153,7 @@ def buy(db: WriteSession, main: Location) -> Callable[..., Awaitable[Purchase]]:
             )
             db.add(line)
             await db.flush()
-            await receive_line(db, line)
+            await receive_line(db, line, received_on=dated_on)
         return purchase
 
     return buy

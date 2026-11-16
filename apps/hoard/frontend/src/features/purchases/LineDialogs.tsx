@@ -9,6 +9,7 @@ import {
 } from "@/api/generated/purchases/purchases";
 import { toast } from "@/components/Toaster";
 import { ItemField } from "@/features/adjustments/fields";
+import { today, useMovementLabels } from "@/features/adjustments/labels";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
@@ -115,6 +116,7 @@ function LineForm({
   const [quantity, setQuantity] = useState(line?.purchase_quantity ?? "");
   const [tracking, setTracking] = useState(line?.tracking_quantity ?? "");
   const [unitCost, setUnitCost] = useState(line?.unit_cost ?? "");
+  const [receivedOn, setReceivedOn] = useState(line?.received_on ?? "");
   const create = useCreatePurchaseLine();
   const update = useUpdatePurchaseLine();
 
@@ -134,6 +136,7 @@ function LineForm({
               data: {
                 ...(material !== line.material.id ? { material_id: material } : {}),
                 ...(quantity !== line.purchase_quantity ? { purchase_quantity: quantity } : {}),
+                ...(receivedOn !== (line.received_on ?? "") ? { received_on: receivedOn } : {}),
                 ...amounts,
               },
             })
@@ -185,6 +188,9 @@ function LineForm({
           />
         </Field>
       )}
+      {line?.received_on && (
+        <ReceivedOnField purchase={purchase} value={receivedOn} onChange={setReceivedOn} />
+      )}
     </DialogForm>
   );
 }
@@ -199,6 +205,9 @@ function ReceiveForm({
   onSaved: (saved: PurchaseRead) => void;
 }) {
   const { t } = useTranslation("movements");
+  const { quantity: amount } = useMovementLabels();
+  const [receivedOn, setReceivedOn] = useState(today());
+  const [quantity, setQuantity] = useState(line.tracking_quantity);
   const [number, setNumber] = useState("");
   const [expiresOn, setExpiresOn] = useState("");
   const [notes, setNotes] = useState("");
@@ -211,6 +220,9 @@ function ReceiveForm({
           purchaseId: purchase.id,
           lineId: line.id,
           data: {
+            received_on: receivedOn,
+            // Less than the whole line receives that much, the rest staying on order.
+            ...(quantity !== line.tracking_quantity ? { quantity } : {}),
             ...(number.trim() ? { number: number.trim() } : {}),
             ...(expiresOn ? { expires_on: expiresOn } : {}),
             ...(notes.trim() ? { notes: notes.trim() } : {}),
@@ -228,6 +240,22 @@ function ReceiveForm({
       saving={receive.isPending}
       submitLabel={t("purchases.lines.receive")}
     >
+      <div className="grid grid-cols-pair gap-4">
+        <ReceivedOnField purchase={purchase} value={receivedOn} onChange={setReceivedOn} />
+        <Field
+          label={t("purchases.lines.quantityReceived")}
+          hint={t("purchases.lines.quantityReceivedHint", {
+            quantity: amount(line.tracking_quantity),
+          })}
+        >
+          <Input
+            required
+            inputMode="decimal"
+            value={quantity}
+            onChange={(event) => setQuantity(event.target.value)}
+          />
+        </Field>
+      </div>
       <Field label={t("purchases.lines.lotNumber")} hint={t("purchases.lines.lotNumberHint")}>
         <Input value={number} onChange={(event) => setNumber(event.target.value)} />
       </Field>
@@ -242,5 +270,29 @@ function ReceiveForm({
         <Textarea value={notes} onChange={(event) => setNotes(event.target.value)} />
       </Field>
     </DialogForm>
+  );
+}
+
+/** The day a line arrived: never before its purchase's date. */
+function ReceivedOnField({
+  purchase,
+  value,
+  onChange,
+}: {
+  purchase: PurchaseRead;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation("movements");
+  return (
+    <Field label={t("purchases.lines.receivedOn")}>
+      <Input
+        type="date"
+        required
+        min={purchase.dated_on}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </Field>
   );
 }

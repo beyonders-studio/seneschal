@@ -223,6 +223,9 @@ async def test_purchases_orders_and_stocktakes(
     line.material_id = sencha.id
     db.add(line)
     assert (await _entry(db, "purchase", purchase.id) or {})["body"] == "Sencha"
+    purchase.notes = "second flush"
+    db.add(purchase)
+    assert (await _entry(db, "purchase", purchase.id) or {})["body"] == "Sencha second flush"
 
     _, chai = await add_product(db, Product(name="Chai"))
     order = await sell(

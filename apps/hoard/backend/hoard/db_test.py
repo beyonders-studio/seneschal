@@ -3,7 +3,7 @@ carry what is recorded forward."""
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import psycopg
@@ -139,3 +139,55 @@ def test_the_units_migration_matches_standard_units_and_merges_their_twins():
         ("Honey", "g", "Jar", Decimal("250.000000")),
         ("Salt", "g", None, Decimal("1.000000")),
     ]
+
+
+def test_the_receipts_migration_dates_each_received_line_on_its_purchase():
+    def migrate(made: AppDatabase) -> None:
+        upgrade(made.owner_url, made.serving_login, "0016")
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+
+            def row(sql: str, *values: object) -> int:
+                [found] = db.execute(sql, values).fetchone() or ()
+                return found
+
+            org = row(
+                "INSERT INTO organizations (community_ref, plugin_install_id) "
+                "VALUES ('receipts', 1) RETURNING id"
+            )
+            unit = row(
+                "INSERT INTO units (organization_id, name) VALUES (%s, 'g') RETURNING id", org
+            )
+            item = row(
+                "INSERT INTO items (organization_id, kind) VALUES (%s, 'material') RETURNING id",
+                org,
+            )
+            db.execute(
+                "INSERT INTO materials (id, organization_id, name, tracking_unit_id) "
+                "VALUES (%s, %s, 'Flour', %s)",
+                (item, org, unit),
+            )
+            location = row(
+                "INSERT INTO locations (organization_id, main) VALUES (%s, true) RETURNING id", org
+            )
+            purchase = row(
+                "INSERT INTO purchases (organization_id, code, dated_on, location_id) "
+                "VALUES (%s, 'P-1', '2026-11-08', %s) RETURNING id",
+                org,
+                location,
+            )
+            for received in (True, False):
+                db.execute(
+                    "INSERT INTO purchase_lines (organization_id, purchase_id, material_id, "
+                    "purchase_quantity, tracking_quantity, received) VALUES (%s, %s, %s, 1, 1, %s)",
+                    (org, purchase, item, received),
+                )
+
+        upgrade(made.owner_url, made.serving_login)
+
+    with migrated_database("hoard_receipts", migrate) as made:
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            lines = db.execute("SELECT received_on FROM purchase_lines ORDER BY id").fetchall()
+
+    assert lines == [(date(2026, 11, 8),), (None,)]

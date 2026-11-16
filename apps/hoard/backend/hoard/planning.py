@@ -361,7 +361,7 @@ async def lead_days(db: AsyncSession) -> dict[int, int]:
         )
         .where(col(Purchase.supplier_contact_id).is_not(None))
         .group_by(col(Purchase.id), col(Purchase.supplier_contact_id), col(Purchase.dated_on))
-        .having(func.bool_and(PurchaseLine.received), received.is_not(None))
+        .having(func.bool_and(col(PurchaseLine.received_on).is_not(None)), received.is_not(None))
     )
     days: dict[int | None, list[int]] = defaultdict(list)
     for supplier_id, ordered_on, received_at in rows.all():
@@ -391,7 +391,7 @@ async def materials_short(db: AsyncSession, runs: Iterable[Run]) -> list[Materia
         (
             await db.exec(
                 select(PurchaseLine.material_id, func.sum(PurchaseLine.tracking_quantity))
-                .where(col(PurchaseLine.received).is_(False))
+                .where(col(PurchaseLine.received_on).is_(None))
                 .group_by(col(PurchaseLine.material_id))
             )
         ).all()

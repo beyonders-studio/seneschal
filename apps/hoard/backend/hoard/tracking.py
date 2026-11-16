@@ -130,7 +130,7 @@ async def _run_fields(db: AsyncSession, run: ProductionRun) -> dict[str, Any]:
 async def _purchase_fields(db: AsyncSession, purchase: Purchase) -> dict[str, Any]:
     lines, received = (
         await db.exec(
-            select(func.count(), func.count().filter(col(PurchaseLine.received))).where(
+            select(func.count(), func.count(col(PurchaseLine.received_on))).where(
                 PurchaseLine.purchase_id == purchase.id
             )
         )
@@ -274,15 +274,19 @@ async def receive_purchase(call: EndpointCall) -> dict[str, Any]:
         purchase = await db.get_one(Purchase, await _tracked(db, call, "purchase"))
         waiting = await db.exec(
             select(PurchaseLine)
-            .where(PurchaseLine.purchase_id == purchase.id, col(PurchaseLine.received).is_(False))
+            .where(PurchaseLine.purchase_id == purchase.id, col(PurchaseLine.received_on).is_(None))
             .order_by(col(PurchaseLine.id))
         )
-        for line in waiting.all():
-            await purchases.receive_line(db, line)
+        try:
+            for line in waiting.all():
+                await purchases.receive_line(db, line)
+        except purchases.PurchaseRefused as refused:
+            raise refuse(status.HTTP_409_CONFLICT, refused.code) from None
         received = (
             await db.exec(
                 select(func.count()).where(
-                    PurchaseLine.purchase_id == purchase.id, col(PurchaseLine.received)
+                    PurchaseLine.purchase_id == purchase.id,
+                    col(PurchaseLine.received_on).is_not(None),
                 )
             )
         ).one()

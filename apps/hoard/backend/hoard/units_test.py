@@ -1,7 +1,7 @@
 """Standard units are found by their names and convert within a measure; a
 recipe's lines scale by one multiplier, by amount or by ratio; amounts become
-parts; a recipe scales to use an amount of one line; shares and declarations
-weigh only what is measured by weight."""
+parts; a recipe scales to use an amount of one line; a quantity splits in
+proportion; shares and declarations weigh only what is measured by weight."""
 
 from __future__ import annotations
 
@@ -150,6 +150,22 @@ def test_a_recipe_scales_to_a_quantity_or_to_use_an_amount_of_one_line():
         Decimal("30.000000"),
     ]
     assert units.scaled(Decimal(931), rose_hips.batches) == Decimal("1230.000000")
+
+
+def test_a_quantity_splits_in_proportion_into_two_that_add_up():
+    # 200 g of a pound bought as one, counted as 453.592 g.
+    assert units.split(Decimal(1), Decimal(200), Decimal("453.592")) == (
+        Decimal("0.440925"),
+        Decimal("0.559075"),
+    )
+    assert units.split(Decimal("453.592"), Decimal(200), Decimal("453.592")) == (
+        Decimal(200),
+        Decimal("253.592"),
+    )
+    for part in (Decimal("0.0000001"), Decimal("0.9999999")):
+        with pytest.raises(UnitRefused) as refused:
+            units.split(Decimal("0.000001"), part, Decimal(1))
+        assert refused.value.code == UnitError.AMOUNT_TOO_SMALL
 
 
 def test_shares_weigh_only_the_lines_measured_by_weight():

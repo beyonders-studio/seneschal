@@ -32,8 +32,9 @@ import { RowActionsMenu } from "@/ui/row-actions-menu";
 import { StatusMessage } from "@/ui/status-message";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
-/** One purchase, under Stock: its supplier and lines, receiving them, and its
- *  costs for a member who sees them. */
+/** One purchase, under Stock: its supplier, when it is expected, its notes and
+ *  lines, receiving them whole or in part, and its costs for a member who
+ *  sees them. */
 export function PurchasePage({ purchaseId }: { purchaseId: number }) {
   const { t } = useTranslation("movements");
   const purchase = useReadPurchase(purchaseId);
@@ -56,7 +57,7 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
   const { read_only } = useSession();
   const seesCosts = useSeesCosts();
   const money = useMoney();
-  const { date, location, item, quantity } = useMovementLabels();
+  const { date, location, item, category, quantity } = useMovementLabels();
   const supplier = useSupplierNames();
   const memberName = useMemberNames([purchase.created_by]);
   const [editing, setEditing] = useState(false);
@@ -90,12 +91,19 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
                 {t("purchases.paid")}
               </Badge>
             )}
+            {purchase.overdue && (
+              <Badge variant="warning" className="ml-2 align-middle">
+                {t("purchases.overdue")}
+              </Badge>
+            )}
           </h2>
           <p className="text-sm text-muted-foreground">
             {[
               date(purchase.dated_on),
               supplier(purchase.supplier_contact_id),
               location(purchase.location_id),
+              purchase.expected_on &&
+                t("purchases.expectedOn", { date: date(purchase.expected_on) }),
             ]
               .filter(Boolean)
               .join(" · ")}
@@ -115,11 +123,14 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
           </Button>
         </div>
       </div>
+      {purchase.notes && <p className="text-sm whitespace-pre-wrap">{purchase.notes}</p>}
 
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>{t("purchases.lines.material")}</TableHead>
+            <TableHead>{t("hoard:common.sku")}</TableHead>
+            <TableHead>{t("hoard:common.category")}</TableHead>
             <TableHead className="text-right">{t("hoard:common.quantity")}</TableHead>
             {seesCosts && (
               <>
@@ -127,6 +138,7 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
                 <TableHead className="text-right">{t("purchases.lines.landedCost")}</TableHead>
               </>
             )}
+            <TableHead>{t("purchases.lines.receivedOn")}</TableHead>
             <TableHead>{t("purchases.lines.lot")}</TableHead>
             <TableHead>
               <span className="sr-only">{t("purchases.lines.actions")}</span>
@@ -137,6 +149,8 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
           {purchase.lines.map((line) => (
             <TableRow key={line.id}>
               <TableCell>{item(line.material)}</TableCell>
+              <TableCell>{line.sku}</TableCell>
+              <TableCell>{category(line.category_id)}</TableCell>
               <TableCell className="text-right">
                 {line.purchase_quantity === line.tracking_quantity
                   ? quantity(line.purchase_quantity)
@@ -156,8 +170,8 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
                 </>
               )}
               <TableCell>
-                {line.received ? (
-                  (line.lot?.number ?? t("purchases.lines.received"))
+                {line.received_on ? (
+                  date(line.received_on)
                 ) : (
                   <Button
                     size="sm"
@@ -170,13 +184,14 @@ function Purchase({ purchase }: { purchase: PurchaseRead }) {
                   </Button>
                 )}
               </TableCell>
+              <TableCell>{line.lot?.number}</TableCell>
               <TableCell className="text-right">
                 {!read_only && (
                   <RowActionsMenu subject={item(line.material)}>
                     <DropdownMenuItem onSelect={() => setLineAction({ kind: "edit", line })}>
                       {t("hoard:common.edit")}
                     </DropdownMenuItem>
-                    {line.received && (
+                    {line.received_on && (
                       <DropdownMenuItem
                         onSelect={() =>
                           void change(

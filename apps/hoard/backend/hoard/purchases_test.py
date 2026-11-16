@@ -1,4 +1,5 @@
-"""Receiving purchases: landed costs, lots, and edits that re-derive cost."""
+"""Receiving purchases: landed costs, lots dated the day they arrived,
+receiving part of a line, and edits that re-derive cost."""
 
 from __future__ import annotations
 
@@ -6,10 +7,26 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlmodel import select
+from sqlmodel import col, select
 
-from hoard.purchases import rederive_purchase, unreceive_line
-from hoard.records import Adjustment, AdjustmentKind, Item, Location, Lot, PurchaseLine
+from hoard.purchases import (
+    PurchaseError,
+    PurchaseRefused,
+    landed_costs,
+    receive_line,
+    rederive_purchase,
+    unreceive_line,
+)
+from hoard.records import (
+    Adjustment,
+    AdjustmentKind,
+    Item,
+    Location,
+    Lot,
+    Material,
+    Purchase,
+    PurchaseLine,
+)
 from hoard.stock import StockError, StockRefused, adjust, on_hand
 from seneschal_core.db import WriteSession
 
@@ -19,8 +36,50 @@ async def _average(db: WriteSession, item_id: int) -> Decimal:
 
 
 async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
-    lines = await db.exec(select(PurchaseLine).where(PurchaseLine.purchase_id == purchase_id))
+    lines = await db.exec(
+        select(PurchaseLine)
+        .where(PurchaseLine.purchase_id == purchase_id)
+        .order_by(col(PurchaseLine.id))
+        .execution_options(populate_existing=True)
+    )
     return list(lines.all())
+
+
+async def _order(
+    db: WriteSession, main: Location, *lines: tuple[Material, str, str, str], **fields
+) -> tuple[Purchase, list[PurchaseLine]]:
+    """A purchase dated 8 November of ``lines``, none received: each a
+    material, its purchase and tracking quantities, and its unit cost."""
+    purchase = Purchase(
+        organization_id=db.organization_id,
+        code="P-1",
+        dated_on=date(2026, 11, 8),
+        location_id=main.id,
+        **fields,
+    )
+    db.add(purchase)
+    await db.flush()
+    for bought, quantity, tracking, unit_cost in lines:
+        db.add(
+            PurchaseLine(
+                organization_id=db.organization_id,
+                purchase_id=purchase.id,
+                material_id=bought.id,
+                purchase_quantity=Decimal(quantity),
+                tracking_quantity=Decimal(tracking),
+                unit_cost=Decimal(unit_cost),
+            )
+        )
+    await db.flush()
+    return purchase, await _lines(db, purchase.id)
+
+
+async def _received(db: WriteSession, line: PurchaseLine) -> tuple[Lot, Adjustment]:
+    lot = (await db.exec(select(Lot).where(Lot.purchase_line_id == line.id))).one()
+    adjustment = (
+        await db.exec(select(Adjustment).where(Adjustment.purchase_line_id == line.id))
+    ).one()
+    return lot, adjustment
 
 
 async def test_discount_and_shipping_spread_by_value_and_tax_stays_out(
@@ -80,7 +139,7 @@ async def test_editing_a_purchase_rederives_the_cost_of_what_followed(
     assert (await _average(db, flour.id), used.unit_cost) == (Decimal("4.5"), Decimal("4.5"))
 
     # Received after the use instead, with shipping: 5 left at 4, then 10 at 6.
-    first.dated_on = date(2026, 11, 4)
+    line.received_on = date(2026, 11, 4)
     first.shipping = Decimal(10)
     await rederive_purchase(db, first)
     assert (await _average(db, flour.id), used.unit_cost) == (Decimal("5.333333"), 4)
@@ -111,6 +170,80 @@ async def test_unreceiving_a_line_takes_back_its_lot_unless_it_is_drawn_on(
 
     await db.delete(drawn)
     await unreceive_line(db, line)
-    assert not line.received
+    assert line.received_on is None
     assert (await db.exec(select(Lot).where(Lot.item_id == flour.id))).all() == []
     assert (await on_hand(db, flour.id), await _average(db, flour.id)) == (0, 0)
+
+
+async def test_a_receipt_is_dated_the_day_it_arrived(db: WriteSession, main: Location, material):
+    flour = await material("Flour")
+    purchase, [line] = await _order(db, main, (flour, "10", "10", "2"))
+
+    with pytest.raises(PurchaseRefused) as refused:
+        await receive_line(db, line, received_on=date(2026, 11, 7))
+    assert refused.value.code == PurchaseError.RECEIVED_BEFORE_PURCHASE
+
+    await receive_line(db, line, received_on=date(2026, 11, 15))
+    lot, adjustment = await _received(db, line)
+    assert (lot.dated_on, adjustment.dated_on) == (date(2026, 11, 15), date(2026, 11, 15))
+
+    line.received_on = date(2026, 11, 12)
+    await rederive_purchase(db, purchase)
+    assert (lot.dated_on, adjustment.dated_on) == (date(2026, 11, 12), date(2026, 11, 12))
+
+    purchase.dated_on = date(2026, 11, 13)
+    with pytest.raises(PurchaseRefused) as refused:
+        await rederive_purchase(db, purchase)
+    assert refused.value.code == PurchaseError.RECEIVED_BEFORE_PURCHASE
+
+
+async def test_receiving_part_of_a_line_splits_it_and_taking_it_back_merges_them(
+    db: WriteSession, main: Location, material
+):
+    flour, sugar = await material("Flour"), await material("Sugar")
+    # A pound of flour, counted in grams, beside a sugar, with shipping to spread.
+    purchase, [pound, other] = await _order(
+        db, main, (flour, "1", "453.592", "9"), (sugar, "1", "1", "1"), shipping=Decimal(10)
+    )
+    whole = landed_costs(purchase, [pound, other])
+
+    with pytest.raises(PurchaseRefused) as refused:
+        await receive_line(db, pound, quantity=Decimal("453.593"))
+    assert refused.value.code == PurchaseError.RECEIVED_MORE_THAN_LINE
+
+    part = await receive_line(db, pound, received_on=date(2026, 11, 15), quantity=Decimal(200))
+    assert part.id not in (pound.id, other.id)
+    assert [
+        (line.purchase_quantity, line.tracking_quantity, line.unit_cost, line.received_on)
+        for line in (pound, part)
+    ] == [
+        (Decimal("0.559075"), Decimal("253.592"), 9, None),
+        (Decimal("0.440925"), Decimal(200), 9, date(2026, 11, 15)),
+    ]
+    # Their values add up to the line's, so the spread is as it was.
+    split = landed_costs(purchase, await _lines(db, purchase.id))
+    assert (split[pound.id], split[part.id], split[other.id]) == (
+        whole[pound.id],
+        whole[pound.id],
+        whole[other.id],
+    )
+    lot, adjustment = await _received(db, part)
+    await db.refresh(lot)
+    assert (lot.number, lot.balance, adjustment.change) == (f"P-1-{part.id}", 200, 200)
+    assert await on_hand(db, flour.id) == 200
+
+    await unreceive_line(db, part)
+    assert [line.id for line in await _lines(db, purchase.id)] == [pound.id, other.id]
+    assert (pound.purchase_quantity, pound.tracking_quantity) == (1, Decimal("453.592"))
+    assert await on_hand(db, flour.id) == 0
+
+    # Once the rest has come too, a part taken back stays a line of its own.
+    part = await receive_line(db, pound, quantity=Decimal(200))
+    await receive_line(db, pound)
+    await unreceive_line(db, part)
+    assert [(line.id, line.received_on) for line in await _lines(db, purchase.id)] == [
+        (pound.id, date.today()),
+        (other.id, None),
+        (part.id, None),
+    ]
+    assert await on_hand(db, flour.id) == Decimal("253.592")

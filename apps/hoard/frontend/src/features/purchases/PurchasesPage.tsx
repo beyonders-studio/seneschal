@@ -62,6 +62,7 @@ export function PurchasesPage() {
               <TableHead>{t("hoard:common.date")}</TableHead>
               <TableHead>{t("connection:suppliers.label")}</TableHead>
               <TableHead>{t("hoard:common.location")}</TableHead>
+              <TableHead>{t("purchases.expected")}</TableHead>
               <TableHead>{t("purchases.received")}</TableHead>
               {seesCosts && <TableHead className="text-right">{t("hoard:common.total")}</TableHead>}
             </TableRow>
@@ -86,6 +87,14 @@ export function PurchasesPage() {
                 <TableCell>{date(purchase.dated_on)}</TableCell>
                 <TableCell>{supplier(purchase.supplier_contact_id)}</TableCell>
                 <TableCell>{location(purchase.location_id)}</TableCell>
+                <TableCell>
+                  {purchase.expected_on && date(purchase.expected_on)}
+                  {purchase.overdue && (
+                    <Badge variant="warning" className="ml-2">
+                      {t("purchases.overdue")}
+                    </Badge>
+                  )}
+                </TableCell>
                 <TableCell>
                   {t("purchases.receivedOf", {
                     received: purchase.received,

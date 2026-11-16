@@ -1,8 +1,10 @@
 """Purchases of materials from suppliers, their lines, and receiving them.
 
-A purchase names its supplier by an Initiative contact's id. Receiving a line
-makes its lot and its purchase adjustment (``hoard.purchases``); every change to
-a purchase or its lines re-derives what its received lines cost.
+A purchase names its supplier by an Initiative contact's id. Receiving a line,
+or part of one, makes its lot and its purchase adjustment on the day it arrived
+(``hoard.purchases``); every change to a purchase or its lines re-derives what
+its received lines cost. A purchase past the day it was expected with lines
+still on order is overdue.
 
 Without :data:`~hoard.api.deps.SeesCostsDep` no unit cost, discount, shipping,
 tax or total is sent, and a purchase that sends one is refused ``COSTS_HIDDEN``.
@@ -13,7 +15,6 @@ from __future__ import annotations
 from collections.abc import Collection
 from datetime import date, datetime
 from decimal import Decimal
-from enum import StrEnum
 from typing import Annotated
 
 from fastapi import APIRouter, status
@@ -36,6 +37,7 @@ from hoard.api.adjustments import (
 )
 from hoard.api.deps import HoardError, SeesCostsDep
 from hoard.api.shapes import Page, PageDep
+from hoard.purchases import PurchaseError, PurchaseRefused
 from hoard.records import PLACES, Lot, Material, Purchase, PurchaseLine
 from hoard.stock import StockRefused
 from seneschal_core.api import OrganizationSessionDep, SessionDep, WriteSessionDep, refuse
@@ -49,21 +51,11 @@ Code = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 #: The fields of a purchase that hold money.
 PURCHASE_COSTS = frozenset({"discount", "shipping", "tax"})
 CONFLICT: Responses = {
-    409: {"description": "PURCHASE_LINE_RECEIVED, PURCHASE_LINE_NOT_RECEIVED, LOT_IN_USE"}
+    409: {
+        "description": "PURCHASE_LINE_RECEIVED, PURCHASE_LINE_NOT_RECEIVED, LOT_IN_USE, "
+        "RECEIVED_BEFORE_PURCHASE"
+    }
 }
-
-
-class PurchaseError(StrEnum):
-    """Why a purchase was refused."""
-
-    #: A cost was sent by a member who does not see costs.
-    COSTS_HIDDEN = "COSTS_HIDDEN"
-    #: Another purchase has the code.
-    PURCHASE_CODE_TAKEN = "PURCHASE_CODE_TAKEN"
-    #: The line is received: it can't be received again or bought as another material.
-    PURCHASE_LINE_RECEIVED = "PURCHASE_LINE_RECEIVED"
-    #: The line has not been received.
-    PURCHASE_LINE_NOT_RECEIVED = "PURCHASE_LINE_NOT_RECEIVED"
 
 
 class PurchaseLot(BaseModel):
@@ -78,13 +70,16 @@ class PurchaseLot(BaseModel):
 class PurchaseLineRead(BaseModel):
     id: int
     material: AdjustmentItem
+    sku: str | None
+    category_id: int | None
     purchase_quantity: Decimal
     tracking_quantity: Decimal
     #: Sent only to a member who sees costs, as are the others below.
     unit_cost: Decimal | None = None
     #: What one tracking unit cost, with its share of discount and shipping.
     landed_cost: Decimal | None = None
-    received: bool
+    #: The day it arrived; none while it is on order.
+    received_on: date | None
     lot: PurchaseLot | None
 
 
@@ -96,6 +91,11 @@ class PurchaseRead(BaseModel):
     supplier_contact_id: int | None
     location_id: int
     paid: bool
+    #: The day it is due.
+    expected_on: date | None
+    #: Past the day it was expected, with lines still on order.
+    overdue: bool
+    notes: str | None
     discount: Decimal | None = None
     shipping: Decimal | None = None
     tax: Decimal | None = None
@@ -115,6 +115,8 @@ class PurchaseSummary(BaseModel):
     supplier_contact_id: int | None
     location_id: int
     paid: bool
+    expected_on: date | None
+    overdue: bool
     lines: int
     received: int
     total: Decimal | None = None
@@ -138,6 +140,16 @@ async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -
         ).all()
     )
     materials = await describe_items(db, [line.material_id for line in lines])
+    filed = {
+        id_: (sku, category_id)
+        for id_, sku, category_id in (
+            await db.exec(
+                select(Material.id, Material.sku, Material.category_id).where(
+                    col(Material.id).in_([line.material_id for line in lines])
+                )
+            )
+        ).all()
+    }
     lots = {
         lot.purchase_line_id: lot
         for lot in (
@@ -155,13 +167,18 @@ async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -
         supplier_contact_id=purchase.supplier_contact_id,
         location_id=purchase.location_id,
         paid=purchase.paid,
+        expected_on=purchase.expected_on,
+        overdue=purchases.overdue(purchase, any(line.received_on is None for line in lines)),
+        notes=purchase.notes,
         lines=[
             PurchaseLineRead(
                 id=line.id,
                 material=materials[line.material_id],
+                sku=filed[line.material_id][0],
+                category_id=filed[line.material_id][1],
                 purchase_quantity=line.purchase_quantity,
                 tracking_quantity=line.tracking_quantity,
-                received=line.received,
+                received_on=line.received_on,
                 lot=PurchaseLot(
                     id=lot.id, number=lot.number, expires_on=lot.expires_on, notes=lot.notes
                 )
@@ -208,6 +225,14 @@ async def _flush_code(db: WriteSession) -> None:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_CODE_TAKEN) from None
 
 
+async def _rederive(db: WriteSession, purchase: Purchase) -> None:
+    """Re-derive what ``purchase`` received, refusing a line received before its date."""
+    try:
+        await purchases.rederive_purchase(db, purchase)
+    except PurchaseRefused as refused:
+        raise refuse(status.HTTP_409_CONFLICT, refused.code) from None
+
+
 @router.get("", response_model_exclude_unset=True)
 async def list_purchases(
     db: OrganizationSessionDep, sees_costs: SeesCostsDep, page: PageDep
@@ -217,7 +242,7 @@ async def list_purchases(
         select(
             PurchaseLine.purchase_id,
             func.count().label("lines"),
-            func.count().filter(col(PurchaseLine.received)).label("received"),
+            func.count(col(PurchaseLine.received_on)).label("received"),
             func.sum(PurchaseLine.purchase_quantity * PurchaseLine.unit_cost).label("value"),
         )
         .group_by(col(PurchaseLine.purchase_id))
@@ -240,6 +265,8 @@ async def list_purchases(
                 supplier_contact_id=purchase.supplier_contact_id,
                 location_id=purchase.location_id,
                 paid=purchase.paid,
+                expected_on=purchase.expected_on,
+                overdue=purchases.overdue(purchase, (received or 0) < (count or 0)),
                 lines=count or 0,
                 received=received or 0,
                 **({"total": _total(purchase, value or Decimal(0))} if sees_costs else {}),
@@ -277,6 +304,8 @@ class PurchaseCreate(BaseModel):
     #: The main location when not given.
     location_id: int | None = None
     paid: bool = False
+    expected_on: date | None = None
+    notes: str | None = NOTES
     discount: NonNegative | None = None
     shipping: NonNegative | None = None
     tax: NonNegative | None = None
@@ -323,6 +352,8 @@ async def create_purchase(
         supplier_contact_id=body.supplier_contact_id,
         location_id=await location_or_main(db, body.location_id),
         paid=body.paid,
+        expected_on=body.expected_on,
+        notes=body.notes,
         discount=body.discount or Decimal(0),
         shipping=body.shipping or Decimal(0),
         tax=body.tax or Decimal(0),
@@ -360,6 +391,10 @@ class PurchaseUpdate(BaseModel):
     supplier_contact_id: int | None = None
     location_id: int | None = None
     paid: bool | None = None
+    #: Null takes the date off.
+    expected_on: date | None = None
+    #: Null takes the notes off.
+    notes: str | None = NOTES
     discount: NonNegative | None = None
     shipping: NonNegative | None = None
     tax: NonNegative | None = None
@@ -371,14 +406,14 @@ class PurchaseUpdate(BaseModel):
     responses={
         **NOT_FOUND,
         403: {"description": "COSTS_HIDDEN"},
-        409: {"description": "PURCHASE_CODE_TAKEN"},
+        409: {"description": "PURCHASE_CODE_TAKEN, RECEIVED_BEFORE_PURCHASE"},
     },
 )
 async def update_purchase(
     db: WriteSessionDep, sees_costs: SeesCostsDep, purchase_id: int, body: PurchaseUpdate
 ) -> PurchaseRead:
     """Change a purchase, and carry the change into what it received."""
-    sent = changes(body, nullable={"supplier_contact_id"})
+    sent = changes(body, nullable={"supplier_contact_id", "expected_on", "notes"})
     _no_costs(sees_costs, [sent.get(name) for name in PURCHASE_COSTS])
     purchase = await known(db, Purchase, purchase_id)
     if "location_id" in sent:
@@ -386,7 +421,7 @@ async def update_purchase(
     for name, value in sent.items():
         setattr(purchase, name, value)
     await _flush_code(db)
-    await purchases.rederive_purchase(db, purchase)
+    await _rederive(db, purchase)
     await db.commit()
     return await _read(db, purchase, sees_costs)
 
@@ -452,6 +487,8 @@ class PurchaseLineUpdate(BaseModel):
     purchase_quantity: Positive | None = None
     tracking_quantity: Positive | None = None
     unit_cost: NonNegative | None = None
+    #: The day a received line arrived.
+    received_on: date | None = None
 
 
 @router.patch(
@@ -470,8 +507,10 @@ async def update_purchase_line(
     sent = changes(body)
     _no_costs(sees_costs, [sent.get("unit_cost")])
     purchase, line = await _line(db, purchase_id, line_id)
-    if line.received and sent.get("material_id", line.material_id) != line.material_id:
+    if line.received_on and sent.get("material_id", line.material_id) != line.material_id:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_RECEIVED)
+    if line.received_on is None and "received_on" in sent:
+        raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_NOT_RECEIVED)
     if "tracking_quantity" not in sent and {"material_id", "purchase_quantity"} & sent.keys():
         sent["tracking_quantity"] = await _tracking(
             db,
@@ -483,7 +522,7 @@ async def update_purchase_line(
         await known(db, Material, sent["material_id"])
     for name, value in sent.items():
         setattr(line, name, value)
-    await purchases.rederive_purchase(db, purchase)
+    await _rederive(db, purchase)
     await db.commit()
     return await _read(db, purchase, sees_costs)
 
@@ -507,9 +546,14 @@ async def delete_purchase_line(
 
 
 class PurchaseLineReceive(BaseModel):
-    """The lot a line is received into."""
+    """What of a line arrived, when, and the lot it is received into."""
 
-    #: The purchase's code and the line's id when not given.
+    #: Today when not given; never before the purchase's date.
+    received_on: date | None = None
+    #: How many tracking units arrived, when less than the line: that much is
+    #: split off as a line of its own and received, the rest staying on order.
+    quantity: Positive | None = None
+    #: The purchase's code and the received line's id when not given.
     number: Code | None = None
     expires_on: date | None = None
     notes: str | None = NOTES
@@ -518,7 +562,13 @@ class PurchaseLineReceive(BaseModel):
 @router.post(
     "/{purchase_id}/lines/{line_id}/receive",
     response_model_exclude_unset=True,
-    responses={**NOT_FOUND, **CONFLICT},
+    responses={
+        **NOT_FOUND,
+        409: {
+            "description": "PURCHASE_LINE_RECEIVED, RECEIVED_BEFORE_PURCHASE, "
+            "RECEIVED_MORE_THAN_LINE, AMOUNT_TOO_SMALL"
+        },
+    },
 )
 async def receive_purchase_line(
     db: WriteSessionDep,
@@ -527,13 +577,23 @@ async def receive_purchase_line(
     line_id: int,
     body: PurchaseLineReceive,
 ) -> PurchaseRead:
-    """Receive a line: its lot, and the stock it brings in at its landed cost."""
+    """Receive a line, or part of one: its lot, and the stock it brings in at
+    its landed cost on the day it arrived."""
     purchase, line = await _line(db, purchase_id, line_id)
-    if line.received:
+    if line.received_on:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_RECEIVED)
-    await purchases.receive_line(
-        db, line, number=body.number, expires_on=body.expires_on, notes=body.notes
-    )
+    try:
+        await purchases.receive_line(
+            db,
+            line,
+            received_on=body.received_on,
+            quantity=body.quantity,
+            number=body.number,
+            expires_on=body.expires_on,
+            notes=body.notes,
+        )
+    except PurchaseRefused as refused:
+        raise refuse(status.HTTP_409_CONFLICT, refused.code) from None
     await db.commit()
     return await _read(db, purchase, sees_costs)
 
@@ -546,9 +606,10 @@ async def receive_purchase_line(
 async def unreceive_purchase_line(
     db: WriteSessionDep, sees_costs: SeesCostsDep, purchase_id: int, line_id: int
 ) -> PurchaseRead:
-    """Take back what a line received, while nothing else draws on its lot."""
+    """Take back what a line received, while nothing else draws on its lot. A
+    part received from a line still on order goes back into it."""
     purchase, line = await _line(db, purchase_id, line_id)
-    if not line.received:
+    if line.received_on is None:
         raise refuse(status.HTTP_409_CONFLICT, PurchaseError.PURCHASE_LINE_NOT_RECEIVED)
     try:
         await purchases.unreceive_line(db, line)

@@ -1641,6 +1641,8 @@ export interface PurchaseSummary {
   supplier_contact_id: number | null;
   location_id: number;
   paid: boolean;
+  expected_on: string | null;
+  overdue: boolean;
   lines: number;
   received: number;
   total?: string | null;
@@ -1926,6 +1928,8 @@ export interface PurchaseCreate {
   supplier_contact_id?: number | null;
   location_id?: number | null;
   paid?: boolean;
+  expected_on?: string | null;
+  notes?: string | null;
   discount?: number | string | null;
   shipping?: number | string | null;
   tax?: number | string | null;
@@ -1946,18 +1950,22 @@ export interface PurchaseLot {
 export interface PurchaseLineRead {
   id: number;
   material: AdjustmentItem;
+  sku: string | null;
+  category_id: number | null;
   purchase_quantity: string;
   tracking_quantity: string;
   unit_cost?: string | null;
   landed_cost?: string | null;
-  received: boolean;
+  received_on: string | null;
   lot: PurchaseLot | null;
 }
 
 /**
- * The lot a line is received into.
+ * What of a line arrived, when, and the lot it is received into.
  */
 export interface PurchaseLineReceive {
+  received_on?: string | null;
+  quantity?: number | string | null;
   number?: string | null;
   expires_on?: string | null;
   notes?: string | null;
@@ -1973,6 +1981,7 @@ export interface PurchaseLineUpdate {
   purchase_quantity?: number | string | null;
   tracking_quantity?: number | string | null;
   unit_cost?: number | string | null;
+  received_on?: string | null;
 }
 
 export interface PurchaseRead {
@@ -1982,6 +1991,9 @@ export interface PurchaseRead {
   supplier_contact_id: number | null;
   location_id: number;
   paid: boolean;
+  expected_on: string | null;
+  overdue: boolean;
+  notes: string | null;
   discount?: string | null;
   shipping?: string | null;
   tax?: string | null;
@@ -2002,6 +2014,8 @@ export interface PurchaseUpdate {
   supplier_contact_id?: number | null;
   location_id?: number | null;
   paid?: boolean | null;
+  expected_on?: string | null;
+  notes?: string | null;
   discount?: number | string | null;
   shipping?: number | string | null;
   tax?: number | string | null;

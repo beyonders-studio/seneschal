@@ -264,11 +264,11 @@ async def test_a_tasks_button_receives_its_purchase_in_full(
         "lines_received": 2,
     }
     lines = await db.exec(
-        select(PurchaseLine.received, PurchaseLine.updated_by).where(
+        select(PurchaseLine.received_on, PurchaseLine.updated_by).where(
             PurchaseLine.purchase_id == purchase.id
         )
     )
-    assert lines.all() == [(True, "viewer-1"), (True, "viewer-1")]
+    assert lines.all() == [(date.today(), "viewer-1"), (date.today(), "viewer-1")]
     recorded = await _outbox(serving_database, db.organization_id)
     assert [(event.name, event.payload["lines_received"]) for event in recorded] == [
         ("purchase-line-received", 1),

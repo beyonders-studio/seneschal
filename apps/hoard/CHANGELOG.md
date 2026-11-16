@@ -14,9 +14,13 @@ All notable changes to Hoard are recorded here. The format follows
 - **Recipes by ratio.** Write a recipe by amount, as before, or by ratio: each ingredient's parts and the batch's ingredients total, with what the batch makes kept separately for loss. A line can be written in any unit that converts to its ingredient's, such as 0.5 kg of something tracked in grams. Lines measured differently from the total, such as a flavoring in mL, scale along with the rest. The recipe shows each line's ratio and amount side by side, switches between the two ways of writing it, and **Scale to** can now scale to an amount of one ingredient.
 - **Make as much as one ingredient allows.** A new run can use up an amount of one ingredient, by default all that's available at the run's location, leaving out expired lots. It says which other ingredients are short and the most you can make with what's there. A run's page shows short lines until it's completed, and says when its recipe has changed since it was planned.
 - **What one unit weighs,** recorded on a material not tracked by weight, so declarations can weigh it.
+- **Receive part of a purchase line.** When 200 g of a 453.592 g line arrives, receive just that: it gets its own lot, and the rest stays on order at the same unit cost. The purchase's discount and shipping stay spread as they were. Taking the part back puts it back into the rest while the rest is still on order.
+- **Purchases record when they're expected,** and an open purchase past that day is marked overdue on its page and in the purchases list.
+- **Notes on a purchase,** which search finds. Purchase lines also show each material's SKU and category.
 
 ### Changed
 
+- **A purchase line is received on the day it arrived,** today unless you pick another, and its lot and stock take that date rather than the purchase's. Change the day later and costs follow it. A line can't arrive before its purchase's date. Lines received before this update keep their purchase's date, so nothing already recorded moves.
 - **Your units become Hoard's standard units.** A unit named like a standard one ("g", "grams", "Kg") becomes that unit, and two of yours that are the same unit become one. A material bought and tracked in standard units, such as kilograms and grams, takes their real conversion in place of the number typed in; purchases already received keep what they recorded.
 - **A tracking unit can't change once something is counted in it:** stock movements, purchases, stocktakes, recipes or runs. Before then it changes freely.
 - Starting setups no longer bring the standard units, which every community has.

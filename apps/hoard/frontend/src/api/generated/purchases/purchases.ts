@@ -869,7 +869,8 @@ export const useDeletePurchaseLine = <
   return useMutation(getDeletePurchaseLineMutationOptions(options), queryClient);
 };
 /**
- * Receive a line: its lot, and the stock it brings in at its landed cost.
+ * Receive a line, or part of one: its lot, and the stock it brings in at
+ * its landed cost on the day it arrived.
  * @summary Receive Purchase Line
  */
 export const receivePurchaseLine = (
@@ -941,7 +942,8 @@ export type ReceivePurchaseLineMutationVariables = {
 };
 
 /**
- * Receive a line: its lot, and the stock it brings in at its landed cost.
+ * Receive a line, or part of one: its lot, and the stock it brings in at
+ * its landed cost on the day it arrived.
  * @summary Receive Purchase Line
  */
 export const useReceivePurchaseLine = <
@@ -967,7 +969,8 @@ export const useReceivePurchaseLine = <
   return useMutation(getReceivePurchaseLineMutationOptions(options), queryClient);
 };
 /**
- * Take back what a line received, while nothing else draws on its lot.
+ * Take back what a line received, while nothing else draws on its lot. A
+ * part received from a line still on order goes back into it.
  * @summary Unreceive Purchase Line
  */
 export const unreceivePurchaseLine = (
@@ -1028,7 +1031,8 @@ export type UnreceivePurchaseLineMutationError = ErrorType<void | HTTPValidation
 export type UnreceivePurchaseLineMutationVariables = { purchaseId: number; lineId: number };
 
 /**
- * Take back what a line received, while nothing else draws on its lot.
+ * Take back what a line received, while nothing else draws on its lot. A
+ * part received from a line still on order goes back into it.
  * @summary Unreceive Purchase Line
  */
 export const useUnreceivePurchaseLine = <

@@ -233,7 +233,7 @@ async def purchase_event(
     ``line`` received when it is about one."""
     lines = (
         await db.exec(
-            select(func.count(), func.count().filter(col(PurchaseLine.received))).where(
+            select(func.count(), func.count(col(PurchaseLine.received_on))).where(
                 PurchaseLine.purchase_id == purchase.id
             )
         )

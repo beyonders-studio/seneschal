@@ -667,18 +667,23 @@ class Purchase(OrganizationRow, Stamped, table=True):
     tax: Decimal = amount()
     #: The initiative it was opened from; None for one opened before Hoard kept it.
     initiative_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The day it is due.
+    expected_on: date | None = None
+    notes: str | None = None
 
 
 class PurchaseLine(OrganizationRow, Stamped, table=True):
     """A material bought: so many purchase units at a unit cost each, which
     are so many tracking units. Receiving it makes its lot and its purchase
-    adjustment."""
+    adjustment, dated the day it arrived. Receiving part of it splits that
+    part off as a line of its own."""
 
     __tablename__ = "purchase_lines"
     __table_args__ = (
         referable("purchase_lines"),
         reference("purchase_lines", "purchase_id", "purchases", ondelete="CASCADE"),
         reference("purchase_lines", "material_id", "materials"),
+        reference("purchase_lines", "split_from_id", "purchase_lines"),
         Index("ix_purchase_lines_purchase", "organization_id", "purchase_id"),
         CheckConstraint(
             "purchase_quantity > 0 AND tracking_quantity > 0 AND unit_cost >= 0",
@@ -693,7 +698,10 @@ class PurchaseLine(OrganizationRow, Stamped, table=True):
     tracking_quantity: Decimal = amount()
     #: The cost of one purchase unit, before discount and shipping.
     unit_cost: Decimal = amount()
-    received: bool = False
+    #: The day it arrived; None while it is on order.
+    received_on: date | None = None
+    #: The line it was received from in part, which kept the rest on order.
+    split_from_id: int | None = Field(default=None, sa_type=BigInteger)
 
 
 class Lot(OrganizationRow, Stamped, table=True):

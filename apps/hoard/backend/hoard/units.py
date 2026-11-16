@@ -16,6 +16,8 @@ Everything that converts or scales goes through this module:
   smallest (:func:`relative`);
 * scaling by batches, by an output quantity (:func:`scale`, :func:`scaled`) or
   by an amount of one ingredient (:func:`use`);
+* splitting a quantity in proportion, as receiving part of a purchase line
+  does (:func:`split`);
 * shares by weight (:func:`percents`), and the weight a declaration counts
   (:func:`grams`).
 
@@ -381,6 +383,16 @@ def scaled(quantity: Decimal, batches: Decimal, *, down: bool = False) -> Decima
     """``quantity`` of a line, ``batches`` over, kept to six places: rounded
     down when ``down``, so it never asks for more than there is."""
     return (quantity * batches).quantize(PLACES, rounding=ROUND_DOWN if down else None)
+
+
+def split(quantity: Decimal, part: Decimal, whole: Decimal) -> tuple[Decimal, Decimal]:
+    """``quantity`` in two, as ``part`` is of ``whole``: the part's share,
+    kept to six places, and the rest, so the two add up to ``quantity``
+    exactly. Refused when either would be nothing."""
+    taken = kept(quantity * part / whole)
+    if taken >= quantity:
+        raise UnitRefused(UnitError.AMOUNT_TOO_SMALL)
+    return taken, quantity - taken
 
 
 @dataclass(frozen=True)
