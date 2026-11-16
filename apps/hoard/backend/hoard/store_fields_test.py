@@ -30,6 +30,7 @@ from hoard.records import (
     RecordKind,
     Store,
     StoreFieldValue,
+    Unit,
     Variation,
 )
 from hoard.stock import add_product
@@ -347,14 +348,27 @@ async def test_a_recipe_change_sends_what_it_changes(
 ):
     mug = (await db.exec(select(Variation).where(Variation.sku == "MUG"))).one()
     clay = await material("Clay", allergens=[])
-    await recipes.save(db, Recipe(variation_id=mug.id), [recipes.Line(clay.id, Decimal(1))])
+    jar = Unit(organization_id=db.organization_id, name="Jar")
+    db.add(jar)
+    await db.flush()
+    glaze = await material("Glaze", allergens=[], tracking_unit_id=jar.id)
+    await recipes.save(
+        db,
+        Recipe(variation_id=mug.id),
+        [recipes.Line(glaze.id, Decimal(1)), recipes.Line(clay.id, Decimal(1))],
+    )
     await _work(db, plugin)
 
-    # The mug's ingredients changed and are sent; its allergens, none
-    # before and none now, are not; the chai's, which differ but did not
-    # change, wait to be sent.
+    # The mug's ingredients changed and are sent, the glaze Hoard can't weigh
+    # last and marked; its allergens, none before and none now, are not; the
+    # chai's, which differ but did not change, wait to be sent.
     assert shop.field_writes == [
-        FieldValue("p-mug", "custom.ingredients", "multi_line_text_field", "Clay")
+        FieldValue(
+            "p-mug",
+            "custom.ingredients",
+            "multi_line_text_field",
+            "Clay, Glaze*. *Place by weight not known.",
+        )
     ]
     assert [row[:2] for row in await _differing(db, synced)] == [
         ("Chai", "Allergens"),

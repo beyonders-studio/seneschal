@@ -59,6 +59,17 @@ describe("DeclarationsPanel", () => {
     expect(screen.queryByText("Fragrance allergens to declare")).toBeNull();
   });
 
+  it("marks the ingredients it can't weigh, listed last", async () => {
+    await openSignedIn(
+      "/stock/materials/5",
+      signedIn(),
+      opened(declared({ ingredients: ["Oolong", "Lychee"], unweighed: ["Lychee"] }))
+    );
+
+    await screen.findByText("Oolong and Lychee*");
+    screen.getByText(/^\*Hoard can't weigh Lychee/);
+  });
+
   it("says which fragrance allergens are past the threshold", async () => {
     await openSignedIn(
       "/stock/materials/5",
