@@ -49,7 +49,8 @@ async def test_the_labour_rate_is_a_cost_an_admin_sets(client, sign_in):
     # An admin who doesn't see costs neither sets it nor reads it.
     await sign_in(client, admin=True)
     unseen = await client.put("/api/v1/settings", json={"labour_rate": "20"})
-    assert unseen.json()["labour_rate"] is None
+    assert (unseen.status_code, unseen.json()) == (403, {"detail": "COSTS_HIDDEN"})
+    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
 
     await sign_in(client, ("costs",), admin=True)
     assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None

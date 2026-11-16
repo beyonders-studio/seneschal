@@ -27,6 +27,7 @@ from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard import stock, units
+from hoard.api.adjustments import AdjustmentError
 from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.records import (
     AdjustmentReason,
@@ -77,7 +78,7 @@ class SettingsError(StrEnum):
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
-    403: {"description": "ADMIN_ONLY, READ_ONLY"},
+    403: {"description": "ADMIN_ONLY, READ_ONLY, COSTS_HIDDEN"},
     404: {"description": "NOT_FOUND"},
     409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD"},
     422: {"description": "NAME_REQUIRED"},
@@ -99,8 +100,8 @@ class SettingsRead(BaseModel):
 
 class SettingsUpdate(BaseModel):
     """The settings to change: each left as it is unless sent. The labour
-    rate, which may be cleared with null, is taken only from a member who
-    sees costs."""
+    rate, which may be cleared with null, is refused from a member who
+    doesn't see costs."""
 
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     auto_manufacture: AutoManufacture | None = None
@@ -272,10 +273,10 @@ async def update_settings(
     changes = body.model_dump(exclude_none=True)
     if body.regimes is not None:
         changes["regimes"] = [regime for regime in Regime if regime in body.regimes]
-    if sees_costs and "labour_rate" in body.model_fields_set:
+    if "labour_rate" in body.model_fields_set:
+        if not sees_costs:
+            raise refuse(status.HTTP_403_FORBIDDEN, AdjustmentError.COSTS_HIDDEN)
         changes["labour_rate"] = body.labour_rate
-    else:
-        changes.pop("labour_rate", None)
     settings.sqlmodel_update(changes)
     db.add(settings)
     await db.commit()

@@ -2556,8 +2556,8 @@ export interface SettingsUnitWrite {
 
 /**
  * The settings to change: each left as it is unless sent. The labour
- * rate, which may be cleared with null, is taken only from a member who
- * sees costs.
+ * rate, which may be cleared with null, is refused from a member who
+ * doesn't see costs.
  */
 export interface SettingsUpdate {
   currency?: string | null;
