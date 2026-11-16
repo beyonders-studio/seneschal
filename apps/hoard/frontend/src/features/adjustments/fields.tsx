@@ -3,13 +3,14 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { useListBases } from "@/api/generated/bases/bases";
-import type { ItemKind, ProductDetail } from "@/api/generated/hoard.schemas";
+import type { ItemKind, ItemStatus, ProductDetail } from "@/api/generated/hoard.schemas";
 import { useListMaterials } from "@/api/generated/materials/materials";
 import { readProduct, useListProducts } from "@/api/generated/products/products";
 import { useListSettingsLocations } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
 import { IdSelect } from "@/features/items/IdSelect";
 import { useVariationName } from "@/features/products/variations";
+import { IncludeArchived } from "@/features/search/records";
 import { useLocationName } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
@@ -68,7 +69,9 @@ const BOUGHT_KINDS: readonly ItemKind[] = ["material", "variation"];
  * its own; they are offered unless `bought`. A product
  * with several variations is picked first, then one of them; a product with
  * one is that one. `chosen` names `value` when the field opens with it set;
- * `clearLabel` offers picking none, as that button's name.
+ * `clearLabel` offers picking none, as that button's name. Archived items
+ * are left out unless asked for: by the field's own switch, or by
+ * `archived` from a switch its caller holds for several fields.
  */
 export function ItemField({
   label,
@@ -79,6 +82,7 @@ export function ItemField({
   kinds = bought ? BOUGHT_KINDS : EVERY_KIND,
   bundles = !bought,
   clearLabel,
+  archived,
 }: {
   label: string;
   value: number | null;
@@ -88,6 +92,7 @@ export function ItemField({
   kinds?: readonly ItemKind[];
   bundles?: boolean;
   clearLabel?: string;
+  archived?: boolean;
 }) {
   const { t } = useTranslation("movements");
   const variationName = useVariationName();
@@ -97,7 +102,15 @@ export function ItemField({
     value === null ? null : { value: `m${value}`, label: chosen ?? "" }
   );
   const [product, setProduct] = useState<ProductDetail | null>(null);
-  const params = { q: search || undefined, limit: MATCHES };
+  const [ownArchived, setOwnArchived] = useState(false);
+  const withArchived = archived ?? ownArchived;
+  const params = {
+    q: search || undefined,
+    limit: MATCHES,
+    ...(withArchived && { archived: true }),
+  };
+  const archivedMark = (status: ItemStatus) =>
+    status === "archived" ? t("catalog:items.statuses.archived") : undefined;
   const found = useListMaterials(params, {
     query: { enabled: open && kinds.includes("material") },
   });
@@ -112,11 +125,13 @@ export function ItemField({
         value: `m${material.id}`,
         label: material.name,
         hint: t("item.kinds.material"),
+        sublabel: archivedMark(material.status),
       })),
     ...(bases.data?.items ?? []).map((base) => ({
       value: `b${base.id}`,
       label: base.name,
       hint: t("item.kinds.base"),
+      sublabel: archivedMark(base.status),
     })),
     ...(products.data?.items ?? [])
       .filter((one) => bundles || !one.bundle)
@@ -124,6 +139,7 @@ export function ItemField({
         value: `p${one.id}`,
         label: one.name,
         hint: t("item.kinds.variation"),
+        sublabel: archivedMark(one.status),
       })),
   ];
 
@@ -174,6 +190,9 @@ export function ItemField({
           </Button>
         )}
       </div>
+      {archived === undefined && (
+        <IncludeArchived checked={ownArchived} onCheckedChange={setOwnArchived} />
+      )}
       {product && (
         <Field label={t("catalog:products.variation")}>
           <IdSelect

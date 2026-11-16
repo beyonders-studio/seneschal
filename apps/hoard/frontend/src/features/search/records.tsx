@@ -1,8 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
-import type { MouseEvent, ReactNode } from "react";
+import { type MouseEvent, type ReactNode, useId } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { SearchHit } from "@/api/generated/hoard.schemas";
+import { Label } from "@/ui/label";
+import { Switch } from "@/ui/switch";
 
 /** The kinds of record search finds, in the order their tabs are offered. */
 export const KINDS = [
@@ -44,5 +46,24 @@ export function RecordLink({ hit, children }: { hit: SearchHit; children: ReactN
     <a href={hit.path} onClick={click} className="font-medium hover:underline">
       {children}
     </a>
+  );
+}
+
+/** The switch that has a search, or a picker that searches, find archived
+ *  records too. */
+export function IncludeArchived({
+  checked,
+  onCheckedChange,
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  const { t } = useTranslation("search");
+  const id = useId();
+  return (
+    <div className="flex items-center gap-2">
+      <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
+      <Label htmlFor={id}>{t("results.includeArchived")}</Label>
+    </div>
   );
 }

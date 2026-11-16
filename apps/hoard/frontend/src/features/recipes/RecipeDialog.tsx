@@ -20,6 +20,7 @@ import { ItemField } from "@/features/adjustments/fields";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { orNull, useQuantity, useRatio, useShare } from "@/features/items/format";
 import { UnitPicker } from "@/features/items/UnitPicker";
+import { IncludeArchived } from "@/features/search/records";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { Button } from "@/ui/button";
@@ -145,6 +146,7 @@ function RecipeForm({
   // back restores until the recipe is saved.
   const [switchedFrom, setSwitchedFrom] = useState<Draft | null>(null);
   const [nextKey, setNextKey] = useState(draft.lines.length);
+  const [archived, setArchived] = useState(false);
   const { byRatio, lines } = draft;
 
   const body = (): RecipeCreate => ({
@@ -296,6 +298,7 @@ function RecipeForm({
           <legend className="mb-2 text-sm font-medium">
             {bundle ? t("dialog.holds") : t("dialog.lines")}
           </legend>
+          <IncludeArchived checked={archived} onCheckedChange={setArchived} />
           {lines.map((line, index) => {
             const figures = line.itemId === null ? undefined : worked.get(line.itemId);
             return (
@@ -307,6 +310,7 @@ function RecipeForm({
                     label={t("dialog.item", { number: index + 1 })}
                     value={line.itemId}
                     chosen={line.name}
+                    archived={archived}
                     onChange={(itemId) => change(line.key, { itemId, unitId: null })}
                   />
                 </div>
