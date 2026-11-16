@@ -51,7 +51,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 
 /**
  * Bases by name: those whose name or SKU holds ``q``, when it is given,
- * and archived ones only when asked for.
+ * of the type ``type_id`` when it is given, and archived ones only when
+ * asked for.
  * @summary List Bases
  */
 export const listBases = (
@@ -95,7 +96,8 @@ export type ListBasesQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
  * Bases by name: those whose name or SKU holds ``q``, when it is given,
- * and archived ones only when asked for.
+ * of the type ``type_id`` when it is given, and archived ones only when
+ * asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -119,7 +121,8 @@ export function useListBases<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Bases by name: those whose name or SKU holds ``q``, when it is given,
- * and archived ones only when asked for.
+ * of the type ``type_id`` when it is given, and archived ones only when
+ * asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -143,7 +146,8 @@ export function useListBases<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Bases by name: those whose name or SKU holds ``q``, when it is given,
- * and archived ones only when asked for.
+ * of the type ``type_id`` when it is given, and archived ones only when
+ * asked for.
  * @summary List Bases
  */
 export function useListBases<
@@ -159,7 +163,8 @@ export function useListBases<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Bases by name: those whose name or SKU holds ``q``, when it is given,
- * and archived ones only when asked for.
+ * of the type ``type_id`` when it is given, and archived ones only when
+ * asked for.
  * @summary List Bases
  */
 export function useListBases<

@@ -51,7 +51,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 
 /**
  * Materials by name: those whose name or SKU holds ``q``, when it is
- * given, and archived ones only when asked for.
+ * given, of the type ``type_id`` when it is given, and archived ones only
+ * when asked for.
  * @summary List Materials
  */
 export const listMaterials = (
@@ -98,7 +99,8 @@ export type ListMaterialsQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
  * Materials by name: those whose name or SKU holds ``q``, when it is
- * given, and archived ones only when asked for.
+ * given, of the type ``type_id`` when it is given, and archived ones only
+ * when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -122,7 +124,8 @@ export function useListMaterials<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Materials by name: those whose name or SKU holds ``q``, when it is
- * given, and archived ones only when asked for.
+ * given, of the type ``type_id`` when it is given, and archived ones only
+ * when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -146,7 +149,8 @@ export function useListMaterials<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Materials by name: those whose name or SKU holds ``q``, when it is
- * given, and archived ones only when asked for.
+ * given, of the type ``type_id`` when it is given, and archived ones only
+ * when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -162,7 +166,8 @@ export function useListMaterials<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * Materials by name: those whose name or SKU holds ``q``, when it is
- * given, and archived ones only when asked for.
+ * given, of the type ``type_id`` when it is given, and archived ones only
+ * when asked for.
  * @summary List Materials
  */
 export function useListMaterials<

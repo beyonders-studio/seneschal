@@ -24,7 +24,7 @@ from hoard import stock, units
 from hoard.api import items
 from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
-from hoard.api.settings import SettingsError, found, refused_as, require_references
+from hoard.api.settings import SettingsError, found, refused_as, require_references, type_of
 from hoard.api.shapes import Page, PageDep
 from hoard.records import CategoryKind, Item, ItemStatus, Material, RecordKind, Unit
 from hoard.units import UnitRefused
@@ -40,7 +40,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
     409: {"description": "IN_USE, TRACKING_UNIT_IN_USE, NOT_INVENTORIABLE"},
-    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, AMOUNT_TOO_SMALL"},
+    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN, AMOUNT_TOO_SMALL"},
 }
 
 
@@ -61,6 +61,8 @@ class MaterialRead(BaseModel):
     unit_weight: Decimal | None
     low_stock_limit: Decimal | None
     category_id: int | None
+    #: Its type, which decides the page it is shown on.
+    type_id: int
     #: The preferred supplier: an Initiative contact's id.
     supplier_contact_id: int | None
     #: The supplier's code for it.
@@ -96,6 +98,9 @@ class MaterialWrite(BaseModel):
     unit_weight: items.Positive | None = None
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
+    #: Its type: as it is made, its category's default type unless sent, and
+    #: its kind's default without one; left as it is unless sent.
+    type_id: int | None = None
     supplier_contact_id: int | None = None
     supplier_code: items.OptionalText = None
     notes: items.Notes | None = None
@@ -140,10 +145,7 @@ async def _detail(db: AsyncSession, material_id: int, sees_costs: bool) -> Mater
 
 async def _write(db: AsyncSession, material: Material, body: MaterialWrite) -> None:
     await require_references(
-        db,
-        kind=CategoryKind.MATERIAL,
-        units=(body.tracking_unit_id, body.purchase_unit_id),
-        category_id=body.category_id,
+        db, kind=CategoryKind.MATERIAL, units=(body.tracking_unit_id, body.purchase_unit_id)
     )
     if material.id is not None:
         await items.require_tracking_unit(
@@ -158,8 +160,11 @@ async def _write(db: AsyncSession, material: Material, body: MaterialWrite) -> N
     except UnitRefused as refused:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
     material.sqlmodel_update(
-        body.model_dump(exclude={"start"})
+        body.model_dump(exclude={"start", "type_id"})
         | {
+            "type_id": await type_of(
+                db, CategoryKind.MATERIAL, body.type_id, body.category_id, material.type_id
+            ),
             "purchase_conversion": conversion or body.purchase_conversion,
             "unit_weight": None
             if units.measure(tracking) is units.Measure.MASS
@@ -175,12 +180,16 @@ async def list_materials(
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
     archived: Annotated[bool, Query()] = False,
+    type_id: Annotated[int | None, Query()] = None,
 ) -> Page[MaterialRead]:
     """Materials by name: those whose name or SKU holds ``q``, when it is
-    given, and archived ones only when asked for."""
+    given, of the type ``type_id`` when it is given, and archived ones only
+    when asked for."""
     query = select(Material, Item).join(Item, col(Item.id) == col(Material.id))
     if not archived:
         query = query.where(Material.status == ItemStatus.ACTIVE)
+    if type_id is not None:
+        query = query.where(Material.type_id == type_id)
     if q:
         query = query.where(
             or_(

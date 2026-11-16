@@ -1,8 +1,8 @@
 """Declarations: ingredient lists, allergens and EU fragrance allergens,
 rolled up through recipes (``hoard.declarations``). Every member reads a
 material's, a product's or a lot's; a member who may change stock records a
-material's ingredient name, allergens and fragrance allergens, and a bought
-lot's own.
+material's or a product's ingredient name, allergens and fragrance allergens,
+which a product declares while it has no recipe, and a bought lot's own.
 """
 
 from __future__ import annotations
@@ -54,12 +54,13 @@ Share = Annotated[Decimal, Field(ge=0, le=100, max_digits=12, decimal_places=6)]
 
 
 class DeclarationRead(BaseModel):
-    #: Whether it records allergens of its own: a material, or a lot of one.
+    #: Whether it records allergens of its own: a material, a product, or a
+    #: lot of a material.
     records_own: bool
-    #: What a material or a lot records itself; null where nothing is
-    #: recorded, and for a product.
+    #: What a material, a product or a lot records itself; null where nothing
+    #: is recorded.
     recorded_allergens: list[Allergen] | None
-    #: What an ingredient list calls a material, when not its name.
+    #: What an ingredient list calls a material or a product, when not its name.
     ingredient_name: str | None
     #: What it is made of, the heaviest first, then those Hoard can't weigh.
     ingredients: list[str]
@@ -70,8 +71,8 @@ class DeclarationRead(BaseModel):
     allergens: list[Allergen]
     #: The materials in it whose allergens are not recorded.
     undeclared: list[str]
-    #: The fragrance allergens a material or a lot records itself, each with
-    #: its share in percent; null where nothing is recorded, and for a product.
+    #: The fragrance allergens a material, a product or a lot records itself,
+    #: each with its share in percent; null where nothing is recorded.
     recorded_fragrance: dict[FragranceAllergen, Decimal] | None
     #: Whether any material in it has its fragrance allergens recorded.
     fragrance_recorded: bool
@@ -175,7 +176,14 @@ async def read_declaration(
             material.ingredient_name,
         )
     if of == "product":
-        return _read(await declarations.product(await found(db, Product, record_id)))
+        product = await found(db, Product, record_id)
+        return _read(
+            await declarations.product(product),
+            True,
+            product.allergens,
+            product.fragrance_allergens,
+            product.ingredient_name,
+        )
     lot = await found(db, Lot, record_id)
     bought = await db.get(Material, lot.item_id) is not None
     return _read(await declarations.lot(lot), bought, lot.allergens, lot.fragrance_allergens)
@@ -194,6 +202,22 @@ async def update_material_declaration(
     await store_fields.queue_changed(db)
     await db.commit()
     return await read_declaration("material", material_id, db)
+
+
+@router.put("/product/{product_id}", responses=_CHANGE)
+async def update_product_declaration(
+    product_id: int, body: DeclarationMaterialWrite, db: WriteSessionDep
+) -> DeclarationRead:
+    """Record what a product declares of its own, which it declares while it
+    has no recipe."""
+    product = await found(db, Product, product_id)
+    product.ingredient_name = body.ingredient_name
+    product.allergens = _keys(body.allergens)
+    product.fragrance_allergens = _shares(body.fragrance_allergens)
+    db.add(product)
+    await store_fields.queue_changed(db)
+    await db.commit()
+    return await read_declaration("product", product_id, db)
 
 
 @router.put("/lot/{lot_id}", responses=_CHANGE)

@@ -40,7 +40,7 @@ from hoard.records import (
     Store,
     Unit,
 )
-from hoard.stock import add_material, remove_item
+from hoard.stock import add_material, add_product, remove_item
 from hoard.stocktakes import confirm_row, start_stocktake
 from seneschal_core import organizations
 from seneschal_core.db import Database, WriteSession, create_async_engine
@@ -159,9 +159,7 @@ async def test_erasing_an_organization_takes_its_stock_with_it(
 async def test_an_image_is_of_a_product_or_one_item_and_at_most_five_megabytes(
     db: WriteSession, material
 ):
-    product = Product(organization_id=db.organization_id, name="Loaf")
-    db.add(product)
-    await db.flush()
+    product, _ = await add_product(db, Product(name="Loaf"))
     flour = await material("Flour")
 
     def image(content_type: str, content: bytes, **of: int) -> Image:
@@ -331,9 +329,7 @@ async def test_holds_and_document_links_keep_their_shapes(
     db.add(held)
     await db.flush()
     first = await hold(held)
-    product = Product(organization_id=db.organization_id, name="Loaf")
-    db.add(product)
-    await db.flush()
+    product, _ = await add_product(db, Product(name="Loaf"))
     db.add(DocumentLink(organization_id=db.organization_id, file_id=9, lot_id=held.id))
     await db.flush()
 

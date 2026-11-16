@@ -13,8 +13,10 @@ from sqlmodel import col, select
 from hoard import listings
 from hoard.channels import StoreImage, StoreProduct, StoreVariant
 from hoard.records import (
+    CategoryKind,
     Channel,
     ItemStatus,
+    ItemType,
     Listing,
     Location,
     MatchedBy,
@@ -24,7 +26,7 @@ from hoard.records import (
     StoreProductCopy,
     Variation,
 )
-from hoard.stock import add_product, add_variation
+from hoard.stock import add_product, add_variation, default_type
 from seneschal_core.db import WriteSession
 
 
@@ -287,19 +289,33 @@ async def test_matching_keeps_the_products_copy_and_prices_and_the_newest_wins(
 async def test_adopting_overwrites_matched_products_and_makes_the_others(
     db: WriteSession, store: Store
 ):
-    chai, small = await add_product(db, Product(name="Chai"))
+    bought = ItemType(
+        organization_id=db.organization_id, kind=CategoryKind.PRODUCT, name="Bought", shape="bought"
+    )
+    db.add(bought)
+    await db.flush()
+    chai, small = await add_product(db, Product(name="Chai", type_id=bought.id))
     small.sku, small.attributes = "CHAI-S", {"size": "small"}
     sizes = [
         _variant("v1", "Small", sku="chai-s", options={"Size": "S"}),
         _variant("v2", "Large", sku="CHAI-L", options={"Size": "L"}),
     ]
-    store_chai = StoreProduct(id="p1", title="Masala chai", options=["Size"], variants=sizes)
-    mugs = StoreProduct(id="p2", title="Mug", status="archived", variants=[_variant("v3", sku="M")])
+    store_chai = StoreProduct(
+        id="p1", title="Masala chai", product_type="Tea", options=["Size"], variants=sizes
+    )
+    mugs = StoreProduct(
+        id="p2",
+        title="Mug",
+        status="archived",
+        product_type="Bought",
+        variants=[_variant("v3", sku="M")],
+    )
 
     await listings.adopt(db, store, [store_chai, mugs], every=True)
 
     await db.refresh(chai)
-    assert chai.name == "Masala chai"
+    # The store's product type is its own: Hoard's type is neither set nor changed by it.
+    assert (chai.name, chai.type_id) == ("Masala chai", bought.id)
     found = await db.exec(
         select(Variation).where(Variation.product_id == chai.id).order_by(col(Variation.id))
     )
@@ -309,6 +325,7 @@ async def test_adopting_overwrites_matched_products_and_makes_the_others(
     ]
     [mug] = (await db.exec(select(Product).where(Product.name == "Mug"))).all()
     assert mug.status is ItemStatus.ARCHIVED
+    assert mug.type_id == await default_type(db, CategoryKind.PRODUCT)
     [mug_variation] = (await db.exec(select(Variation).where(Variation.product_id == mug.id))).all()
     assert (mug_variation.sku, mug_variation.attributes, mug_variation.is_default) == (
         "M",

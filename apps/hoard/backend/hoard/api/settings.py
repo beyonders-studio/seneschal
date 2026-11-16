@@ -1,14 +1,17 @@
 """The organization's settings: its currency, the rules it keeps records for,
-what an hour of work costs, units, categories with their picking rules,
-locations and adjustment reasons. Every member reads them, but for the labour
+what an hour of work costs, units, categories with their picking rules and
+default types, the types of material, base and product, locations and
+adjustment reasons. Every member reads them, but for the labour
 rate, which only a member who sees costs reads; only a community admin changes
 them (:data:`~hoard.api.deps.AdminDep`), and the labour rate only one who sees
 costs.
 
-An organization starts with its main location, the default adjustment reasons
-and Hoard's standard units (``hoard.units``), which Hoard makes itself the
-first time each list is read. A standard unit is never renamed or removed,
-and no unit of the organization's own is named like one.
+An organization starts with its main location, the default adjustment reasons,
+Hoard's standard units (``hoard.units``) and each kind's default type, which
+Hoard makes itself the first time each list is read. A standard unit is never
+renamed or removed, and no unit of the organization's own is named like one.
+A default type is renamed but never removed, and a type records have stays
+until they are moved to another.
 """
 
 from __future__ import annotations
@@ -30,15 +33,18 @@ from hoard import stock, units
 from hoard.api.adjustments import AdjustmentError
 from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.records import (
+    SHAPES,
     AdjustmentReason,
     AutoManufacture,
     Category,
     CategoryKind,
     DefaultReason,
+    ItemType,
     Location,
     OrganizationSettings,
     Picking,
     Regime,
+    TypeShape,
     Unit,
 )
 from seneschal_core.api import (
@@ -73,6 +79,12 @@ class SettingsError(StrEnum):
     UNIT_STANDARD = "UNIT_STANDARD"
     #: Numbers are recorded in an item's tracking unit, so it stays.
     TRACKING_UNIT_IN_USE = "TRACKING_UNIT_IN_USE"
+    #: The type named is not one of the organization's for this kind of record.
+    TYPE_UNKNOWN = "TYPE_UNKNOWN"
+    #: The shape named is not one Hoard ships for this kind of record.
+    SHAPE_UNKNOWN = "SHAPE_UNKNOWN"
+    #: A kind's default type stays.
+    TYPE_DEFAULT = "TYPE_DEFAULT"
 
 
 _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATED"}}
@@ -80,8 +92,8 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "ADMIN_ONLY, READ_ONLY, COSTS_HIDDEN"},
     404: {"description": "NOT_FOUND"},
-    409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD"},
-    422: {"description": "NAME_REQUIRED"},
+    409: {"description": "NAME_TAKEN, IN_USE, MAIN_LOCATION, UNIT_STANDARD, TYPE_DEFAULT"},
+    422: {"description": "NAME_REQUIRED, TYPE_UNKNOWN, SHAPE_UNKNOWN"},
 }
 
 Name = Annotated[str, Field(min_length=1, max_length=200)]
@@ -139,19 +151,52 @@ class SettingsCategoryRead(BaseModel):
     name: str
     #: Which of its items' lots goes first.
     picking: Picking
+    #: The type a record made in it takes, unless another is chosen.
+    default_type_id: int | None
 
 
 class SettingsCategoryCreate(BaseModel):
     kind: CategoryKind
     name: Name
     picking: Picking = Picking.EARLIEST_EXPIRY
+    default_type_id: int | None = None
 
 
 class SettingsCategoryUpdate(BaseModel):
-    """The category's name and picking rule: each left as it is unless sent."""
+    """The category's name, picking rule and default type: each left as it is
+    unless sent, the default type cleared with null. A new default type
+    changes no record's."""
 
     name: Name | None = None
     picking: Picking | None = None
+    default_type_id: int | None = None
+
+
+class SettingsTypeRead(BaseModel):
+    id: int
+    kind: CategoryKind
+    #: Null for a default type until someone names it: pages call it by the
+    #: words for its kind's default type.
+    name: str | None
+    #: What its page is drawn as until its layout is changed.
+    shape: TypeShape
+    #: Its kind's default type, which stays.
+    is_default: bool
+
+
+class SettingsTypeCreate(BaseModel):
+    kind: CategoryKind
+    name: Name
+    #: One of its kind's shapes; its kind's first unless sent.
+    shape: TypeShape | None = None
+
+
+class SettingsTypeUpdate(BaseModel):
+    """The type's name and shape: each left as it is unless sent. A new shape
+    changes its page only while its layout is unchanged."""
+
+    name: Name | None = None
+    shape: TypeShape | None = None
 
 
 class SettingsLocationRead(BaseModel):
@@ -212,9 +257,10 @@ async def require_references(
     kind: CategoryKind,
     units: Sequence[int | None] = (),
     category_id: int | None = None,
+    type_id: int | None = None,
 ) -> None:
-    """Refuse (422) a unit, or a category of ``kind``, the organization does
-    not have."""
+    """Refuse (422) a unit, or a category or a type of ``kind``, the
+    organization does not have."""
     wanted = {unit for unit in units if unit is not None}
     if wanted:
         count = select(func.count()).select_from(Unit).where(col(Unit.id).in_(wanted))
@@ -224,6 +270,28 @@ async def require_references(
         category = await db.get(Category, category_id)
         if category is None or category.kind != kind:
             raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.CATEGORY_UNKNOWN)
+    if type_id is not None:
+        held = await db.get(ItemType, type_id)
+        if held is None or held.kind != kind:
+            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.TYPE_UNKNOWN)
+
+
+async def type_of(
+    db: AsyncSession,
+    kind: CategoryKind,
+    type_id: int | None,
+    category_id: int | None,
+    held: int | None,
+) -> int | None:
+    """The type a record of ``kind`` is written with: the one sent; else the
+    one it has; else, as it is made, its category's default type. None leaves
+    a new record its kind's default (``hoard.stock``). Refuses (422) a type or
+    a category of another kind."""
+    await require_references(db, kind=kind, category_id=category_id, type_id=type_id)
+    if type_id is not None or held is not None:
+        return type_id or held
+    category = await db.get(Category, category_id) if category_id is not None else None
+    return category.default_type_id if category is not None else None
 
 
 async def _save(db: WriteSession, record: SQLModel, **fields: Any) -> None:
@@ -370,6 +438,83 @@ async def delete_settings_unit(unit_id: int, _admin: AdminDep, db: WriteSessionD
     await _remove(db, await _own_unit(db, unit_id))
 
 
+async def _types(db: AsyncSession, kind: CategoryKind | None) -> list[SettingsTypeRead]:
+    query = select(ItemType).order_by(
+        col(ItemType.kind), col(ItemType.is_default).desc(), col(ItemType.name)
+    )
+    if kind is not None:
+        query = query.where(ItemType.kind == kind)
+    return [
+        SettingsTypeRead.model_validate(each, from_attributes=True) for each in await db.exec(query)
+    ]
+
+
+def _shape(kind: CategoryKind, shape: TypeShape | None) -> TypeShape:
+    """``shape``, or ``kind``'s first; refused (422) when not one of ``kind``'s."""
+    if shape is None:
+        return SHAPES[kind][0]
+    if shape not in SHAPES[kind]:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, SettingsError.SHAPE_UNKNOWN)
+    return shape
+
+
+@router.get("/types", responses=_READ)
+async def list_settings_types(
+    db: OrganizationSessionDep,
+    organization: OrganizationDep,
+    plugin: PluginDep,
+    kind: Annotated[CategoryKind | None, Query()] = None,
+) -> list[SettingsTypeRead]:
+    """The types of one kind of record, or of every kind: each kind's default
+    first, then the rest by name. An organization that lacks a kind's default
+    type is given it."""
+    found = await _types(db, kind)
+    defaults = {each.kind for each in found if each.is_default}
+    wanted = {kind} if kind is not None else set(SHAPES)
+    if not wanted <= defaults and await _made_by_hoard(
+        organization, plugin, stock.add_default_types
+    ):
+        found = await _types(db, kind)
+    return found
+
+
+@router.post("/types", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
+async def create_settings_type(
+    body: SettingsTypeCreate, _admin: AdminDep, db: WriteSessionDep
+) -> SettingsTypeRead:
+    made = ItemType(
+        organization_id=db.organization_id,
+        kind=body.kind,
+        name=body.name,
+        shape=_shape(body.kind, body.shape),
+    )
+    await _save(db, made)
+    return SettingsTypeRead.model_validate(made, from_attributes=True)
+
+
+@router.patch("/types/{type_id}", responses=_CHANGE)
+async def update_settings_type(
+    type_id: int, body: SettingsTypeUpdate, _admin: AdminDep, db: WriteSessionDep
+) -> SettingsTypeRead:
+    held = await found(db, ItemType, type_id)
+    changes = body.model_dump(exclude_none=True)
+    if body.shape is not None:
+        changes["shape"] = _shape(held.kind, body.shape)
+    await _save(db, held, **changes)
+    return SettingsTypeRead.model_validate(held, from_attributes=True)
+
+
+@router.delete("/types/{type_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
+async def delete_settings_type(type_id: int, _admin: AdminDep, db: WriteSessionDep) -> None:
+    """Remove a type, with its page and from the categories naming it as
+    their default. A kind's default type stays, and so does a type records
+    have."""
+    held = await found(db, ItemType, type_id)
+    if held.is_default:
+        raise refuse(status.HTTP_409_CONFLICT, SettingsError.TYPE_DEFAULT)
+    await _remove(db, held)
+
+
 @router.get("/categories", responses=_READ)
 async def list_settings_categories(
     db: OrganizationSessionDep, kind: Annotated[CategoryKind | None, Query()] = None
@@ -388,6 +533,7 @@ async def list_settings_categories(
 async def create_settings_category(
     body: SettingsCategoryCreate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsCategoryRead:
+    await require_references(db, kind=body.kind, type_id=body.default_type_id)
     category = Category(organization_id=db.organization_id, **body.model_dump())
     await _save(db, category)
     return SettingsCategoryRead.model_validate(category, from_attributes=True)
@@ -398,7 +544,11 @@ async def update_settings_category(
     category_id: int, body: SettingsCategoryUpdate, _admin: AdminDep, db: WriteSessionDep
 ) -> SettingsCategoryRead:
     category = await found(db, Category, category_id)
-    await _save(db, category, **body.model_dump(exclude_none=True))
+    await require_references(db, kind=category.kind, type_id=body.default_type_id)
+    changes = body.model_dump(exclude_none=True) | body.model_dump(
+        include={"default_type_id"} & body.model_fields_set
+    )
+    await _save(db, category, **changes)
     return SettingsCategoryRead.model_validate(category, from_attributes=True)
 
 

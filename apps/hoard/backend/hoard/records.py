@@ -1,7 +1,8 @@
 """Hoard's records: what it stocks, where, and every change to it.
 
-* **Units** people add, and **categories**, each typed by the kind of record
-  it sorts.
+* **Units** people add, and **categories** and **item types**, each typed by
+  the kind of record it sorts or shapes: a category for sorting, stocktakes
+  and reports, a type for the page a record is shown on.
 * **Locations**: stock and lots sit per location. Each organization has one
   main location, made on its first change to stock (``hoard.stock``).
 * **Items**: whatever holds stock. A **material** is bought, never made; a
@@ -49,7 +50,8 @@
 * **Properties** people add to a kind of record, in the UI kit's shapes, and
   each record's **values** of them.
 * **Layouts**: how a kind of record is listed and shown on its own page, once
-  someone changes it from how Hoard ships it, in the UI kit's shapes.
+  someone changes it from how Hoard ships it, in the UI kit's shapes. A
+  material's, a base's or a product's page is laid out per type.
 
 Quantities, costs and prices are exact decimals to six places. A supplier is an
 Initiative contact, named by its id, and an initiative and a task are named by
@@ -124,6 +126,38 @@ class CategoryKind(StrEnum):
     MATERIAL = "material"
     PRODUCT = "product"
     BASE = "base"
+
+
+class TypeShape(StrEnum):
+    """What a type's page is drawn as until its layout is changed: a shape
+    Hoard ships for the kind of record it shapes (:data:`SHAPES`)."""
+
+    #: A material that goes into what is made: its ingredient name, allergens,
+    #: fragrance allergens, the weight of one unit, and its declarations.
+    INGREDIENT = "ingredient"
+    #: A material that holds or labels what is made: those hidden.
+    PACKAGING = "packaging"
+    BASE = "base"
+    #: A product made by its recipe, with the declaration it rolls up.
+    MADE = "made"
+    #: A product bought finished: its recipe hidden, and its own ingredient
+    #: name, allergens and fragrance allergens hidden until they are shown.
+    BOUGHT = "bought"
+    #: A product sold as what its recipe holds: its stock and lots hidden.
+    BUNDLE = "bundle"
+
+
+#: The shapes each kind's types take, the first its default type's.
+SHAPES: dict[CategoryKind, tuple[TypeShape, ...]] = {
+    CategoryKind.MATERIAL: (TypeShape.INGREDIENT, TypeShape.PACKAGING),
+    CategoryKind.BASE: (TypeShape.BASE,),
+    CategoryKind.PRODUCT: (TypeShape.MADE, TypeShape.BOUGHT, TypeShape.BUNDLE),
+}
+
+#: The check every type keeps: a shape of its kind's.
+SHAPES_CHECK = "(kind::text, shape) IN ({})".format(
+    ", ".join(f"('{kind}', '{shape}')" for kind, shapes in SHAPES.items() for shape in shapes)
+)
 
 
 class ItemKind(StrEnum):
@@ -418,6 +452,7 @@ class Category(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         referable("categories"),
         UniqueConstraint("organization_id", "kind", "name", name="uq_categories_kind_name"),
+        reference("categories", "default_type_id", "item_types"),
     )
 
     id: int = identity()
@@ -428,6 +463,40 @@ class Category(OrganizationRow, Stamped, table=True):
         default=Picking.EARLIEST_EXPIRY,
         sa_column=enum_column(Picking, "picking", server_default="earliest_expiry"),
     )
+    #: The type a record of its kind takes when it is made in it, unless
+    #: another is chosen; cleared when the type is removed.
+    default_type_id: int | None = Field(default=None, sa_type=BigInteger)
+
+
+class ItemType(OrganizationRow, Stamped, table=True):
+    """A type of material, base or product: the page its records are shown
+    on, never the rules they follow. Each kind has one default type, which
+    has no name until someone gives it one (pages call it by the translated
+    word for its kind's default) and stays, and a type records name is kept
+    while they do."""
+
+    __tablename__ = "item_types"
+    __table_args__ = (
+        referable("item_types"),
+        UniqueConstraint("organization_id", "kind", "name", name="uq_item_types_kind_name"),
+        Index(
+            "uq_item_types_default",
+            "organization_id",
+            "kind",
+            unique=True,
+            postgresql_where=text("is_default"),
+        ),
+        CheckConstraint("name IS NOT NULL OR is_default", name="ck_item_types_name"),
+        CheckConstraint(SHAPES_CHECK, name="ck_item_types_shape"),
+    )
+
+    id: int = identity()
+    kind: CategoryKind = Field(sa_column=enum_column(CategoryKind, "category_kind"))
+    name: str | None = None
+    #: What its page is drawn as until its layout is changed: one of its
+    #: kind's :class:`TypeShape`.
+    shape: str
+    is_default: bool = False
 
 
 class Location(OrganizationRow, Stamped, table=True):
@@ -482,6 +551,7 @@ class Material(OrganizationRow, Stamped, table=True):
         reference("materials", "tracking_unit_id", "units"),
         reference("materials", "purchase_unit_id", "units"),
         reference("materials", "category_id", "categories"),
+        reference("materials", "type_id", "item_types"),
         CheckConstraint("purchase_conversion > 0", name="ck_materials_purchase_conversion"),
         CheckConstraint("unit_weight > 0", name="ck_materials_unit_weight"),
         CheckConstraint(ALLERGENS_CHECK, name="ck_materials_allergens"),
@@ -505,6 +575,9 @@ class Material(OrganizationRow, Stamped, table=True):
     unit_weight: Decimal | None = amount(None)
     low_stock_limit: Decimal | None = amount(None)
     category_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Its type, which decides only the page it is shown on; its kind's
+    #: default type unless another is given (``hoard.stock``).
+    type_id: int = Field(default=None, sa_type=BigInteger)
     #: The preferred supplier: an Initiative contact's id.
     supplier_contact_id: int | None = Field(default=None, sa_type=BigInteger)
     #: The supplier's code for it.
@@ -530,6 +603,7 @@ class Base(OrganizationRow, Stamped, table=True):
         reference("bases", "id", "items", ondelete="CASCADE"),
         reference("bases", "tracking_unit_id", "units"),
         reference("bases", "category_id", "categories"),
+        reference("bases", "type_id", "item_types"),
         CheckConstraint("cure_days > 0", name="ck_bases_cure_days"),
     )
 
@@ -541,6 +615,9 @@ class Base(OrganizationRow, Stamped, table=True):
     #: The unit stock is counted in.
     tracking_unit_id: int = Field(sa_type=BigInteger)
     category_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Its type, which decides only the page it is shown on; its kind's
+    #: default type unless another is given (``hoard.stock``).
+    type_id: int = Field(default=None, sa_type=BigInteger)
     low_stock_limit: Decimal | None = amount(None)
     #: How many days what a run makes of it cures before it is used; None for none.
     cure_days: int | None = None
@@ -554,13 +631,19 @@ class Product(OrganizationRow, Stamped, table=True):
     __table_args__ = (
         referable("products"),
         reference("products", "category_id", "categories"),
+        reference("products", "type_id", "item_types"),
         CheckConstraint("cure_days > 0", name="ck_products_cure_days"),
+        CheckConstraint(ALLERGENS_CHECK, name="ck_products_allergens"),
+        CheckConstraint(FRAGRANCE_ALLERGENS_CHECK, name="ck_products_fragrance_allergens"),
     )
 
     id: int = identity()
     name: str
     status: ItemStatus = item_status()
     category_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Its type, which decides only the page it is shown on; its kind's
+    #: default type unless another is given (``hoard.stock``).
+    type_id: int = Field(default=None, sa_type=BigInteger)
     default_price: Decimal | None = amount(None)
     low_stock_limit: Decimal | None = amount(None)
     #: Sold as the variations its recipe holds.
@@ -577,6 +660,12 @@ class Product(OrganizationRow, Stamped, table=True):
     #: Whether it is washed off after use, which sets the share past which a
     #: fragrance allergen in it is declared.
     rinse_off: bool = False
+    #: What an ingredient list calls it, when not its name, and the allergens
+    #: and EU fragrance allergens it contains, as a material records them:
+    #: what a variation without a recipe declares (``hoard.declarations``).
+    ingredient_name: str | None = None
+    allergens: list[str] | None = allergens()
+    fragrance_allergens: dict[str, str] | None = fragrance_allergens()
 
 
 class Variation(OrganizationRow, Stamped, table=True):
@@ -1068,17 +1157,42 @@ class PropertyValue(OrganizationRow, Stamped, table=True):
     value: Any = Field(sa_column=Column(JSONB, nullable=False))
 
 
+#: The kinds of record whose page is laid out per type.
+TYPED_KINDS = frozenset({RecordKind.MATERIAL, RecordKind.BASE, RecordKind.PRODUCT})
+
+
 class Layout(OrganizationRow, Stamped, table=True):
     """How a kind of record is listed or shown on its own page, in the UI
     kit's layout shapes. Until it is changed it has no row, and pages draw it
-    as Hoard ships it."""
+    as Hoard ships it: a type's page as its shape. A material's, a base's or
+    a product's page is one per type, and goes with its type."""
 
     __tablename__ = "layouts"
-    __table_args__ = (UniqueConstraint("organization_id", "kind", "view", name="uq_layouts_view"),)
+    __table_args__ = (
+        reference("layouts", "type_id", "item_types", ondelete="CASCADE"),
+        Index(
+            "uq_layouts_view",
+            "organization_id",
+            "kind",
+            "view",
+            "type_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
+        ),
+        CheckConstraint(
+            "(view = 'detail' AND kind IN ({})) = (type_id IS NOT NULL)".format(
+                ", ".join(f"'{kind}'" for kind in sorted(TYPED_KINDS))
+            ),
+            name="ck_layouts_typed",
+        ),
+    )
 
     id: int = identity()
     kind: RecordKind = Field(sa_column=enum_column(RecordKind, "record_kind"))
     view: LayoutView = Field(sa_column=enum_column(LayoutView, "layout_view"))
+    #: The type whose page it lays out; None for a table, and for a page not
+    #: laid out per type.
+    type_id: int | None = Field(default=None, sa_type=BigInteger)
     definition: dict[str, Any] = Field(sa_column=Column(JSONB, nullable=False))
 
 

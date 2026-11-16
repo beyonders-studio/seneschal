@@ -19,6 +19,7 @@ from hoard.records import (
     HoldEnd,
     HoldReason,
     ItemStatus,
+    ItemType,
     Listing,
     Location,
     Product,
@@ -103,6 +104,28 @@ async def test_materials_and_bases(db: WriteSession, material, base):
     syrup.status = ItemStatus.ARCHIVED
     db.add(syrup)
     assert (await _entry(db, "base", syrup.id) or {})["archived"] is True
+
+
+async def test_a_record_shows_its_type_beside_it_which_is_not_searched(db: WriteSession, material):
+    tins = ItemType(
+        organization_id=db.organization_id,
+        kind=CategoryKind.MATERIAL,
+        name="Tins",
+        shape="packaging",
+    )
+    db.add(tins)
+    await db.flush()
+    tin = await material("Round tin")
+    # A default type nobody named shows nothing.
+    assert (await _entry(db, "material", tin.id) or {})["subtitle"] is None
+
+    tin.type_id = tins.id
+    db.add(tin)
+    assert (await _entry(db, "material", tin.id) or {})["subtitle"] == "Tins"
+    tins.name = "Tins and lids"
+    db.add(tins)
+    assert (await _entry(db, "material", tin.id) or {})["subtitle"] == "Tins and lids"
+    assert (await search.search(db, "lids")).items == []
 
 
 async def test_products_by_their_variations_and_store_copies(db: WriteSession):

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from hoard.records import Location, Lot
+from hoard.records import Location, Lot, Product
+from hoard.stock import add_product
 from seneschal_core.db import WriteSession
 
 
@@ -105,3 +106,27 @@ async def test_only_a_bought_lot_records_allergens_of_its_own(
     assert (bought.status_code, bought.json()["recorded_allergens"]) == (200, [])
     assert bought.json()["recorded_fragrance"] == {"citral": "1.5"}
     assert (made.status_code, made.json()) == (422, {"detail": "NOT_BOUGHT"})
+
+
+async def test_a_product_records_what_it_declares_without_a_recipe(
+    client, sign_in, db: WriteSession
+):
+    snack, _ = await add_product(db, Product(name="Pretzels"))
+    await db.commit()
+    await sign_in(client)
+
+    unknown = (await client.get(f"/api/v1/declarations/product/{snack.id}")).json()
+    recorded = await client.put(
+        f"/api/v1/declarations/product/{snack.id}",
+        json={"ingredient_name": "Pretzels", "allergens": ["wheat"], "fragrance_allergens": None},
+    )
+
+    assert (unknown["records_own"], unknown["recorded_allergens"]) == (True, None)
+    assert unknown["undeclared"] == ["Pretzels"]
+    read = recorded.json()
+    assert (read["recorded_allergens"], read["ingredient_name"]) == (["wheat"], "Pretzels")
+    assert (read["allergens"], read["undeclared"], read["unweighed"]) == (
+        ["wheat"],
+        [],
+        ["Pretzels"],
+    )

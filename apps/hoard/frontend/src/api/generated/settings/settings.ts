@@ -23,6 +23,7 @@ import type {
 import type {
   HTTPValidationError,
   ListSettingsCategoriesParams,
+  ListSettingsTypesParams,
   ReadUnitConversionParams,
   SettingsCategoryCreate,
   SettingsCategoryRead,
@@ -33,6 +34,9 @@ import type {
   SettingsRead,
   SettingsReasonRead,
   SettingsReasonWrite,
+  SettingsTypeCreate,
+  SettingsTypeRead,
+  SettingsTypeUpdate,
   SettingsUnitRead,
   SettingsUnitWrite,
   SettingsUpdate,
@@ -788,6 +792,410 @@ export const useDeleteSettingsUnit = <TError = ErrorType<void>, TContext = unkno
   TContext
 > => {
   return useMutation(getDeleteSettingsUnitMutationOptions(options), queryClient);
+};
+/**
+ * The types of one kind of record, or of every kind: each kind's default
+ * first, then the rest by name. An organization that lacks a kind's default
+ * type is given it.
+ * @summary List Settings Types
+ */
+export const listSettingsTypes = (
+  params?: ListSettingsTypesParams,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsTypeRead[]>(
+    { url: `/api/v1/settings/types`, method: "GET", params, signal },
+    options
+  );
+};
+
+export const getListSettingsTypesQueryKey = (params?: ListSettingsTypesParams) => {
+  return [`/api/v1/settings/types`, ...(params ? [params] : [])] as const;
+};
+
+export const getListSettingsTypesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listSettingsTypes>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsTypesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsTypes>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  }
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListSettingsTypesQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listSettingsTypes>>> = ({ signal }) =>
+    listSettingsTypes(params, requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listSettingsTypes>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ListSettingsTypesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listSettingsTypes>>
+>;
+export type ListSettingsTypesQueryError = ErrorType<void | HTTPValidationError>;
+
+/**
+ * The types of one kind of record, or of every kind: each kind's default
+ * first, then the rest by name. An organization that lacks a kind's default
+ * type is given it.
+ * @summary List Settings Types
+ */
+export function useListSettingsTypes<
+  TData = Awaited<ReturnType<typeof listSettingsTypes>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params: undefined | ListSettingsTypesParams,
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsTypes>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsTypes>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The types of one kind of record, or of every kind: each kind's default
+ * first, then the rest by name. An organization that lacks a kind's default
+ * type is given it.
+ * @summary List Settings Types
+ */
+export function useListSettingsTypes<
+  TData = Awaited<ReturnType<typeof listSettingsTypes>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsTypesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsTypes>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listSettingsTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listSettingsTypes>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The types of one kind of record, or of every kind: each kind's default
+ * first, then the rest by name. An organization that lacks a kind's default
+ * type is given it.
+ * @summary List Settings Types
+ */
+export function useListSettingsTypes<
+  TData = Awaited<ReturnType<typeof listSettingsTypes>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsTypesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsTypes>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The types of one kind of record, or of every kind: each kind's default
+ * first, then the rest by name. An organization that lacks a kind's default
+ * type is given it.
+ * @summary List Settings Types
+ */
+export function useListSettingsTypes<
+  TData = Awaited<ReturnType<typeof listSettingsTypes>>,
+  TError = ErrorType<void | HTTPValidationError>,
+>(
+  params?: ListSettingsTypesParams,
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof listSettingsTypes>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getListSettingsTypesQueryOptions(params, options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * @summary Create Settings Type
+ */
+export const createSettingsType = (
+  settingsTypeCreate: BodyType<SettingsTypeCreate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsTypeRead>(
+    {
+      url: `/api/v1/settings/types`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: settingsTypeCreate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getCreateSettingsTypeMutationKey = () => ["createSettingsType"] as const;
+
+export const getCreateSettingsTypeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createSettingsType>>,
+    TError,
+    CreateSettingsTypeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createSettingsType>>,
+  TError,
+  CreateSettingsTypeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getCreateSettingsTypeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createSettingsType>>,
+    CreateSettingsTypeMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createSettingsType(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateSettingsTypeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createSettingsType>>
+>;
+export type CreateSettingsTypeMutationBody = BodyType<SettingsTypeCreate>;
+export type CreateSettingsTypeMutationError = ErrorType<void>;
+export type CreateSettingsTypeMutationVariables = { data: BodyType<SettingsTypeCreate> };
+
+/** @summary Create Settings Type */
+export const useCreateSettingsType = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof createSettingsType>>,
+      TError,
+      CreateSettingsTypeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof createSettingsType>>,
+  TError,
+  CreateSettingsTypeMutationVariables,
+  TContext
+> => {
+  return useMutation(getCreateSettingsTypeMutationOptions(options), queryClient);
+};
+/**
+ * @summary Update Settings Type
+ */
+export const updateSettingsType = (
+  typeId: number,
+  settingsTypeUpdate: BodyType<SettingsTypeUpdate>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SettingsTypeRead>(
+    {
+      url: `/api/v1/settings/types/${typeId}`,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      data: settingsTypeUpdate,
+      signal,
+    },
+    options
+  );
+};
+
+export const getUpdateSettingsTypeMutationKey = () => ["updateSettingsType"] as const;
+
+export const getUpdateSettingsTypeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateSettingsType>>,
+    TError,
+    UpdateSettingsTypeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateSettingsType>>,
+  TError,
+  UpdateSettingsTypeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getUpdateSettingsTypeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateSettingsType>>,
+    UpdateSettingsTypeMutationVariables
+  > = (props) => {
+    const { typeId, data } = props ?? {};
+
+    return updateSettingsType(typeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateSettingsTypeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateSettingsType>>
+>;
+export type UpdateSettingsTypeMutationBody = BodyType<SettingsTypeUpdate>;
+export type UpdateSettingsTypeMutationError = ErrorType<void>;
+export type UpdateSettingsTypeMutationVariables = {
+  typeId: number;
+  data: BodyType<SettingsTypeUpdate>;
+};
+
+/** @summary Update Settings Type */
+export const useUpdateSettingsType = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof updateSettingsType>>,
+      TError,
+      UpdateSettingsTypeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof updateSettingsType>>,
+  TError,
+  UpdateSettingsTypeMutationVariables,
+  TContext
+> => {
+  return useMutation(getUpdateSettingsTypeMutationOptions(options), queryClient);
+};
+/**
+ * Remove a type, with its page and from the categories naming it as
+ * their default. A kind's default type stays, and so does a type records
+ * have.
+ * @summary Delete Settings Type
+ */
+export const deleteSettingsType = (
+  typeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    { url: `/api/v1/settings/types/${typeId}`, method: "DELETE", signal },
+    options
+  );
+};
+
+export const getDeleteSettingsTypeMutationKey = () => ["deleteSettingsType"] as const;
+
+export const getDeleteSettingsTypeMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteSettingsType>>,
+    TError,
+    DeleteSettingsTypeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteSettingsType>>,
+  TError,
+  DeleteSettingsTypeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getDeleteSettingsTypeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteSettingsType>>,
+    DeleteSettingsTypeMutationVariables
+  > = (props) => {
+    const { typeId } = props ?? {};
+
+    return deleteSettingsType(typeId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteSettingsTypeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteSettingsType>>
+>;
+
+export type DeleteSettingsTypeMutationError = ErrorType<void>;
+export type DeleteSettingsTypeMutationVariables = { typeId: number };
+
+/**
+ * Remove a type, with its page and from the categories naming it as
+ * their default. A kind's default type stays, and so does a type records
+ * have.
+ * @summary Delete Settings Type
+ */
+export const useDeleteSettingsType = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof deleteSettingsType>>,
+      TError,
+      DeleteSettingsTypeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof deleteSettingsType>>,
+  TError,
+  DeleteSettingsTypeMutationVariables,
+  TContext
+> => {
+  return useMutation(getDeleteSettingsTypeMutationOptions(options), queryClient);
 };
 /**
  * The categories of one kind of record, or of every kind, by name.

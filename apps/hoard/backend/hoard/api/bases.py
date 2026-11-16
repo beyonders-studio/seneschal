@@ -24,7 +24,7 @@ from hoard import stock
 from hoard.api import items
 from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
-from hoard.api.settings import SettingsError, found, refused_as, require_references
+from hoard.api.settings import SettingsError, found, refused_as, require_references, type_of
 from hoard.api.shapes import Page, PageDep
 from hoard.records import Base, CategoryKind, Item, ItemStatus, RecordKind
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
@@ -39,7 +39,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
     409: {"description": "IN_USE, TRACKING_UNIT_IN_USE"},
-    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN"},
+    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN"},
 }
 
 
@@ -52,6 +52,8 @@ class BaseRead(BaseModel):
     tracking_unit_id: int
     low_stock_limit: Decimal | None
     category_id: int | None
+    #: Its type, which decides the page it is shown on.
+    type_id: int
     #: How many days what a run makes cures before it is used; null for none.
     cure_days: int | None
     #: What is on hand at every location.
@@ -79,6 +81,9 @@ class BaseWrite(BaseModel):
     tracking_unit_id: int
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
+    #: Its type: as it is made, its category's default type unless sent, and
+    #: its kind's default without one; left as it is unless sent.
+    type_id: int | None = None
     cure_days: items.CureDays | None = None
     notes: items.Notes | None = None
 
@@ -121,12 +126,17 @@ async def _detail(db: AsyncSession, base_id: int, sees_costs: bool) -> BaseDetai
 
 
 async def _write(db: AsyncSession, base: Base, body: BaseWrite) -> None:
-    await require_references(
-        db, kind=CategoryKind.BASE, units=(body.tracking_unit_id,), category_id=body.category_id
-    )
+    await require_references(db, kind=CategoryKind.BASE, units=(body.tracking_unit_id,))
     if base.id is not None:
         await items.require_tracking_unit(db, base.id, base.tracking_unit_id, body.tracking_unit_id)
-    base.sqlmodel_update(body.model_dump(exclude={"start"}))
+    base.sqlmodel_update(
+        body.model_dump(exclude={"start", "type_id"})
+        | {
+            "type_id": await type_of(
+                db, CategoryKind.BASE, body.type_id, body.category_id, base.type_id
+            )
+        }
+    )
 
 
 @router.get("", responses=_READ)
@@ -136,12 +146,16 @@ async def list_bases(
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
     archived: Annotated[bool, Query()] = False,
+    type_id: Annotated[int | None, Query()] = None,
 ) -> Page[BaseRead]:
     """Bases by name: those whose name or SKU holds ``q``, when it is given,
-    and archived ones only when asked for."""
+    of the type ``type_id`` when it is given, and archived ones only when
+    asked for."""
     query = select(Base, Item).join(Item, col(Item.id) == col(Base.id))
     if not archived:
         query = query.where(Base.status == ItemStatus.ACTIVE)
+    if type_id is not None:
+        query = query.where(Base.type_id == type_id)
     if q:
         query = query.where(
             or_(

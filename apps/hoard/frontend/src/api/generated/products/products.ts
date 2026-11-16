@@ -51,7 +51,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Products by name: those whose name holds ``q``, when it is given.
+ * Products by name: those whose name holds ``q``, when it is given, of
+ * the type ``type_id`` when it is given.
  * @summary List Products
  */
 export const listProducts = (
@@ -97,7 +98,8 @@ export type ListProductsQueryResult = NonNullable<Awaited<ReturnType<typeof list
 export type ListProductsQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
- * Products by name: those whose name holds ``q``, when it is given.
+ * Products by name: those whose name holds ``q``, when it is given, of
+ * the type ``type_id`` when it is given.
  * @summary List Products
  */
 export function useListProducts<
@@ -120,7 +122,8 @@ export function useListProducts<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Products by name: those whose name holds ``q``, when it is given.
+ * Products by name: those whose name holds ``q``, when it is given, of
+ * the type ``type_id`` when it is given.
  * @summary List Products
  */
 export function useListProducts<
@@ -143,7 +146,8 @@ export function useListProducts<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Products by name: those whose name holds ``q``, when it is given.
+ * Products by name: those whose name holds ``q``, when it is given, of
+ * the type ``type_id`` when it is given.
  * @summary List Products
  */
 export function useListProducts<
@@ -158,7 +162,8 @@ export function useListProducts<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Products by name: those whose name holds ``q``, when it is given.
+ * Products by name: those whose name holds ``q``, when it is given, of
+ * the type ``type_id`` when it is given.
  * @summary List Products
  */
 export function useListProducts<

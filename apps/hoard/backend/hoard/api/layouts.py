@@ -1,6 +1,8 @@
 """How each kind of record is listed and shown on its own page, in the UI
 kit's layout shapes: a kind's table and its detail, each drawn as Hoard ships
-it until someone changes it.
+it until someone changes it. A material's, a base's or a product's detail is
+one per type, drawn as its type's shape until someone changes it; their table
+stays one, since it lists every type.
 
 Every member reads a kind's layouts; only a community admin changes them
 (:data:`~hoard.api.deps.AdminDep`). Hoard lists each kind in one table, and
@@ -14,13 +16,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlmodel import select
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from hoard.api.deps import AdminDep
-from hoard.records import Layout, LayoutView, RecordKind
+from hoard.api.settings import require_references
+from hoard.records import TYPED_KINDS, CategoryKind, ItemType, Layout, LayoutView, RecordKind
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 
 router = APIRouter(prefix="/layouts", tags=["layouts"])
@@ -32,7 +35,8 @@ _MOST = 200
 class LayoutError(StrEnum):
     """Why a change to a layout was refused."""
 
-    #: Hoard has no such layout of the kind: one table, and one detail.
+    #: Hoard has no such layout of the kind: one table, and one detail, or
+    #: one per type for a kind laid out per type.
     LAYOUT_UNKNOWN = "LAYOUT_UNKNOWN"
 
 
@@ -40,7 +44,7 @@ _READ: dict[int | str, dict[str, Any]] = {401: {"description": "NOT_AUTHENTICATE
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "ADMIN_ONLY, READ_ONLY"},
-    422: {"description": "LAYOUT_UNKNOWN"},
+    422: {"description": "LAYOUT_UNKNOWN, TYPE_UNKNOWN"},
 }
 
 
@@ -204,6 +208,8 @@ class HoardListLayoutWrite(_Strict):
 class HoardDetailLayoutWrite(_Strict):
     #: The kind of record whose page it lays out.
     kind: str
+    #: The type whose page it lays out, for a kind laid out per type.
+    type_id: int | None = None
     definition: HoardDetailLayoutDefinition
 
 
@@ -220,13 +226,16 @@ class HoardListLayoutRead(BaseModel):
 class HoardDetailLayoutRead(BaseModel):
     #: The kind of record whose page it lays out.
     kind: RecordKind
+    #: The type whose page it lays out; null for a kind not laid out per type.
+    type_id: int | None
     definition: HoardDetailLayoutDefinition
     #: Null while it is drawn as shipped.
     updated_at: datetime | None
 
 
 class HoardLayoutSet(BaseModel):
-    """A kind's table, then its detail."""
+    """A kind's table, then its detail: one per type, its kind's default
+    type's first, for a kind laid out per type."""
 
     layouts: list[HoardListLayoutRead | HoardDetailLayoutRead]
 
@@ -234,9 +243,22 @@ class HoardLayoutSet(BaseModel):
 async def _set(db: AsyncSession, kind: RecordKind) -> HoardLayoutSet:
     db.expunge_all()
     stored = {
-        layout.view: layout for layout in await db.exec(select(Layout).where(Layout.kind == kind))
+        (layout.view, layout.type_id): layout
+        for layout in await db.exec(select(Layout).where(Layout.kind == kind))
     }
-    table, detail = stored.get(LayoutView.TABLE), stored.get(LayoutView.DETAIL)
+    types: list[int | None] = [None]
+    if kind in TYPED_KINDS:
+        types = list(
+            (
+                await db.exec(
+                    select(ItemType.id)
+                    .where(ItemType.kind == kind)
+                    .order_by(col(ItemType.is_default).desc(), col(ItemType.name))
+                )
+            ).all()
+        )
+    table = stored.get((LayoutView.TABLE, None))
+    details = [(type_id, stored.get((LayoutView.DETAIL, type_id))) for type_id in types]
     return HoardLayoutSet(
         layouts=[
             HoardListLayoutRead(
@@ -248,25 +270,38 @@ async def _set(db: AsyncSession, kind: RecordKind) -> HoardLayoutSet:
                 ),
                 updated_at=table.updated_at if table else None,
             ),
-            HoardDetailLayoutRead(
-                kind=kind,
-                definition=HoardDetailLayoutDefinition.model_validate(
-                    detail.definition if detail else {}
-                ),
-                updated_at=detail.updated_at if detail else None,
+            *(
+                HoardDetailLayoutRead(
+                    kind=kind,
+                    type_id=type_id,
+                    definition=HoardDetailLayoutDefinition.model_validate(
+                        detail.definition if detail else {}
+                    ),
+                    updated_at=detail.updated_at if detail else None,
+                )
+                for type_id, detail in details
             ),
         ]
     )
 
 
-def _view(kind: RecordKind, layout: str) -> LayoutView:
+async def _view(
+    db: AsyncSession, kind: RecordKind, layout: str, type_id: int | None
+) -> tuple[LayoutView, int | None]:
     """Which of ``kind``'s layouts ``layout`` names: its table, or its detail
-    by the kind's own name. Refuses (422) any other."""
-    if layout == LayoutView.TABLE:
-        return LayoutView.TABLE
-    if layout == kind:
-        return LayoutView.DETAIL
+    by the kind's own name, for a kind laid out per type the detail of its
+    type ``type_id``. Refuses (422) any other."""
+    if layout == LayoutView.TABLE and type_id is None:
+        return LayoutView.TABLE, None
+    if layout == kind and (type_id is not None) == (kind in TYPED_KINDS):
+        if type_id is not None:
+            await require_references(db, kind=CategoryKind(kind.value), type_id=type_id)
+        return LayoutView.DETAIL, type_id
     raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, LayoutError.LAYOUT_UNKNOWN)
+
+
+def _stored(kind: RecordKind, view: LayoutView, type_id: int | None) -> Any:
+    return select(Layout).where(Layout.kind == kind, Layout.view == view, Layout.type_id == type_id)
 
 
 @router.get("/{kind}", responses=_READ)
@@ -283,12 +318,13 @@ async def save_layout(
     db: WriteSessionDep,
 ) -> HoardLayoutSet:
     """Store one of a kind's layouts, answering with its layouts."""
-    view = _view(kind, body.kind)
+    type_id = body.type_id if isinstance(body, HoardDetailLayoutWrite) else None
+    view, type_id = await _view(db, kind, body.kind, type_id)
     if isinstance(body, HoardListLayoutWrite) != (view is LayoutView.TABLE):
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, LayoutError.LAYOUT_UNKNOWN)
-    layout = (
-        await db.exec(select(Layout).where(Layout.kind == kind, Layout.view == view))
-    ).first() or Layout(organization_id=db.organization_id, kind=kind, view=view, definition={})
+    layout = (await db.exec(_stored(kind, view, type_id))).first() or Layout(
+        organization_id=db.organization_id, kind=kind, view=view, type_id=type_id, definition={}
+    )
     layout.definition = body.definition.model_dump(exclude_none=True)
     db.add(layout)
     await db.commit()
@@ -297,11 +333,16 @@ async def save_layout(
 
 @router.delete("/{kind}/{layout}", responses=_CHANGE)
 async def reset_layout(
-    kind: RecordKind, layout: str, _admin: AdminDep, db: WriteSessionDep
+    kind: RecordKind,
+    layout: str,
+    _admin: AdminDep,
+    db: WriteSessionDep,
+    type_id: Annotated[int | None, Query()] = None,
 ) -> HoardLayoutSet:
-    """Draw one of a kind's layouts as shipped again, answering with its layouts."""
-    view = _view(kind, layout)
-    stored = (await db.exec(select(Layout).where(Layout.kind == kind, Layout.view == view))).first()
+    """Draw one of a kind's layouts as shipped again, a type's page as its
+    shape, answering with its layouts."""
+    view, type_id = await _view(db, kind, layout, type_id)
+    stored = (await db.exec(_stored(kind, view, type_id))).first()
     if stored:
         await db.delete(stored)
         await db.commit()

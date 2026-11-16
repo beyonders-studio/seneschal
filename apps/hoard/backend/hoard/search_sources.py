@@ -17,8 +17,10 @@ of record people look for, each with the page that opens it.
 * **Holds**: their lot's number, which is their code too; reason and notes.
   Ended holds are archived. A hold opens its lot.
 
-Costs and prices are never indexed. A change to anything a source reads, on
-its own table or another's, indexes the record again.
+A material, a base or a product shows its type's name beside it, which is not
+indexed: a default type nobody named shows none. Costs and prices are never
+indexed. A change to anything a source reads, on its own table or another's,
+indexes the record again.
 """
 
 from __future__ import annotations
@@ -69,6 +71,16 @@ def _properties(column: str) -> SearchDependency:
     return SearchDependency("property_values", f"SELECT d.{column}")
 
 
+#: The name of the record's type, shown beside it.
+_TYPE = "(SELECT t.name FROM item_types t WHERE t.id = r.type_id)"
+
+
+def _type(table: str) -> SearchDependency:
+    return SearchDependency(
+        "item_types", f"SELECT s.id FROM {table} s WHERE s.type_id = d.id", watch=("name",)
+    )
+
+
 MATERIALS = SearchSource(
     kind="material",
     table="materials",
@@ -76,9 +88,10 @@ MATERIALS = SearchSource(
     path="'/stock/materials/' || r.id",
     codes="ARRAY[r.sku, r.supplier_code]",
     body=("r.ingredient_name", "r.notes", _text_properties("material_id")),
+    subtitle=_TYPE,
     archived="r.status = 'archived'",
-    watch=("name", "sku", "supplier_code", "ingredient_name", "notes", "status"),
-    dependencies=(_properties("material_id"),),
+    watch=("name", "sku", "supplier_code", "ingredient_name", "notes", "status", "type_id"),
+    dependencies=(_properties("material_id"), _type("materials")),
 )
 
 BASES = SearchSource(
@@ -88,9 +101,10 @@ BASES = SearchSource(
     path="'/stock/bases/' || r.id",
     codes="ARRAY[r.sku]",
     body=("r.notes", _text_properties("base_id")),
+    subtitle=_TYPE,
     archived="r.status = 'archived'",
-    watch=("name", "sku", "notes", "status"),
-    dependencies=(_properties("base_id"),),
+    watch=("name", "sku", "notes", "status", "type_id"),
+    dependencies=(_properties("base_id"), _type("bases")),
 )
 
 #: Each store's copy of the product ``r``: those its variations are listed as.
@@ -116,8 +130,9 @@ PRODUCTS = SearchSource(
         _STORE_COPIES,
         _text_properties("product_id"),
     ),
+    subtitle=_TYPE,
     archived="r.status = 'archived'",
-    watch=("name", "status"),
+    watch=("name", "status", "type_id"),
     dependencies=(
         SearchDependency(
             "variations", "SELECT d.product_id", watch=("product_id", "sku", "attributes")
@@ -134,6 +149,7 @@ PRODUCTS = SearchSource(
             watch=("store_id", "product_id", "title", "product_type", "vendor", "tags"),
         ),
         _properties("product_id"),
+        _type("products"),
     ),
 )
 

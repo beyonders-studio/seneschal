@@ -112,6 +112,36 @@ async def test_a_bundle_declares_the_variations_its_recipe_holds(db: WriteSessio
     assert declared.undeclared == ["Tea tin"]
 
 
+async def test_a_product_without_a_recipe_declares_what_it_records(db: WriteSession):
+    snack, pretzels = await add_product(
+        db,
+        Product(
+            name="Pretzels",
+            ingredient_name="Pretzels (wheat flour, salt)",
+            allergens=[Allergen.WHEAT, Allergen.GLUTEN],
+            fragrance_allergens={},
+        ),
+    )
+    infuser, steel = await add_product(db, Product(name="Tea infuser", allergens=[]))
+    box, _ = await add_product(db, Product(name="Gift box", bundle=True))
+    await _recipe(db, [(pretzels.id, "1"), (steel.id, "1")], product_id=box.id)
+
+    # What it records counts whatever its type's page shows: the data, not the page.
+    assert await Declarations(db).product(snack) == Declaration(
+        ingredients=["Pretzels (wheat flour, salt)"],
+        unweighed=["Pretzels (wheat flour, salt)"],
+        allergens=[Allergen.GLUTEN, Allergen.WHEAT],
+        undeclared=[],
+        fragrance_recorded=True,
+    )
+    held = await Declarations(db).product(box)
+    assert held.unweighed == ["Pretzels (wheat flour, salt)", "Tea infuser"]
+    assert (held.allergens, held.undeclared) == ([Allergen.GLUTEN, Allergen.WHEAT], [])
+    # A recipe, once it has one, is what it declares.
+    await _recipe(db, [], variation_id=steel.id)
+    assert (await Declarations(db).product(infuser)).unweighed == []
+
+
 async def test_a_run_declares_its_lots_and_its_output_lot_the_run(
     db: WriteSession, material, base, main: Location
 ):

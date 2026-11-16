@@ -11,8 +11,10 @@ from hoard.records import (
     AdjustmentKind,
     Category,
     CategoryKind,
+    ItemType,
     Location,
     Material,
+    TypeShape,
     Unit,
 )
 from hoard.stock import adjust
@@ -80,7 +82,20 @@ async def test_costs_go_only_to_a_member_who_sees_them(
 async def test_a_material_is_added_edited_and_removed_with_the_organization_s_settings(
     client, sign_in, db: WriteSession, unit: Unit, material, buy
 ):
-    tea = Category(organization_id=db.organization_id, kind=CategoryKind.MATERIAL, name="Tea")
+    tins = ItemType(
+        organization_id=db.organization_id,
+        kind=CategoryKind.MATERIAL,
+        name="Tins",
+        shape=TypeShape.PACKAGING,
+    )
+    db.add(tins)
+    await db.flush()
+    tea = Category(
+        organization_id=db.organization_id,
+        kind=CategoryKind.MATERIAL,
+        name="Tea",
+        default_type_id=tins.id,
+    )
     boxes = Category(organization_id=db.organization_id, kind=CategoryKind.PRODUCT, name="Boxes")
     db.add_all([tea, boxes])
     bought = await material("Sencha")
@@ -95,6 +110,10 @@ async def test_a_material_is_added_edited_and_removed_with_the_organization_s_se
     assert made.status_code == 201
     oolong = made.json()
     assert (oolong["on_hand"], oolong["stock"], oolong["category_id"]) == ("0", [], tea.id)
+    # Made in a category, it takes the category's default type; listed by its type.
+    assert oolong["type_id"] == tins.id
+    typed = (await client.get("/api/v1/materials", params={"type_id": tins.id})).json()
+    assert [each["name"] for each in typed["items"]] == ["Oolong"]
 
     wrong = await client.put(
         f"/api/v1/materials/{oolong['id']}",

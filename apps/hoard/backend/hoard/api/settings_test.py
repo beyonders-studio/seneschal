@@ -6,7 +6,7 @@ import pytest
 from sqlmodel import select
 
 from hoard import units
-from hoard.records import AdjustmentReason, DefaultReason, OrganizationSettings, Unit
+from hoard.records import AdjustmentReason, DefaultReason, ItemType, OrganizationSettings, Unit
 from seneschal_core.db import WriteSession
 
 
@@ -77,6 +77,7 @@ CHANGES = [
     ("PUT", "/api/v1/settings", {"currency": "EUR"}),
     ("POST", "/api/v1/settings/units", {"name": "Jar"}),
     ("POST", "/api/v1/settings/categories", {"kind": "material", "name": "Tea"}),
+    ("POST", "/api/v1/settings/types", {"kind": "product", "name": "Bought snacks"}),
     ("POST", "/api/v1/settings/locations", {"name": "Back room"}),
     ("POST", "/api/v1/settings/reasons", {"name": "Spilled"}),
 ]
@@ -151,6 +152,100 @@ async def test_names_stay_unique_and_what_records_name_stays(
         "Packaging",
         "recorded",
     )
+
+
+TYPES = "/api/v1/settings/types"
+
+
+async def test_each_kind_starts_with_a_default_type_made_by_hoard(
+    client, sign_in, db: WriteSession
+):
+    await sign_in(client)
+    types = (await client.get(TYPES)).json()
+    assert [(each["kind"], each["name"], each["shape"], each["is_default"]) for each in types] == [
+        ("material", None, "ingredient", True),
+        ("product", None, "made", True),
+        ("base", None, "base", True),
+    ]
+    assert {each.created_by for each in (await db.exec(select(ItemType))).all()} == {None}
+    # Read again, a kind keeps its one default.
+    assert len((await client.get(TYPES, params={"kind": "base"})).json()) == 1
+
+    await sign_in(client, admin=True)
+    default = types[0]["id"]
+    kept = await client.delete(f"{TYPES}/{default}")
+    assert (kept.status_code, kept.json()) == (409, {"detail": "TYPE_DEFAULT"})
+    renamed = await client.patch(f"{TYPES}/{default}", json={"name": "Ingredient"})
+    assert (renamed.json()["name"], renamed.json()["is_default"]) == ("Ingredient", True)
+
+
+async def test_a_type_takes_one_of_its_kinds_shapes_and_stays_while_records_have_it(
+    client, sign_in, db: WriteSession, material
+):
+    await sign_in(client, admin=True)
+    made = (await client.post(TYPES, json={"kind": "material", "name": "Tins"})).json()
+    # Without a shape it takes its kind's first.
+    assert (made["shape"], made["is_default"]) == ("ingredient", False)
+    shaped = await client.patch(f"{TYPES}/{made['id']}", json={"shape": "packaging"})
+    assert shaped.json()["shape"] == "packaging"
+    refused = await client.post(TYPES, json={"kind": "material", "name": "Box", "shape": "bought"})
+    assert (refused.status_code, refused.json()) == (422, {"detail": "SHAPE_UNKNOWN"})
+    refused = await client.patch(f"{TYPES}/{made['id']}", json={"shape": "base"})
+    assert (refused.status_code, refused.json()) == (422, {"detail": "SHAPE_UNKNOWN"})
+    taken = await client.post(TYPES, json={"kind": "material", "name": "Tins"})
+    assert (taken.status_code, taken.json()) == (409, {"detail": "NAME_TAKEN"})
+    # Another kind may have a type of the same name.
+    assert (await client.post(TYPES, json={"kind": "product", "name": "Tins"})).status_code == 201
+
+    tin = await material("Round tin", type_id=made["id"])
+    await db.commit()
+    in_use = await client.delete(f"{TYPES}/{made['id']}")
+    assert (in_use.status_code, in_use.json()) == (409, {"detail": "IN_USE"})
+    # Moved to another type, it goes.
+    tin.type_id = next(
+        each["id"]
+        for each in (await client.get(TYPES, params={"kind": "material"})).json()
+        if each["is_default"]
+    )
+    db.add(tin)
+    await db.commit()
+    assert (await client.delete(f"{TYPES}/{made['id']}")).status_code == 204
+
+
+async def test_a_category_names_a_default_type_of_its_kind_which_goes_with_the_type(
+    client, sign_in
+):
+    await sign_in(client, admin=True)
+    bought = (
+        await client.post(TYPES, json={"kind": "product", "name": "Bought", "shape": "bought"})
+    ).json()
+    tins = (await client.post(TYPES, json={"kind": "material", "name": "Tins"})).json()
+    refused = await client.post(
+        "/api/v1/settings/categories",
+        json={"kind": "product", "name": "Drinkware", "default_type_id": tins["id"]},
+    )
+    assert (refused.status_code, refused.json()) == (422, {"detail": "TYPE_UNKNOWN"})
+    drinkware = (
+        await client.post(
+            "/api/v1/settings/categories",
+            json={"kind": "product", "name": "Drinkware", "default_type_id": bought["id"]},
+        )
+    ).json()
+    assert drinkware["default_type_id"] == bought["id"]
+    path = f"/api/v1/settings/categories/{drinkware['id']}"
+    # A change that leaves it out keeps it; null clears it.
+    assert (await client.patch(path, json={"picking": "first_in"})).json()["default_type_id"] == (
+        bought["id"]
+    )
+    assert (await client.patch(path, json={"default_type_id": None})).json()[
+        "default_type_id"
+    ] is None
+    await client.patch(path, json={"default_type_id": bought["id"]})
+
+    # A removed type is cleared from the categories naming it.
+    assert (await client.delete(f"{TYPES}/{bought['id']}")).status_code == 204
+    categories = (await client.get("/api/v1/settings/categories")).json()
+    assert [each["default_type_id"] for each in categories] == [None]
 
 
 async def test_an_organization_has_the_standard_units_which_stay_as_they_are(
