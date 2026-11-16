@@ -44,5 +44,6 @@ export default defineConfig({
     css: false,
     restoreMocks: true,
     unstubGlobals: true,
+    setupFiles: ["./src/test/setup.ts"],
   },
 });
