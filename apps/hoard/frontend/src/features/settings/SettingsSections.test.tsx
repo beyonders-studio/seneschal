@@ -140,10 +140,14 @@ describe("Settings", () => {
       signedIn({ page: "settings", admin: true, permissions: ["use", "costs"] }),
       rated
     );
-    const rate = await screen.findByLabelText("Per hour");
-    await waitFor(() => expect(rate).toHaveProperty("value", "20.000000"));
-    fireEvent.change(rate, { target: { value: "22.5" } });
-    fireEvent.click(within(rate.closest("form") as HTMLElement).getByRole("button"));
+    // The form is drawn again once the rate loads, so each step finds it afresh.
+    const rate = () => screen.getByLabelText("Per hour");
+    await waitFor(() => expect(rate()).toHaveProperty("value", "20.000000"));
+    fireEvent.change(rate(), { target: { value: "22.5" } });
+    await waitFor(() => expect(rate()).toHaveProperty("value", "22.5"));
+    fireEvent.click(
+      within(rate().closest("form") as HTMLElement).getByRole("button", { name: "Save" })
+    );
     await waitFor(() =>
       expect(
         asked.find((request) => request.method === "put" && request.url === "/api/v1/settings")
