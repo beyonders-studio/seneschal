@@ -85,7 +85,8 @@
     "JOB_STARTER_ONLY": "Only the member who started this can download its file.",
     "AMOUNT_TOO_SMALL": "That's less than Hoard can keep in the unit it's counted in.",
     "UNIT_NOT_CONVERTIBLE": "That unit doesn't convert to the one it's counted in.",
-    "TYPE_UNKNOWN": "Pick one of the types of this kind of record."
+    "TYPE_UNKNOWN": "Pick one of the types of this kind of record.",
+    "COSTS_HIDDEN": "Only members who see costs can set them."
   },
   "units": {
     "short": {

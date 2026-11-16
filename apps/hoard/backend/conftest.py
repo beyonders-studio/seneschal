@@ -33,12 +33,20 @@ from hoard.records import (
     Order,
     OrderLine,
     OrderStatus,
+    Product,
     Purchase,
     PurchaseLine,
     Unit,
     Variation,
 )
-from hoard.stock import add_base, add_default_hold_reasons, add_material, adjust, main_location
+from hoard.stock import (
+    add_base,
+    add_default_hold_reasons,
+    add_material,
+    add_product,
+    adjust,
+    main_location,
+)
 from seneschal_core import jobs, organizations
 from seneschal_core.api import Plugin
 from seneschal_core.db import Database, WriteSession
@@ -121,6 +129,17 @@ def base(db: WriteSession, unit: Unit) -> Callable[..., Awaitable[Base]]:
         return await add_base(db, Base(name=name, **{"tracking_unit_id": unit.id} | fields))
 
     return base
+
+
+@pytest.fixture
+def product(db: WriteSession) -> Callable[..., Awaitable[Variation]]:
+    """Add a product, and answer its default variation."""
+
+    async def product(name: str, **fields: Any) -> Variation:
+        _, variation = await add_product(db, Product(name=name, **fields))
+        return variation
+
+    return product
 
 
 #: A line to buy: a material or a variation, its quantity and its unit cost.

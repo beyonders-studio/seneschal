@@ -14,10 +14,12 @@ from hoard import orders, recipes, shipments, summary
 from hoard.orders import OrderError, OrderRefused
 from hoard.records import (
     Channel,
+    ContactPricePoint,
     Location,
     Order,
     OrderLine,
     OrderStatus,
+    PricePoint,
     Product,
     Recipe,
     Shipment,
@@ -25,6 +27,7 @@ from hoard.records import (
     ShipmentStatus,
     Store,
     Variation,
+    VariationPrice,
 )
 from hoard.stock import add_product, add_variation
 from seneschal_core.db import WriteSession
@@ -32,6 +35,47 @@ from seneschal_core.db import WriteSession
 
 async def _line(db: WriteSession, order: Order) -> OrderLine:
     return (await db.exec(select(OrderLine).where(OrderLine.order_id == order.id))).one()
+
+
+async def test_a_hand_orders_line_starts_at_its_customers_price_point(
+    db: WriteSession, main: Location, lot, sell
+):
+    product, chai = await add_product(db, Product(name="Chai", default_price=Decimal(10)))
+    large = await add_variation(
+        db, Variation(product_id=product.id, attributes={"size": "large"}, price=Decimal(12))
+    )
+    _, mug = await add_product(db, Product(name="Mug", default_price=Decimal(15)))
+    await lot(mug.id, "M1", "5", unit_cost="6")
+    wholesale = PricePoint(organization_id=db.organization_id, name="Wholesale", markup=Decimal(50))
+    db.add(wholesale)
+    await db.flush()
+    db.add_all(
+        [
+            VariationPrice(
+                organization_id=db.organization_id,
+                variation_id=chai.id,
+                price_point_id=wholesale.id,
+                price=Decimal(7),
+            ),
+            ContactPricePoint(
+                organization_id=db.organization_id, contact_id=5, price_point_id=wholesale.id
+            ),
+        ]
+    )
+    await db.flush()
+
+    async def started(customer: int, *item_ids: int) -> list[Decimal]:
+        order = await sell(customer_contact_id=customer)
+        for item_id in item_ids:
+            await orders.add_line(db, order, item_id, Decimal(1))
+        return [line.price for line in await orders.lines(db, order.id)]
+
+    # Its price there; the price its cost suggests there; and, with neither,
+    # its own price.
+    assert await started(5, chai.id, mug.id, large.id) == [7, 9, 12]
+    # A customer with no price point starts at the variation's own price, then
+    # its product's.
+    assert await started(6, chai.id, large.id) == [10, 12]
 
 
 async def test_open_orders_commit_what_they_have_not_shipped(

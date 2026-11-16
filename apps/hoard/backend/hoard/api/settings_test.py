@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from sqlmodel import select
 
 from hoard import units
-from hoard.records import AdjustmentReason, DefaultReason, ItemType, OrganizationSettings, Unit
+from hoard.records import (
+    AdjustmentReason,
+    DefaultReason,
+    ItemType,
+    OrderStatus,
+    OrganizationSettings,
+    Unit,
+)
 from seneschal_core.db import WriteSession
 
 
@@ -17,6 +26,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
         "auto_manufacture": "off",
         "regimes": [],
         "labour_rate": None,
+        "overhead": None,
     }
 
     db.add(OrganizationSettings(organization_id=db.organization_id, currency="EUR"))
@@ -31,6 +41,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
         "auto_manufacture": "out_of_stock",
         "regimes": [],
         "labour_rate": None,
+        "overhead": None,
     }
     # Regimes are kept once each, in their own order.
     ticked = await client.put(
@@ -41,35 +52,36 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     assert unknown.status_code == 422
 
 
-async def test_the_labour_rate_is_a_cost_an_admin_sets(client, sign_in):
+@pytest.mark.parametrize("setting", ["labour_rate", "overhead"])
+async def test_the_labour_rate_and_overhead_are_costs_an_admin_sets(client, sign_in, setting):
     await sign_in(client, ("costs",))
-    refused = await client.put("/api/v1/settings", json={"labour_rate": "20"})
+    refused = await client.put("/api/v1/settings", json={setting: "20"})
     assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
 
     # An admin who doesn't see costs neither sets it nor reads it.
     await sign_in(client, admin=True)
-    unseen = await client.put("/api/v1/settings", json={"labour_rate": "20"})
+    unseen = await client.put("/api/v1/settings", json={setting: "20"})
     assert (unseen.status_code, unseen.json()) == (403, {"detail": "COSTS_HIDDEN"})
-    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
+    assert (await client.get("/api/v1/settings")).json()[setting] is None
 
     await sign_in(client, ("costs",), admin=True)
-    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
-    rated = await client.put("/api/v1/settings", json={"labour_rate": "22.50"})
-    assert rated.json()["labour_rate"] == "22.500000"
-    negative = await client.put("/api/v1/settings", json={"labour_rate": "-1"})
+    assert (await client.get("/api/v1/settings")).json()[setting] is None
+    rated = await client.put("/api/v1/settings", json={setting: "22.50"})
+    assert rated.json()[setting] == "22.500000"
+    negative = await client.put("/api/v1/settings", json={setting: "-1"})
     assert negative.status_code == 422
     kept = await client.put("/api/v1/settings", json={"currency": "CAD"})
-    assert kept.json()["labour_rate"] == "22.500000"
+    assert kept.json()[setting] == "22.500000"
 
     await sign_in(client, admin=True)
-    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
-    await client.put("/api/v1/settings", json={"labour_rate": None})
+    assert (await client.get("/api/v1/settings")).json()[setting] is None
+    await client.put("/api/v1/settings", json={setting: None})
     await sign_in(client, ("costs",))
-    assert (await client.get("/api/v1/settings")).json()["labour_rate"] == "22.500000"
+    assert (await client.get("/api/v1/settings")).json()[setting] == "22.500000"
 
     await sign_in(client, ("costs",), admin=True)
-    cleared = await client.put("/api/v1/settings", json={"labour_rate": None})
-    assert cleared.json()["labour_rate"] is None
+    cleared = await client.put("/api/v1/settings", json={setting: None})
+    assert cleared.json()[setting] is None
 
 
 #: A change to each kind of setting, as a method, path and body.
@@ -331,3 +343,73 @@ async def test_an_organization_has_the_standard_units_which_stay_as_they_are(
         "/api/v1/settings/units/conversion", params={"from_unit_id": dozen["id"]}
     )
     assert of_itself.json() == {"factor": "12.000000"}
+
+
+async def test_price_points_are_costs_an_admin_sets(
+    client, sign_in, db: WriteSession, sell, product
+):
+    point = {"name": "Wholesale", "markup": "60", "listing_fee": "0.5", "commission": "10"}
+    await sign_in(client, ("costs",))
+    refused = await client.post("/api/v1/settings/price-points", json=point)
+    assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
+    await sign_in(client, admin=True)
+    unseen = await client.post("/api/v1/settings/price-points", json=point)
+    assert (unseen.status_code, unseen.json()) == (403, {"detail": "COSTS_HIDDEN"})
+    # None until an admin adds one.
+    assert (await client.get("/api/v1/settings/price-points")).json() == []
+
+    await sign_in(client, ("costs",), admin=True)
+    made = (await client.post("/api/v1/settings/price-points", json=point)).json()
+    assert made == {
+        "id": made["id"],
+        "name": "Wholesale",
+        "markup": "60.000000",
+        "listing_fee": "0.500000",
+        "commission": "10.000000",
+    }
+    taken = await client.post("/api/v1/settings/price-points", json=point)
+    assert (taken.status_code, taken.json()) == (409, {"detail": "NAME_TAKEN"})
+    whole = await client.post(
+        "/api/v1/settings/price-points", json={**point, "name": "All", "commission": "100"}
+    )
+    assert whole.status_code == 422
+    changed = await client.put(
+        f"/api/v1/settings/price-points/{made['id']}", json={**point, "markup": "50"}
+    )
+    assert changed.json()["markup"] == "50.000000"
+
+    # Every member reads its name; only one who sees costs its numbers.
+    await sign_in(client)
+    assert (await client.get("/api/v1/settings/price-points")).json() == [
+        {
+            "id": made["id"],
+            "name": "Wholesale",
+            "markup": None,
+            "listing_fee": None,
+            "commission": None,
+        }
+    ]
+
+    # Removing it keeps the orders priced at it, and its contacts buy at the
+    # default price again.
+    chai = await product("Chai", default_price=Decimal(10))
+    order = await sell(status=OrderStatus.OPEN)
+    await db.commit()
+    await sign_in(client, ("costs",), admin=True)
+    await client.put("/api/v1/contacts/1/price-point", json={"price_point_id": made["id"]})
+    priced = await client.put(
+        f"/api/v1/products/{chai.product_id}/variations/{chai.id}/prices/{made['id']}",
+        json={"price": "7"},
+    )
+    assert priced.status_code == 200, priced.text
+    added = await client.post(
+        f"/api/v1/orders/{order.id}/lines", json={"item_id": chai.id, "quantity": "1"}
+    )
+    assert added.json()["lines"][0]["price"] == "7.000000"
+    removed = await client.delete(f"/api/v1/settings/price-points/{made['id']}")
+    assert removed.status_code == 204
+    assert (await client.get("/api/v1/contacts/1/price-point")).json() == {"price_point_id": None}
+    again = await client.post(
+        f"/api/v1/orders/{order.id}/lines", json={"item_id": chai.id, "quantity": "1"}
+    )
+    assert [line["price"] for line in again.json()["lines"]] == ["7.000000", "10.000000"]

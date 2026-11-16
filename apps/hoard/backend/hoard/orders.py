@@ -19,10 +19,13 @@ An order is made by hand, with its lines, or copied in from a store
 (:func:`store_owned`): Hoard changes nothing of one but the lots its
 shipments draw and what comes back of them. A bundle sold by hand is
 split into its parts, as its recipe holds them, each a line of its own at no
-price. An order is **shipped** once its shipments have shipped every line, and
-open again once one is unshipped; cancelling it cancels the shipments still
-pending, and it commits nothing until it is reopened. Whatever changes what an
-order commits notes it for the items' listings (``hoard.listings``).
+price. A hand order's line starts at its variation's price at the customer's
+price point, when the customer has one and it has a price there; a store's
+order keeps the store's prices. An order is **shipped** once its shipments
+have shipped every line, and open again once one is unshipped; cancelling it
+cancels the shipments still pending, and it commits nothing until it is
+reopened. Whatever changes what an order commits notes it for the items'
+listings (``hoard.listings``).
 """
 
 from __future__ import annotations
@@ -185,8 +188,24 @@ async def note(db: WriteSession, order: Order) -> None:
 
 
 def default_price(product: Product, variation: Variation) -> Decimal:
-    """What a variation sells for unless an order says otherwise."""
+    """What a variation sells for to a customer with no price point, unless an
+    order says otherwise."""
     return variation.price if variation.price is not None else product.default_price or Decimal(0)
+
+
+async def start_price(
+    db: AsyncSession, order: Order, product: Product, variation: Variation
+) -> Decimal:
+    """What a hand order's line starts at: its variation's price at the
+    customer's price point, or else its own default price."""
+    # Imported here: the summary reads what open orders commit through this module.
+    from hoard import summary
+
+    if order.customer_contact_id is not None:
+        price = await summary.contact_price(db, order.customer_contact_id, variation.id)
+        if price is not None:
+            return price
+    return default_price(product, variation)
 
 
 async def _variation(db: WriteSession, item_id: int) -> tuple[Product, Variation]:
@@ -235,7 +254,8 @@ async def add_line(
     db: WriteSession, order: Order, item_id: int, quantity: Decimal, price: Decimal | None = None
 ) -> OrderLine:
     """Sell ``quantity`` of a variation on an order, at ``price`` each or
-    else its own; a bundle is split into its parts."""
+    else the price it starts at (:func:`start_price`); a bundle is split into
+    its parts."""
     _not_cancelled(order)
     product, variation = await _variation(db, item_id)
     line = OrderLine(
@@ -243,7 +263,7 @@ async def add_line(
         order_id=order.id,
         item_id=variation.id,
         quantity=quantity,
-        price=default_price(product, variation) if price is None else price,
+        price=await start_price(db, order, product, variation) if price is None else price,
     )
     db.add(line)
     await db.flush()

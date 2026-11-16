@@ -62,6 +62,8 @@ const NO_USAGE: ItemUsage[] = (
 /** An item's figures with no recipe, run, stocktake or purchase behind them. */
 const FIGURES = {
   consigned: "0",
+  committed: "0",
+  available: "0",
   potential: null,
   made: "0",
   last_stocktake: null,
@@ -146,6 +148,18 @@ export const product = (fields: Partial<ProductRead> = {}): ProductRead => ({
 export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetail => ({
   ...product(),
   ...STAMPS,
+  totals: {
+    consigned: "0",
+    committed: "0",
+    available: "0",
+    potential: null,
+    made: "0",
+    sold: "0",
+    shipped: "0",
+    on_order: "0",
+    overdue: false,
+    profit: null,
+  },
   variations: [],
   store_products: [],
   ...fields,
@@ -165,6 +179,10 @@ export const variation = (fields: Partial<ProductVariationRead> = {}): ProductVa
   purchase_conversion: "1.000000",
   on_hand: "0",
   ...FIGURES,
+  sold: "0",
+  shipped: "0",
+  profit: null,
+  pricing: null,
   stock: [],
   lots: [],
   ...fields,

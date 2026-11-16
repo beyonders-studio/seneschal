@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -20,10 +20,21 @@ import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind, shapeSpecs, typeField, without } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
+import {
+  AdjustmentsHistory,
+  OrdersHistory,
+  PurchasesHistory,
+  RunsHistory,
+  StocktakesHistory,
+} from "@/features/items/History";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
+import { IdSelect } from "@/features/items/IdSelect";
 import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { LotsTable } from "@/features/items/lots";
+import { UsageTable, UsedInTable } from "@/features/items/usage";
+import { Glance, Profitability } from "@/features/products/glance";
 import { ProductImages } from "@/features/products/ProductImages";
+import { PricingPanel } from "@/features/products/pricing";
 import { VariationDialog } from "@/features/products/VariationDialog";
 import { useVariationName } from "@/features/products/variations";
 import { RecipeSection } from "@/features/recipes/RecipeSection";
@@ -109,6 +120,71 @@ const Lots = ({ item }: { item: ProductDetail }) => {
   );
 };
 
+/** What `children` shows of one of a product's variations: of its only one,
+ *  or of the one chosen among them. */
+function ByVariation({
+  product,
+  children,
+}: {
+  product: ProductDetail;
+  children: (variationId: number) => ReactNode;
+}) {
+  const { t } = useTranslation("catalog");
+  const variationName = useVariationName();
+  const { variations } = product;
+  const [chosen, setChosen] = useState(variations[0]?.id ?? null);
+  const shown = variations.find((variation) => variation.id === chosen) ?? variations[0];
+  if (!shown) return null;
+  if (variations.length === 1) return children(shown.id);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="w-56">
+        <IdSelect
+          aria-label={t("products.variation")}
+          value={shown.id}
+          options={variations.map((variation) => ({
+            id: variation.id,
+            name: variationName(variation),
+          }))}
+          onChange={(id) => id !== null && setChosen(id)}
+        />
+      </div>
+      {children(shown.id)}
+    </div>
+  );
+}
+
+/** Each variation's part of the page, under its name where it has one. */
+function EachVariation({
+  product,
+  children,
+}: {
+  product: ProductDetail;
+  children: (variation: ProductVariationRead) => ReactNode;
+}) {
+  const variationName = useVariationName();
+  if (!named(product)) return product.variations.map((variation) => children(variation));
+  return (
+    <div className="flex flex-col gap-3">
+      {product.variations.map((variation) => (
+        <div key={variation.id} className="flex flex-col gap-1">
+          <h4 className="text-sm font-medium">{variationName(variation)}</h4>
+          {children(variation)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** A history section of a product: of one of its variations at a time. */
+const history = (id: string, label: string, Show: (props: { itemId: number }) => ReactNode) =>
+  builtin<ProductDetail>(
+    id,
+    label,
+    (product) => product.id,
+    ({ item }) => <ByVariation product={item}>{(itemId) => <Show itemId={itemId} />}</ByVariation>
+  );
+
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
 /** What a product records of its own, each a field of its page: what it
@@ -128,10 +204,10 @@ const own = (id: Own) =>
 const EVERYTHING = {
   header: [],
   main: [
-    at(1, {
+    at(1, field("glance")),
+    at(2, {
       type: "section",
       children: [
-        "on_hand",
         "low_stock_limit",
         "category",
         "type",
@@ -141,19 +217,28 @@ const EVERYTHING = {
         "rinse_off",
       ].map(field),
     }),
-    at(3, field("images")),
-    at(4, field("variations")),
-    at(5, field("recipe")),
-    at(6, field("stock")),
-    at(7, field("lots")),
-    at(8, field("declarations")),
-    at(9, { type: "section", children: OWN.map(field) }),
-    at(10, field("documents")),
-    at(11, field("stores")),
-    at(12, field("auto_manufacture")),
-    at(13, { type: "byline" }),
+    at(4, field("profit")),
+    at(5, field("pricing")),
+    at(6, field("images")),
+    at(7, field("variations")),
+    at(8, field("recipe")),
+    at(9, field("stock")),
+    at(10, field("lots")),
+    at(11, field("usage")),
+    at(12, field("used_in")),
+    at(13, field("declarations")),
+    at(14, { type: "section", children: OWN.map(field) }),
+    at(15, field("runs")),
+    at(16, field("orders")),
+    at(17, field("purchases")),
+    at(18, field("adjustments")),
+    at(19, field("stocktakes")),
+    at(20, field("documents")),
+    at(21, field("stores")),
+    at(22, field("auto_manufacture")),
+    at(23, { type: "byline" }),
   ],
-  side: [at(2, { type: "section", children: [{ type: "properties" }] })],
+  side: [at(3, { type: "section", children: [{ type: "properties" }] })],
 };
 
 /** Without them, an empty section stays out of the shapes that hide them. */
@@ -163,12 +248,21 @@ const MADE = (() => {
 })();
 
 /** A product's pages by the shape of its type: Made, by its recipe; Bought
- *  finished, its recipe hidden as well; and a Bundle, which holds no stock or
- *  lots of its own. */
+ *  finished, its recipe and runs hidden as well; and a Bundle, which holds no
+ *  stock or lots of its own, and is neither made, bought nor used. */
 const SHAPES = shapeSpecs("product", EVERYTHING, {
   made: MADE,
-  bought: without(MADE, ["recipe"]),
-  bundle: without(MADE, ["stock", "lots"]),
+  bought: without(MADE, ["recipe", "runs"]),
+  bundle: without(MADE, [
+    "stock",
+    "lots",
+    "usage",
+    "used_in",
+    "runs",
+    "purchases",
+    "adjustments",
+    "stocktakes",
+  ]),
 });
 
 /** Products, as their table lists them and a product's page shows one. */
@@ -237,7 +331,50 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       (product) => product.id,
       ({ item }) => <Variations product={item} />
     ),
+    builtin(
+      "glance",
+      "catalog:products.glance.title",
+      (product) => product.id,
+      ({ item }) => <Glance product={item} />
+    ),
+    builtin(
+      "profit",
+      "catalog:products.profit.title",
+      (product) => product.totals.profit,
+      ({ item }) => <Profitability product={item} />
+    ),
+    builtin(
+      "pricing",
+      "catalog:products.pricing.title",
+      (product) => product.id,
+      ({ item }) => <PricingPanel product={item} />
+    ),
     builtin("stock", "catalog:items.stock", (product) => product.id, Stock),
+    builtin(
+      "usage",
+      "catalog:items.usage.title",
+      (product) => product.id,
+      ({ item }) => (
+        <EachVariation product={item}>
+          {(variation) => <UsageTable key={variation.id} usage={variation.usage} unit="" />}
+        </EachVariation>
+      )
+    ),
+    builtin(
+      "used_in",
+      "catalog:items.usedIn.title",
+      (product) => product.id,
+      ({ item }) => (
+        <EachVariation product={item}>
+          {(variation) => <UsedInTable key={variation.id} usedIn={variation.used_in} />}
+        </EachVariation>
+      )
+    ),
+    history("runs", "catalog:history.runs", ({ itemId }) => <RunsHistory itemId={itemId} made />),
+    history("orders", "catalog:history.orders", OrdersHistory),
+    history("purchases", "catalog:history.purchases", PurchasesHistory),
+    history("adjustments", "catalog:history.adjustments", AdjustmentsHistory),
+    history("stocktakes", "catalog:history.stocktakes", StocktakesHistory),
     builtin(
       "recipe",
       "recipes:section.title",
@@ -272,7 +409,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
     ),
   ],
   columns: ["name", "status", "category", "type", "on_hand", "low_stock_limit", "default_price"],
-  costs: new Set(["default_price"]),
+  costs: new Set(["default_price", "profit", "pricing"]),
   spec: SHAPES.made,
   shapes: SHAPES,
   parts: { byline: (_node, item) => <RecordStamps record={item} /> },
@@ -306,6 +443,7 @@ function Variations({ product }: { product: ProductDetail }) {
             <TableHead>{t("products.variation")}</TableHead>
             <TableHead>{t("hoard:common.sku")}</TableHead>
             <TableHead className="text-right">{t("hoard:common.onHand")}</TableHead>
+            <TableHead className="text-right">{t("products.glance.available")}</TableHead>
             {seesCosts && <TableHead className="text-right">{t("hoard:common.price")}</TableHead>}
             {seesCosts && <TableHead className="text-right">{t("items.averageCost")}</TableHead>}
             <TableHead className="w-12" />
@@ -318,6 +456,9 @@ function Variations({ product }: { product: ProductDetail }) {
               <TableCell>{variation.sku}</TableCell>
               <TableCell className="text-right tabular-nums">
                 {quantity(variation.on_hand)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {quantity(variation.available)}
               </TableCell>
               {seesCosts && (
                 <TableCell className="text-right tabular-nums">

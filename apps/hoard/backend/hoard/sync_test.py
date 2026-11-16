@@ -237,9 +237,11 @@ async def test_a_refund_before_shipping_releases_what_the_line_committed(
     monkeypatch.setattr(listings, "note_changed", note_changed)
     tea = await sold("Tea", "v-tea")
     await lot(tea.id, "T-1", "10")
-    paid = _order(_line("l-1", "v-tea", "3"), paid=True, customer="99")
+    paid = _order(_line("l-1", "v-tea", "3"), paid=True, customer="99", currency="eur")
     order = await sync.copy_order(db, store, fake, paid)
     assert ((await summary.stock_at(db, tea.id)).committed, order.store_customer) == (3, "99")
+    # In the store's currency, which profit counts apart from the organization's.
+    assert order.currency == "EUR"
     noted.clear()
 
     # Two of the three refunded: the line commits the one it still sells.

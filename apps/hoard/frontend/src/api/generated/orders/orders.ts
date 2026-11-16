@@ -52,8 +52,9 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Orders, the latest first: all, or those of one status, or of a store's
- * customer, by the store's number for them.
+ * Orders, the latest first: all, or those of one status, of a store's
+ * customer, by the store's number for them, or with a line selling one
+ * item, a bundle's part included.
  * @summary List Orders
  */
 export const listOrders = (
@@ -99,8 +100,9 @@ export type ListOrdersQueryResult = NonNullable<Awaited<ReturnType<typeof listOr
 export type ListOrdersQueryError = ErrorType<HTTPValidationError>;
 
 /**
- * Orders, the latest first: all, or those of one status, or of a store's
- * customer, by the store's number for them.
+ * Orders, the latest first: all, or those of one status, of a store's
+ * customer, by the store's number for them, or with a line selling one
+ * item, a bundle's part included.
  * @summary List Orders
  */
 export function useListOrders<
@@ -123,8 +125,9 @@ export function useListOrders<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Orders, the latest first: all, or those of one status, or of a store's
- * customer, by the store's number for them.
+ * Orders, the latest first: all, or those of one status, of a store's
+ * customer, by the store's number for them, or with a line selling one
+ * item, a bundle's part included.
  * @summary List Orders
  */
 export function useListOrders<
@@ -147,8 +150,9 @@ export function useListOrders<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Orders, the latest first: all, or those of one status, or of a store's
- * customer, by the store's number for them.
+ * Orders, the latest first: all, or those of one status, of a store's
+ * customer, by the store's number for them, or with a line selling one
+ * item, a bundle's part included.
  * @summary List Orders
  */
 export function useListOrders<
@@ -163,8 +167,9 @@ export function useListOrders<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Orders, the latest first: all, or those of one status, or of a store's
- * customer, by the store's number for them.
+ * Orders, the latest first: all, or those of one status, of a store's
+ * customer, by the store's number for them, or with a line selling one
+ * item, a bundle's part included.
  * @summary List Orders
  */
 export function useListOrders<

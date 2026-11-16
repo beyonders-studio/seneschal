@@ -4,7 +4,7 @@ another, and consignees' locations.
 Every location starts as the organization's own.
 
 Revision ID: 0022
-Revises: 0020
+Revises: 0021
 """
 
 from collections.abc import Sequence
@@ -15,7 +15,7 @@ from alembic import op
 from seneschal_core.migrations import isolate, referable, reference, stamp
 
 revision: str = "0022"
-down_revision: str | None = "0020"
+down_revision: str | None = "0021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

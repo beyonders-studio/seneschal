@@ -12,8 +12,8 @@ product the store no longer has loses its listings and copy.
 
 A store's order is copied in whole each time (:func:`copy_order`): its lines
 by the store's line ids, each sold item found through its listing, with how
-many each sells now and how many were refunded; its refunded total and its
-customer's number; and its status from the store's: cancelled, shipped once
+many each sells now and how many were refunded; its refunded total, its
+currency and its customer's number; and its status from the store's: cancelled, shipped once
 the store fulfilled every line, pending until it is paid, and open,
 committing what its lines sell, once it is. A copy older than the one Hoard
 holds, by the store's ``updated_at``, is skipped. An order that first claims
@@ -430,6 +430,10 @@ async def _copy(db: WriteSession, items: _Items, found: StoreOrder) -> Order:
     order.paid = found.paid
     order.shipping, order.tax, order.discount = found.shipping, found.tax, found.discount
     order.refunded, order.store_customer = found.refunded, found.customer
+    currency = (found.currency or "").upper()
+    order.currency = (
+        currency if len(currency) == 3 and currency.isascii() and currency.isalpha() else None
+    )
     order.store_updated_at = found.updated_at or order.store_updated_at
     await db.flush()
     selling_changed = await _copy_lines(db, items, order, found)

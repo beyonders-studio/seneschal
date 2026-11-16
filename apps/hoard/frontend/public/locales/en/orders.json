@@ -24,7 +24,11 @@
     "noContacts": "Your community has no contacts yet. Type a customer's name to add them, or add your customers to the community's contacts in Initiative.",
     "loadFailed": "The community's contacts couldn't be read.",
     "addFailed": "The contact couldn't be added.",
-    "required": "Choose the customer the order is for."
+    "required": "Choose the customer the order is for.",
+    "pricePoint": "Price point",
+    "pricePointHint": "New lines for this customer start at its prices.",
+    "defaultPrices": "Default prices",
+    "pricePointFailed": "Couldn't save the customer's price point."
   },
   "carriers": {
     "label": "Carrier",
@@ -70,7 +74,7 @@
   "lines": {
     "item": "Item",
     "price": "Price each",
-    "priceHint": "Leave it empty for the item's own price.",
+    "priceHint": "Leave it empty for its price at the customer's price point, or else the item's own price.",
     "shipped": "Shipped",
     "shippedOf": "{{shipped}} of {{quantity}}",
     "ofOrdered": "{{current}} of {{quantity}} ordered",

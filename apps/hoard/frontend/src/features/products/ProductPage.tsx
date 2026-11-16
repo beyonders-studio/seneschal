@@ -62,12 +62,14 @@ export function ProductPage({ productId }: { productId: number }) {
     }
   };
   const store = listedIn(product);
+  const sku = product.variations.find((variation) => variation.is_default)?.sku;
 
   return (
     <div className="flex flex-col gap-6">
       <ItemHeader
         back={{ to: "/stock/products", label: t("hoard:stock.products") }}
         title={product.name}
+        subtitle={sku && t("products.skuIs", { sku })}
         marks={
           <>
             <StatusBadge status={product.status} />
