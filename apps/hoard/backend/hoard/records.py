@@ -43,7 +43,9 @@
 * **Stocktakes**: counts of materials or products at a location, whose
   variances become adjustments.
 * **Settings**: the organization's one row of them, such as its currency.
-* **Product images**: pictures of a product, which Hoard keeps itself.
+* **Images**: pictures of a product, and the one picture of a material or a
+  base, which Hoard keeps itself and never offers a store.
+* **Bins**: where an item sits at a location, by zone, section and position.
 * **Properties** people add to a kind of record, in the UI kit's shapes, and
   each record's **values** of them.
 * **Layouts**: how a kind of record is listed and shown on its own page, once
@@ -132,7 +134,11 @@ class ItemKind(StrEnum):
     BASE = "base"
 
 
-class ProductStatus(StrEnum):
+class ItemStatus(StrEnum):
+    """Whether a product, a material or a base is in use. An archived one
+    leaves lists, pickers and search unless they ask for it; its stock,
+    history and the recipes naming it stay as they were."""
+
     ACTIVE = "active"
     ARCHIVED = "archived"
 
@@ -331,6 +337,14 @@ def auto_manufacture() -> Any:
     )
 
 
+def item_status() -> Any:
+    """Whether the record is in use or archived."""
+    return Field(
+        default=ItemStatus.ACTIVE,
+        sa_column=enum_column(ItemStatus, "item_status", server_default="active"),
+    )
+
+
 def allergens() -> Any:
     """Allergen keys, or None where they are not known."""
     return Field(default=None, sa_column=Column(ARRAY(Text), nullable=True))
@@ -477,6 +491,7 @@ class Material(OrganizationRow, Stamped, table=True):
     #: Its item's id.
     id: int = Field(default=None, sa_column=Column(BigInteger, primary_key=True))
     name: str
+    status: ItemStatus = item_status()
     sku: str | None = None
     inventoriable: bool = True
     #: The unit stock is counted in.
@@ -501,6 +516,7 @@ class Material(OrganizationRow, Stamped, table=True):
     #: The EU fragrance allergens it contains, as its supplier declares them:
     #: each one's share of it in percent, as a decimal string; None until known.
     fragrance_allergens: dict[str, str] | None = fragrance_allergens()
+    notes: str | None = None
 
 
 class Base(OrganizationRow, Stamped, table=True):
@@ -520,6 +536,7 @@ class Base(OrganizationRow, Stamped, table=True):
     #: Its item's id.
     id: int = Field(default=None, sa_column=Column(BigInteger, primary_key=True))
     name: str
+    status: ItemStatus = item_status()
     sku: str | None = None
     #: The unit stock is counted in.
     tracking_unit_id: int = Field(sa_type=BigInteger)
@@ -527,6 +544,7 @@ class Base(OrganizationRow, Stamped, table=True):
     low_stock_limit: Decimal | None = amount(None)
     #: How many days what a run makes of it cures before it is used; None for none.
     cure_days: int | None = None
+    notes: str | None = None
 
 
 class Product(OrganizationRow, Stamped, table=True):
@@ -541,10 +559,7 @@ class Product(OrganizationRow, Stamped, table=True):
 
     id: int = identity()
     name: str
-    status: ProductStatus = Field(
-        default=ProductStatus.ACTIVE,
-        sa_column=enum_column(ProductStatus, "product_status", server_default="active"),
-    )
+    status: ItemStatus = item_status()
     category_id: int | None = Field(default=None, sa_type=BigInteger)
     default_price: Decimal | None = amount(None)
     low_stock_limit: Decimal | None = amount(None)
@@ -756,6 +771,27 @@ class StockLevel(OrganizationRow, table=True):
     quantity: Decimal = amount()
 
 
+class Bin(OrganizationRow, Stamped, table=True):
+    """Where an item sits at a location: its zone, section and position, any
+    of which may be left out. It stays while the item's stock there is
+    nothing, and goes with its location. Items may share a bin."""
+
+    __tablename__ = "bins"
+    __table_args__ = (
+        reference("bins", "item_id", "items", ondelete="CASCADE"),
+        reference("bins", "location_id", "locations", ondelete="CASCADE"),
+        UniqueConstraint("organization_id", "item_id", "location_id", name="uq_bins_item_location"),
+        CheckConstraint("num_nonnulls(zone, section, position) > 0", name="ck_bins_named"),
+    )
+
+    id: int = identity()
+    item_id: int = Field(sa_type=BigInteger)
+    location_id: int = Field(sa_type=BigInteger)
+    zone: str | None = None
+    section: str | None = None
+    position: str | None = None
+
+
 class Stocktake(OrganizationRow, Stamped, table=True):
     """A count of materials or products at a location: all of them, or a
     random sample, of one category or every one."""
@@ -900,6 +936,7 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
         UniqueConstraint("organization_id", name="uq_settings_organization_id"),
         CheckConstraint("currency ~ '^[A-Z]{3}$'", name="ck_settings_currency"),
         CheckConstraint(REGIMES_CHECK, name="ck_settings_regimes"),
+        CheckConstraint("labour_rate >= 0", name="ck_settings_labour_rate"),
     )
 
     id: int = identity()
@@ -921,27 +958,39 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
         default_factory=list,
         sa_column=Column(ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")),
     )
+    #: What an hour of work costs, which prices a recipe's minutes; None until set.
+    labour_rate: Decimal | None = amount(None)
 
 
-class ProductImage(OrganizationRow, Stamped, table=True):
-    """A picture of a product: one of :data:`IMAGE_TYPES`, of at most
+class Image(OrganizationRow, Stamped, table=True):
+    """A picture of a product, one of its several, or the one picture of a
+    material or a base: one of :data:`IMAGE_TYPES`, of at most
     :data:`MAX_IMAGE_BYTES`."""
 
-    __tablename__ = "product_images"
+    __tablename__ = "images"
     __table_args__ = (
-        reference("product_images", "product_id", "products", ondelete="CASCADE"),
+        reference("images", "product_id", "products", ondelete="CASCADE"),
+        reference("images", "item_id", "items", ondelete="CASCADE"),
         CheckConstraint(
             "content_type IN ('image/gif', 'image/jpeg', 'image/png', 'image/webp')",
-            name="ck_product_images_content_type",
+            name="ck_images_content_type",
         ),
-        CheckConstraint(
-            "octet_length(content) BETWEEN 1 AND 5242880", name="ck_product_images_size"
+        CheckConstraint("octet_length(content) BETWEEN 1 AND 5242880", name="ck_images_size"),
+        CheckConstraint("num_nonnulls(product_id, item_id) = 1", name="ck_images_of"),
+        Index("ix_images_product", "organization_id", "product_id", "position"),
+        Index(
+            "uq_images_item",
+            "organization_id",
+            "item_id",
+            unique=True,
+            postgresql_where=text("item_id IS NOT NULL"),
         ),
-        Index("ix_product_images_product", "organization_id", "product_id", "position"),
     )
 
     id: int = identity()
-    product_id: int = Field(sa_type=BigInteger)
+    product_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: The material or base it pictures.
+    item_id: int | None = Field(default=None, sa_type=BigInteger)
     #: Its place among the product's images; the first shows for the product.
     position: int = 0
     content_type: str
@@ -1080,6 +1129,8 @@ class Recipe(OrganizationRow, Stamped, table=True):
     #: A ratio's ingredients total, which its parts split, and its unit.
     total: Decimal | None = amount(None)
     total_unit_id: int | None = Field(default=None, sa_type=BigInteger)
+    #: Its method, in words: shown above its lines.
+    notes: str | None = None
 
 
 class RecipeLine(OrganizationRow, Stamped, table=True):

@@ -14,11 +14,11 @@ from hoard import listings
 from hoard.channels import StoreImage, StoreProduct, StoreVariant
 from hoard.records import (
     Channel,
+    ItemStatus,
     Listing,
     Location,
     MatchedBy,
     Product,
-    ProductStatus,
     Store,
     StoreLocation,
     StoreProductCopy,
@@ -99,7 +99,7 @@ async def test_a_listing_is_matched_by_title_and_options(db: WriteSession, store
 
 async def test_a_simple_product_matches_its_one_variation_by_title(db: WriteSession, store: Store):
     _, chai = await add_product(db, Product(name="Chai"))
-    await add_product(db, Product(name="Old chai", status=ProductStatus.ARCHIVED))
+    await add_product(db, Product(name="Old chai", status=ItemStatus.ARCHIVED))
 
     [listing] = await listings.match(db, store, [_product("p1", "Chai", _variant("v1"))])
 
@@ -308,7 +308,7 @@ async def test_adopting_overwrites_matched_products_and_makes_the_others(
         ("CHAI-L", {"Size": "L"}),
     ]
     [mug] = (await db.exec(select(Product).where(Product.name == "Mug"))).all()
-    assert mug.status is ProductStatus.ARCHIVED
+    assert mug.status is ItemStatus.ARCHIVED
     [mug_variation] = (await db.exec(select(Variation).where(Variation.product_id == mug.id))).all()
     assert (mug_variation.sku, mug_variation.attributes, mug_variation.is_default) == (
         "M",

@@ -3,8 +3,7 @@
 A product sells through its variations, each an item with its own stock; a
 simple product has one, its default. Prices and average costs are sent only to
 a member who sees costs, and only theirs are taken. Images are kept by Hoard,
-one of :data:`~hoard.records.IMAGE_TYPES` and at most
-:data:`~hoard.records.MAX_IMAGE_BYTES` each.
+as :mod:`hoard.api.items` takes them.
 
 A product a synced store lists stays the store's to show: changing its name
 or status, or a listed variation's SKU or options, is written to the store
@@ -26,7 +25,6 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func
-from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -38,16 +36,14 @@ from hoard.api.settings import found, require_references
 from hoard.api.shapes import Page, PageDep
 from hoard.channels import ConnectRefused, StoreProduct, StoreVariant
 from hoard.records import (
-    IMAGE_TYPES,
-    MAX_IMAGE_BYTES,
     AutoManufacture,
     CategoryKind,
     Channel,
+    Image,
     Item,
+    ItemStatus,
     Listing,
     Product,
-    ProductImage,
-    ProductStatus,
     RecordKind,
     StockLevel,
     Store,
@@ -72,20 +68,9 @@ class ProductError(StrEnum):
 
     #: A product keeps at least one variation.
     LAST_VARIATION = "LAST_VARIATION"
-    #: Not a picture Hoard keeps: a GIF, JPEG, PNG or WebP image.
-    IMAGE_TYPE = "IMAGE_TYPE"
-    #: Larger than a product image may be.
-    IMAGE_TOO_LARGE = "IMAGE_TOO_LARGE"
     #: A synced store lists it: it is archived, or deleted in the store first.
     LISTED_IN_STORE = "LISTED_IN_STORE"
 
-
-#: How each image type's content starts, but WebP's (:func:`_is_image`).
-_SIGNATURES = {
-    "image/gif": (b"GIF87a", b"GIF89a"),
-    "image/jpeg": (b"\xff\xd8\xff",),
-    "image/png": (b"\x89PNG\r\n\x1a\n",),
-}
 
 _READ: dict[int | str, dict[str, Any]] = {
     401: {"description": "NOT_AUTHENTICATED"},
@@ -125,7 +110,7 @@ class ProductStoreProduct(StoreVersion):
 class ProductRead(BaseModel):
     id: int
     name: str
-    status: ProductStatus
+    status: ItemStatus
     category_id: int | None
     low_stock_limit: Decimal | None
     #: What is on hand of all its variations, at every location.
@@ -174,7 +159,7 @@ class ProductWrite(BaseModel):
     taken only from a member who sees costs."""
 
     name: items.Text
-    status: ProductStatus = ProductStatus.ACTIVE
+    status: ItemStatus = ItemStatus.ACTIVE
     category_id: int | None = None
     low_stock_limit: items.Amount | None = None
     default_price: items.Amount | None = None
@@ -521,69 +506,24 @@ async def delete_product_variation(product_id: int, variation_id: int, db: Write
     await db.commit()
 
 
-#: A product image's description, without its content.
-_IMAGES = sa_select(
-    col(ProductImage.id),
-    col(ProductImage.position),
-    col(ProductImage.content_type),
-    func.octet_length(col(ProductImage.content)).label("size"),
-    col(ProductImage.created_at),
-    col(ProductImage.created_by),
-)
-
-
 @router.get("/{product_id}/images", responses=_READ)
 async def list_product_images(
     product_id: int, db: OrganizationSessionDep
 ) -> list[ProductImageRead]:
     """A product's images, first to last."""
     rows = await db.execute(
-        _IMAGES.where(col(ProductImage.product_id) == product_id).order_by(
-            col(ProductImage.position), col(ProductImage.id)
+        items.IMAGES.where(col(Image.product_id) == product_id).order_by(
+            col(Image.position), col(Image.id)
         )
     )
     return [ProductImageRead.model_validate(row, from_attributes=True) for row in rows]
 
 
-def _is_image(content_type: str, content: bytes) -> bool:
-    """Whether ``content`` starts as an image of ``content_type`` does."""
-    if content_type == "image/webp":
-        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
-    return content.startswith(_SIGNATURES[content_type])
-
-
-async def _image_content(request: Request) -> tuple[str, bytes]:
-    """The image the request carries and its type, or a refusal."""
-    content_type = request.headers.get("content-type", "").split(";")[0].strip().lower()
-    if content_type not in IMAGE_TYPES:
-        raise refuse(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, ProductError.IMAGE_TYPE)
-    content = bytearray()
-    async for chunk in request.stream():
-        content.extend(chunk)
-        if len(content) > MAX_IMAGE_BYTES:
-            raise refuse(status.HTTP_413_CONTENT_TOO_LARGE, ProductError.IMAGE_TOO_LARGE)
-    if not _is_image(content_type, bytes(content)):
-        raise refuse(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, ProductError.IMAGE_TYPE)
-    return content_type, bytes(content)
-
-
 @router.post(
     "/{product_id}/images",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        **_READ,
-        403: {"description": "READ_ONLY"},
-        413: {"description": "IMAGE_TOO_LARGE"},
-        415: {"description": "IMAGE_TYPE"},
-    },
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
-            },
-        }
-    },
+    responses={**_READ, 403: {"description": "READ_ONLY"}, **items.IMAGE_REFUSALS},
+    openapi_extra=items.IMAGE_BODY,
 )
 async def create_product_image(
     product_id: int, request: Request, db: WriteSessionDep
@@ -591,10 +531,10 @@ async def create_product_image(
     """Add an image after a product's others. The body is the image itself,
     sent with its own type."""
     await found(db, Product, product_id)
-    content_type, content = await _image_content(request)
-    last = select(func.max(ProductImage.position)).where(ProductImage.product_id == product_id)
+    content_type, content = await items.image_content(request)
+    last = select(func.max(Image.position)).where(Image.product_id == product_id)
     position = (await db.exec(last)).one()
-    image = ProductImage(
+    image = Image(
         organization_id=db.organization_id,
         product_id=product_id,
         position=0 if position is None else position + 1,
@@ -603,12 +543,12 @@ async def create_product_image(
     )
     db.add(image)
     await db.commit()
-    row = (await db.execute(_IMAGES.where(col(ProductImage.id) == image.id))).one()
+    row = (await db.execute(items.IMAGES.where(col(Image.id) == image.id))).one()
     return ProductImageRead.model_validate(row, from_attributes=True)
 
 
-async def _product_image(db: AsyncSession, product_id: int, image_id: int) -> ProductImage:
-    image = await found(db, ProductImage, image_id)
+async def _product_image(db: AsyncSession, product_id: int, image_id: int) -> Image:
+    image = await found(db, Image, image_id)
     if image.product_id != product_id:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
     return image
@@ -625,9 +565,7 @@ async def read_product_image(
     """The image itself."""
     image = await _product_image(db, product_id, image_id)
     return Response(
-        content=image.content,
-        media_type=image.content_type,
-        headers={"Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff"},
+        content=image.content, media_type=image.content_type, headers=items.IMAGE_HEADERS
     )
 
 

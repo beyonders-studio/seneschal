@@ -113,7 +113,13 @@ async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
     valuation = (await client.get("/api/v1/reports/valuation")).json()
     exported = await export("bases", format="json")
 
-    assert moved["item"] == {"id": spice.id, "kind": "base", "name": "Chai spice", "attributes": {}}
+    assert moved["item"] == {
+        "id": spice.id,
+        "kind": "base",
+        "name": "Chai spice",
+        "attributes": {},
+        "archived": False,
+    }
     assert (page["on_hand"], page["average_cost"]) == ("40.000000", "2.000000")
     assert counted.status_code == 201, counted.text
     assert [row["item"]["id"] for row in counted.json()["rows"]] == [spice.id]
@@ -124,3 +130,52 @@ async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
         ("base", "Chai spice", "80.000000")
     ]
     assert [row["name"] for row in exported.json()] == ["Chai spice"]
+
+
+async def test_an_archived_base_leaves_lists_and_pickers_and_keeps_its_history(
+    client, sign_in, db: WriteSession, main: Location, unit: Unit, base
+):
+    spice = await base("Chai spice", low_stock_limit=Decimal(100))
+    _, latte = await add_product(db, Product(name="Chai latte"))
+    recipe = await recipes.save(db, Recipe(variation_id=latte.id), [Line(spice.id, Decimal(1))])
+    await adjust(
+        db,
+        Adjustment(
+            item_id=spice.id,
+            location_id=main.id,
+            kind=AdjustmentKind.STARTING,
+            dated_on=date(2026, 11, 2),
+            change=Decimal(40),
+            unit_cost=Decimal(2),
+        ),
+    )
+    await db.commit()
+    await sign_in(client, ("costs",))
+    body = {"name": "Chai spice", "tracking_unit_id": unit.id, "low_stock_limit": "100"}
+
+    archived = await client.put(f"/api/v1/bases/{spice.id}", json=body | {"status": "archived"})
+    assert archived.json()["status"] == "archived"
+
+    def names(page: dict) -> list[str]:
+        return [row["name"] for row in page["items"]]
+
+    assert names((await client.get("/api/v1/bases")).json()) == []
+    assert names((await client.get("/api/v1/bases", params={"archived": True})).json()) == [
+        "Chai spice"
+    ]
+    [line] = (await client.get(f"/api/v1/recipes/{recipe.id}")).json()["lines"]
+    assert (line["item"]["name"], line["item"]["archived"]) == ("Chai spice", True)
+    counted = await client.post(
+        "/api/v1/stocktakes", json={"kind": "base", "dated_on": "2026-11-03"}
+    )
+    assert [row["item"]["id"] for row in counted.json()["rows"]] == [spice.id]
+    valuation = (await client.get("/api/v1/reports/valuation")).json()
+    assert [row["value"] for row in valuation["items"]] == ["80.000000"]
+    assert (await client.get("/api/v1/reports/reorder")).json() == []
+
+    restored = await client.put(f"/api/v1/bases/{spice.id}", json=body)
+    assert restored.json()["status"] == "active"
+    assert names((await client.get("/api/v1/bases")).json()) == ["Chai spice"]
+    assert [row["name"] for row in (await client.get("/api/v1/reports/reorder")).json()] == [
+        "Chai spice"
+    ]

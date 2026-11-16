@@ -16,6 +16,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
         "currency": "USD",
         "auto_manufacture": "off",
         "regimes": [],
+        "labour_rate": None,
     }
 
     db.add(OrganizationSettings(organization_id=db.organization_id, currency="EUR"))
@@ -25,7 +26,12 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     # A change leaves what it does not send as it is.
     await sign_in(client, admin=True)
     changed = await client.put("/api/v1/settings", json={"auto_manufacture": "out_of_stock"})
-    assert changed.json() == {"currency": "EUR", "auto_manufacture": "out_of_stock", "regimes": []}
+    assert changed.json() == {
+        "currency": "EUR",
+        "auto_manufacture": "out_of_stock",
+        "regimes": [],
+        "labour_rate": None,
+    }
     # Regimes are kept once each, in their own order.
     ticked = await client.put(
         "/api/v1/settings", json={"regimes": ["eu_cosmetics", "us_cosmetics", "eu_cosmetics"]}
@@ -33,6 +39,36 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
     assert ticked.json()["regimes"] == ["us_cosmetics", "eu_cosmetics"]
     unknown = await client.put("/api/v1/settings", json={"regimes": ["moon_food"]})
     assert unknown.status_code == 422
+
+
+async def test_the_labour_rate_is_a_cost_an_admin_sets(client, sign_in):
+    await sign_in(client, ("costs",))
+    refused = await client.put("/api/v1/settings", json={"labour_rate": "20"})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
+
+    # An admin who doesn't see costs neither sets it nor reads it.
+    await sign_in(client, admin=True)
+    unseen = await client.put("/api/v1/settings", json={"labour_rate": "20"})
+    assert unseen.json()["labour_rate"] is None
+
+    await sign_in(client, ("costs",), admin=True)
+    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
+    rated = await client.put("/api/v1/settings", json={"labour_rate": "22.50"})
+    assert rated.json()["labour_rate"] == "22.500000"
+    negative = await client.put("/api/v1/settings", json={"labour_rate": "-1"})
+    assert negative.status_code == 422
+    kept = await client.put("/api/v1/settings", json={"currency": "CAD"})
+    assert kept.json()["labour_rate"] == "22.500000"
+
+    await sign_in(client, admin=True)
+    assert (await client.get("/api/v1/settings")).json()["labour_rate"] is None
+    await client.put("/api/v1/settings", json={"labour_rate": None})
+    await sign_in(client, ("costs",))
+    assert (await client.get("/api/v1/settings")).json()["labour_rate"] == "22.500000"
+
+    await sign_in(client, ("costs",), admin=True)
+    cleared = await client.put("/api/v1/settings", json={"labour_rate": None})
+    assert cleared.json()["labour_rate"] is None
 
 
 #: A change to each kind of setting, as a method, path and body.

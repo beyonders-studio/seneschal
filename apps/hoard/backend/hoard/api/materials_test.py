@@ -48,8 +48,8 @@ async def test_a_material_page_holds_its_stock_and_lots_at_each_location(
         "5.000000",
     )
     assert page["stock"] == [
-        {"location_id": main.id, "quantity": "10.000000"},
-        {"location_id": back.id, "quantity": "3.000000"},
+        {"location_id": main.id, "quantity": "10.000000", "bin": None},
+        {"location_id": back.id, "quantity": "3.000000", "bin": None},
     ]
     assert [(lot["location_id"], lot["balance"]) for lot in page["lots"]] == [
         (main.id, "10.000000")
@@ -157,3 +157,105 @@ async def test_standard_units_fill_in_the_conversion_and_a_tracking_unit_with_hi
     await db.commit()
     held = await client.put(f"/api/v1/materials/{catnip}", json=body())
     assert (held.status_code, held.json()) == (409, {"detail": "TRACKING_UNIT_IN_USE"})
+
+
+async def test_a_new_material_starts_with_its_notes_bin_and_stock(
+    client, sign_in, db: WriteSession, main: Location, unit: Unit
+):
+    back = Location(organization_id=db.organization_id, name="Back room")
+    db.add(back)
+    await db.commit()
+    body = {"name": "Oolong", "tracking_unit_id": unit.id, "notes": "Keep sealed"}
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+
+    made = await client.post(
+        "/api/v1/materials",
+        json=body
+        | {"start": {"quantity": "500", "unit_cost": "0.04", "bin": {"zone": "A", "section": "3"}}},
+    )
+    assert made.status_code == 201, made.text
+    page = made.json()
+    assert (page["notes"], page["status"], page["on_hand"], page["average_cost"]) == (
+        "Keep sealed",
+        "active",
+        "500.000000",
+        "0.040000",
+    )
+    assert page["stock"] == [
+        {
+            "location_id": main.id,
+            "quantity": "500.000000",
+            "bin": {"zone": "A", "section": "3", "position": None},
+        }
+    ]
+    [started] = (await client.get("/api/v1/adjustments", params={"item_id": page["id"]})).json()[
+        "items"
+    ]
+    assert (started["kind"], started["change"], started["unit_cost"]) == (
+        "starting",
+        "500.000000",
+        "0.040000",
+    )
+
+    # From a member who doesn't see costs, at another location, it costs nothing.
+    await sign_in(client)
+    elsewhere = await client.post(
+        "/api/v1/materials",
+        json=body
+        | {"name": "Sencha", "start": {"location_id": back.id, "quantity": "2", "unit_cost": "9"}},
+    )
+    assert elsewhere.json()["stock"] == [
+        {"location_id": back.id, "quantity": "2.000000", "bin": None}
+    ]
+    await sign_in(client, (plugin_manifest.SEE_COSTS,))
+    [uncosted] = (
+        await client.get("/api/v1/adjustments", params={"item_id": elsewhere.json()["id"]})
+    ).json()["items"]
+    assert (uncosted["kind"], uncosted["unit_cost"]) == ("starting", "0.000000")
+
+    # A bin with no stock is kept; a material that carries no stock starts with none.
+    binned = await client.post(
+        "/api/v1/materials",
+        json=body | {"name": "Matcha", "start": {"bin": {"position": "Top"}}},
+    )
+    assert binned.json()["stock"] == [
+        {
+            "location_id": main.id,
+            "quantity": "0",
+            "bin": {"zone": None, "section": None, "position": "Top"},
+        }
+    ]
+    refused = await client.post(
+        "/api/v1/materials",
+        json=body | {"name": "Scoop", "inventoriable": False, "start": {"quantity": "1"}},
+    )
+    assert (refused.status_code, refused.json()) == (409, {"detail": "NOT_INVENTORIABLE"})
+    listed = (await client.get("/api/v1/materials", params={"q": "scoop"})).json()
+    assert listed["total"] == 0
+
+
+async def test_an_archived_material_leaves_pickers_and_comes_back_as_it_was(
+    client, sign_in, db: WriteSession, unit: Unit, material, buy
+):
+    oolong = await material("Oolong", notes="Keep sealed")
+    purchase = await buy((oolong, "4", "2.5"))
+    await db.commit()
+    await sign_in(client)
+    body = {"name": "Oolong", "tracking_unit_id": unit.id, "notes": "Keep sealed"}
+
+    archived = await client.put(
+        f"/api/v1/materials/{oolong.id}", json=body | {"status": "archived"}
+    )
+    assert archived.json()["status"] == "archived"
+    assert (await client.get("/api/v1/materials", params={"q": "oolong"})).json()["total"] == 0
+    asked = (await client.get("/api/v1/materials", params={"archived": True})).json()
+    assert [(row["name"], row["status"]) for row in asked["items"]] == [("Oolong", "archived")]
+    bought = (await client.get(f"/api/v1/purchases/{purchase.id}")).json()
+    assert [line["material"]["archived"] for line in bought["lines"]] == [True]
+
+    restored = (await client.put(f"/api/v1/materials/{oolong.id}", json=body)).json()
+    assert (restored["status"], restored["notes"], restored["on_hand"]) == (
+        "active",
+        "Keep sealed",
+        "4.000000",
+    )

@@ -72,6 +72,7 @@ from hoard.records import (
     DefaultHoldReason,
     Hold,
     HoldReason,
+    ItemStatus,
     Listing,
     Lot,
     Material,
@@ -81,7 +82,6 @@ from hoard.records import (
     Product,
     ProductionRun,
     ProductionRunLine,
-    ProductStatus,
     Purchase,
     PurchaseLine,
     Recipe,
@@ -298,7 +298,7 @@ async def plan(db: AsyncSession, today: date) -> Plan:
         await db.exec(
             select(Variation.id, Product.cure_days)
             .join(Product, col(Product.id) == Variation.product_id)
-            .where(Product.status == ProductStatus.ACTIVE, col(Product.bundle).is_(False))
+            .where(Product.status == ItemStatus.ACTIVE, col(Product.bundle).is_(False))
         )
     ).all()
     sales = await _sales(db, today - timedelta(YEAR_DAYS + RATE_DAYS))
@@ -539,7 +539,7 @@ async def cost_to_make(call: EndpointCall) -> dict[str, Any]:
             )
             .where(
                 ProductionRun.status == RunStatus.COMPLETED,
-                Product.status == ProductStatus.ACTIVE,
+                Product.status == ItemStatus.ACTIVE,
             )
             .order_by(col(ProductionRun.completed_on).desc(), col(ProductionRun.id).desc())
         )

@@ -18,11 +18,11 @@ from hoard.records import (
     CategoryKind,
     DefaultReason,
     ItemKind,
+    ItemStatus,
     Location,
     OrganizationSettings,
     Product,
     ProductionRun,
-    ProductStatus,
     Recipe,
     RecipeLine,
     RunStatus,
@@ -69,7 +69,7 @@ async def test_a_product_is_reordered_on_its_variations_together(db: WriteSessio
     product, small = await add_product(db, Product(name="Loaf", low_stock_limit=Decimal(10)))
     large = await add_variation(db, Variation(product_id=product.id, attributes={"size": "L"}))
     await add_product(
-        db, Product(name="Bun", low_stock_limit=Decimal(5), status=ProductStatus.ARCHIVED)
+        db, Product(name="Bun", low_stock_limit=Decimal(5), status=ItemStatus.ARCHIVED)
     )
     await _start(db, small.id, main, "6")
     await _start(db, large.id, main, "6")
@@ -205,9 +205,9 @@ async def test_the_allergen_matrix_is_each_active_products_allergens(
 ):
     milk = await material("Milk", allergens=[Allergen.MILK])
     for name, status, lines in (
-        ("Latte", ProductStatus.ACTIVE, [milk.id]),
-        ("Americano", ProductStatus.ACTIVE, []),
-        ("Eggnog", ProductStatus.ARCHIVED, [milk.id]),
+        ("Latte", ItemStatus.ACTIVE, [milk.id]),
+        ("Americano", ItemStatus.ACTIVE, []),
+        ("Eggnog", ItemStatus.ARCHIVED, [milk.id]),
     ):
         _, variation = await add_product(db, Product(name=name, status=status))
         recipe = Recipe(organization_id=db.organization_id, variation_id=variation.id)

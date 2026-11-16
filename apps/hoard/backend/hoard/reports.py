@@ -49,11 +49,11 @@ from hoard.records import (
     DefaultReason,
     Item,
     ItemKind,
+    ItemStatus,
     Material,
     OrganizationSettings,
     Product,
     ProductionRun,
-    ProductStatus,
     Recipe,
     RunStatus,
     StockLevel,
@@ -117,7 +117,8 @@ def _stock():
 
 
 async def reorder(db: AsyncSession) -> list[Shortfall]:
-    """The materials, bases and products at or below their low-stock limit, by name."""
+    """The materials, bases and products at or below their low-stock limit, by
+    name; archived ones are not reordered."""
     stock = _stock()
     material_on_hand = func.coalesce(stock.c.on_hand, 0)
     materials = await db.exec(
@@ -126,6 +127,7 @@ async def reorder(db: AsyncSession) -> list[Shortfall]:
         .outerjoin(stock, stock.c.item_id == Material.id)
         .where(
             col(Material.inventoriable),
+            Material.status == ItemStatus.ACTIVE,
             col(Material.low_stock_limit).is_not(None),
             material_on_hand <= Material.low_stock_limit,
         )
@@ -135,14 +137,18 @@ async def reorder(db: AsyncSession) -> list[Shortfall]:
         select(Base, Unit.name, base_on_hand)
         .join(Unit, col(Unit.id) == Base.tracking_unit_id)
         .outerjoin(stock, stock.c.item_id == Base.id)
-        .where(col(Base.low_stock_limit).is_not(None), base_on_hand <= Base.low_stock_limit)
+        .where(
+            Base.status == ItemStatus.ACTIVE,
+            col(Base.low_stock_limit).is_not(None),
+            base_on_hand <= Base.low_stock_limit,
+        )
     )
     product_on_hand = func.coalesce(func.sum(stock.c.on_hand), 0)
     products = await db.exec(
         select(Product, product_on_hand)
         .join(Variation, col(Variation.product_id) == Product.id)
         .outerjoin(stock, stock.c.item_id == Variation.id)
-        .where(Product.status == ProductStatus.ACTIVE, col(Product.low_stock_limit).is_not(None))
+        .where(Product.status == ItemStatus.ACTIVE, col(Product.low_stock_limit).is_not(None))
         .group_by(col(Product.id))
         .having(product_on_hand <= Product.low_stock_limit)
     )
@@ -314,7 +320,7 @@ async def allergen_matrix(call: EndpointCall) -> dict[str, Any]:
         declarations = Declarations(db)
         products = await db.exec(
             select(Product)
-            .where(Product.status == ProductStatus.ACTIVE)
+            .where(Product.status == ItemStatus.ACTIVE)
             .order_by(col(Product.name), col(Product.id))
         )
         for product in products.all():

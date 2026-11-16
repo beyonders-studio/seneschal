@@ -32,12 +32,12 @@ from hoard.records import (
     HoldReason,
     Item,
     ItemKind,
+    ItemStatus,
     Lot,
     Material,
     OutboxEvent,
     Product,
     ProductionRun,
-    ProductStatus,
     Purchase,
     PurchaseLine,
     StockLevel,
@@ -280,7 +280,7 @@ async def record_if_low(db: WriteSession, item_id: int) -> None:
     """Record :attr:`EventName.STOCK_LOW` when an item's stock has just fallen
     to its low-stock limit or below: a material's or a base's own, or a
     variation's product's, counting all its variations. Each falls once until
-    its stock is above its limit again."""
+    its stock is above its limit again; an archived one never does."""
     item = await db.get_one(Item, item_id)
     if item.kind is ItemKind.VARIATION:
         variation = await db.get_one(Variation, item_id)
@@ -293,13 +293,13 @@ async def record_if_low(db: WriteSession, item_id: int) -> None:
                 )
             )
         ).one()
-        limit = product.low_stock_limit if product.status is ProductStatus.ACTIVE else None
+        limit = product.low_stock_limit if product.status is ItemStatus.ACTIVE else None
         kind, record_id, name, unit = "product", product.id, product.name, None
         was, flag = product.low_stock, update(Product).where(col(Product.id) == product.id)
     else:
         stocked = await db.get_one(Material if item.kind is ItemKind.MATERIAL else Base, item_id)
         held = await on_hand(db, item_id)
-        limit = stocked.low_stock_limit
+        limit = stocked.low_stock_limit if stocked.status is ItemStatus.ACTIVE else None
         if isinstance(stocked, Material) and not stocked.inventoriable:
             limit = None
         kind, record_id, name = item.kind.value, item_id, stocked.name

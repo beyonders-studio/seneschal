@@ -191,3 +191,57 @@ def test_the_receipts_migration_dates_each_received_line_on_its_purchase():
             lines = db.execute("SELECT received_on FROM purchase_lines ORDER BY id").fetchall()
 
     assert lines == [(date(2026, 11, 8),), (None,)]
+
+
+def test_the_base_records_migration_keeps_product_images_and_starts_items_active():
+    def migrate(made: AppDatabase) -> None:
+        upgrade(made.owner_url, made.serving_login, "0017")
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+
+            def row(sql: str, *values: object) -> int:
+                [found] = db.execute(sql, values).fetchone() or ()
+                return found
+
+            org = row(
+                "INSERT INTO organizations (community_ref, plugin_install_id) "
+                "VALUES ('pictures', 1) RETURNING id"
+            )
+            unit = row(
+                "INSERT INTO units (organization_id, name) VALUES (%s, 'g') RETURNING id", org
+            )
+            item = row(
+                "INSERT INTO items (organization_id, kind) VALUES (%s, 'material') RETURNING id",
+                org,
+            )
+            db.execute(
+                "INSERT INTO materials (id, organization_id, name, tracking_unit_id) "
+                "VALUES (%s, %s, 'Flour', %s)",
+                (item, org, unit),
+            )
+            product = row(
+                "INSERT INTO products (organization_id, name, status) "
+                "VALUES (%s, 'Loaf', 'archived') RETURNING id",
+                org,
+            )
+            db.execute(
+                "INSERT INTO product_images (organization_id, product_id, content_type, content) "
+                "VALUES (%s, %s, 'image/png', '\\x89504e47')",
+                (org, product),
+            )
+
+        upgrade(made.owner_url, made.serving_login)
+
+    with migrated_database("hoard_base_records", migrate) as made:
+        superuser = make_url(made.superuser_url).set(drivername="postgresql")
+        with psycopg.connect(superuser.render_as_string(hide_password=False)) as db:
+            images = db.execute(
+                "SELECT p.name, i.item_id, i.content_type FROM images i "
+                "JOIN products p ON p.id = i.product_id"
+            ).fetchall()
+            statuses = db.execute(
+                "SELECT m.status::text, p.status::text FROM materials m, products p"
+            ).fetchall()
+
+    assert images == [("Loaf", None, "image/png")]
+    assert statuses == [("active", "archived")]

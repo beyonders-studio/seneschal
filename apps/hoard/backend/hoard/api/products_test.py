@@ -116,7 +116,9 @@ async def test_a_product_page_holds_its_variations_stock_and_prices_only_for_cos
         ({}, True, "4.000000"),
         ({"size": "large"}, False, "0"),
     ]
-    assert page["variations"][0]["stock"] == [{"location_id": main.id, "quantity": "4.000000"}]
+    assert page["variations"][0]["stock"] == [
+        {"location_id": main.id, "quantity": "4.000000", "bin": None}
+    ]
     hidden = [page["default_price"]] + [
         v[field] for v in page["variations"] for field in ("price", "average_cost")
     ]

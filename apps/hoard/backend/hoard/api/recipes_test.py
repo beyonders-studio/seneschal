@@ -24,6 +24,7 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
             "base_id": spice.id,
             "batch_quantity": "500",
             "minutes": 20,
+            "notes": "Toast the spice, then stir in the syrup.",
             "lines": [
                 {"item_id": tea.id, "written": "300"},
                 {"item_id": syrup.id, "written": "200"},
@@ -38,6 +39,7 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
         "Chai spice",
         "1",
     )
+    assert recipe["notes"] == "Toast the spice, then stir in the syrup."
     assert [(line["item"]["name"], line["percent"]) for line in recipe["lines"]] == [
         ("Black tea", "60.00"),
         ("Syrup", "40.00"),
@@ -72,6 +74,7 @@ async def test_a_recipe_is_added_read_scaled_edited_and_removed(
         json={"batch_quantity": "250", "lines": [{"item_id": tea.id, "written": "250"}]},
     )
     assert [line["quantity"] for line in edited.json()["lines"]] == ["250.000000"]
+    assert edited.json()["notes"] is None
     of_latte = (await client.get("/api/v1/recipes", params={"product_id": latte.id})).json()
     assert [(each["output"], each["product_id"]) for each in of_latte["items"]] == [
         ("variation", latte.id)

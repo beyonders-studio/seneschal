@@ -1,10 +1,12 @@
 """Materials: what Hoard buys and never makes, and their stock per location.
 
 A material's average cost is sent only to a member who sees costs; none is
-taken, since purchases and starting stock set it (``hoard.costing``). Bought
-and tracked in standard units of one measure, its purchase conversion is
-theirs (``hoard.units``), and only otherwise the number sent. Its tracking
-unit is fixed once anything records a number in it.
+taken, since purchases and starting stock set it (``hoard.costing``), but for
+the unit cost of the stock a new material starts with. Bought and tracked in
+standard units of one measure, its purchase conversion is theirs
+(``hoard.units``), and only otherwise the number sent. Its tracking unit is
+fixed once anything records a number in it. Its bins and picture are kept
+under ``/items``. An archived material is listed only when asked for.
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found, refused_as, require_references
 from hoard.api.shapes import Page, PageDep
-from hoard.records import CategoryKind, Item, Material, RecordKind, Unit
+from hoard.records import CategoryKind, Item, ItemStatus, Material, RecordKind, Unit
 from hoard.units import UnitRefused
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 
@@ -37,7 +39,7 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "IN_USE, TRACKING_UNIT_IN_USE"},
+    409: {"description": "IN_USE, TRACKING_UNIT_IN_USE, NOT_INVENTORIABLE"},
     422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, AMOUNT_TOO_SMALL"},
 }
 
@@ -45,6 +47,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
 class MaterialRead(BaseModel):
     id: int
     name: str
+    status: ItemStatus
     sku: str | None
     inventoriable: bool
     #: The unit stock is counted in.
@@ -66,18 +69,23 @@ class MaterialRead(BaseModel):
     on_hand: Decimal
     #: The moving average cost of one tracking unit; null without ``costs``.
     average_cost: Decimal | None
+    notes: str | None
     #: What it holds of the properties people add to materials.
     properties: list[HoardPropertySummary]
 
 
 class MaterialDetail(MaterialRead, items.ItemHoldings, items.ItemStamps):
-    """A material, with its stock and lots at each location."""
+    """A material, with its stock, bin and lots at each location."""
+
+    #: Its picture's id, which reads it (``/items/{id}/picture/{picture_id}``).
+    picture_id: int | None
 
 
 class MaterialWrite(BaseModel):
     """A material as it is added, or as an edit leaves it."""
 
     name: items.Text
+    status: ItemStatus = ItemStatus.ACTIVE
     sku: items.OptionalText = None
     inventoriable: bool = True
     tracking_unit_id: int
@@ -90,6 +98,13 @@ class MaterialWrite(BaseModel):
     category_id: int | None = None
     supplier_contact_id: int | None = None
     supplier_code: items.OptionalText = None
+    notes: items.Notes | None = None
+
+
+class MaterialCreate(MaterialWrite):
+    """A material as it is added, with where it starts."""
+
+    start: items.ItemStart | None = None
 
 
 def _read(
@@ -115,7 +130,11 @@ async def _detail(db: AsyncSession, material_id: int, sees_costs: bool) -> Mater
     held = (await items.holdings(db, [material_id]))[material_id]
     values = (await values_of(db, RecordKind.MATERIAL, [material_id]))[material_id]
     return MaterialDetail.model_validate(
-        {**_read(material, item, held.on_hand, sees_costs, values), **held.model_dump()}
+        {
+            **_read(material, item, held.on_hand, sees_costs, values),
+            **held.model_dump(),
+            "picture_id": await items.picture_id(db, material_id),
+        }
     )
 
 
@@ -139,7 +158,7 @@ async def _write(db: AsyncSession, material: Material, body: MaterialWrite) -> N
     except UnitRefused as refused:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
     material.sqlmodel_update(
-        body.model_dump()
+        body.model_dump(exclude={"start"})
         | {
             "purchase_conversion": conversion or body.purchase_conversion,
             "unit_weight": None
@@ -155,9 +174,13 @@ async def list_materials(
     page: PageDep,
     sees_costs: SeesCostsDep,
     q: Annotated[str | None, Query(max_length=200)] = None,
+    archived: Annotated[bool, Query()] = False,
 ) -> Page[MaterialRead]:
-    """Materials by name: those whose name or SKU holds ``q``, when it is given."""
+    """Materials by name: those whose name or SKU holds ``q``, when it is
+    given, and archived ones only when asked for."""
     query = select(Material, Item).join(Item, col(Item.id) == col(Material.id))
+    if not archived:
+        query = query.where(Material.status == ItemStatus.ACTIVE)
     if q:
         query = query.where(
             or_(
@@ -203,11 +226,14 @@ async def read_material(
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses=_CHANGE)
 async def create_material(
-    body: MaterialWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
+    body: MaterialCreate, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> MaterialDetail:
+    """Add a material, with its bin and starting stock where it starts."""
     material = Material(name=body.name, tracking_unit_id=body.tracking_unit_id)
     await _write(db, material, body)
     await stock.add_material(db, material)
+    if body.start is not None:
+        await items.start(db, material.id, body.start, sees_costs)
     await db.commit()
     return await _detail(db, material.id, sees_costs)
 

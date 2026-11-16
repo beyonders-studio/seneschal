@@ -153,7 +153,11 @@ async def _describe(
     for item_id in set(item_ids) - described.keys():
         item = await db.get_one(Item, item_id)
         described[item_id] = AdjustmentItem(
-            id=item_id, kind=item.kind, name=await item_name(db, item_id), attributes={}
+            id=item_id,
+            kind=item.kind,
+            name=await item_name(db, item_id),
+            attributes={},
+            archived=False,
         )
     return described
 

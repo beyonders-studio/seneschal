@@ -18,11 +18,11 @@ from hoard.records import (
     CategoryKind,
     HoldEnd,
     HoldReason,
+    ItemStatus,
     Listing,
     Location,
     Product,
     ProductionRun,
-    ProductStatus,
     PropertyDefinition,
     PropertyType,
     PropertyValue,
@@ -81,19 +81,28 @@ async def test_materials_and_bases(db: WriteSession, material, base):
         "archived": False,
     }
 
-    oolong.name = "Tieguanyin"
+    oolong.name, oolong.notes, oolong.status = "Tieguanyin", "Roll gently", ItemStatus.ARCHIVED
     db.add(oolong)
-    assert (await _entry(db, "material", oolong.id) or {})["title"] == "Tieguanyin"
+    entry = await _entry(db, "material", oolong.id) or {}
+    assert (entry["title"], entry["body"], entry["archived"]) == (
+        "Tieguanyin",
+        "Camellia sinensis Roll gently Fujian",
+        True,
+    )
 
-    syrup = await base("Syrup", sku="B-1")
+    syrup = await base("Syrup", sku="B-1", notes="Stir until clear")
     await _text_property(db, RecordKind.BASE, "Cane sugar", base_id=syrup.id)
     entry = await _entry(db, "base", syrup.id)
     assert entry is not None
-    assert (entry["codes"], entry["body"], entry["path"]) == (
+    assert (entry["codes"], entry["body"], entry["path"], entry["archived"]) == (
         ["B-1"],
-        "Cane sugar",
+        "Stir until clear Cane sugar",
         f"/stock/bases/{syrup.id}",
+        False,
     )
+    syrup.status = ItemStatus.ARCHIVED
+    db.add(syrup)
+    assert (await _entry(db, "base", syrup.id) or {})["archived"] is True
 
 
 async def test_products_by_their_variations_and_store_copies(db: WriteSession):
@@ -139,7 +148,7 @@ async def test_products_by_their_variations_and_store_copies(db: WriteSession):
     db.add(copy)
     assert "Leaf House" in ((await _entry(db, "product", product.id)) or {})["body"]
 
-    product.status = ProductStatus.ARCHIVED
+    product.status = ItemStatus.ARCHIVED
     db.add(product)
     assert (await _entry(db, "product", product.id) or {})["archived"] is True
     assert [hit.title for hit in (await search.search(db, "CH-L")).items] == []
