@@ -42,6 +42,8 @@ All notable changes to Hoard are recorded here. The format follows
 - **Overhead** in Settings: a percentage added to what goods and labour cost, which suggested prices and margins count.
 - **A customer's price point.** Pick the price point a customer buys at when you make an order for them, and new lines start at its prices: its price there, else the variation's own price, else the product's default price. You can still change a line. Orders from a store keep the store's prices, and a price point is never sent to a store. Remove a price point and its customers' orders keep their prices, and new ones start at the default.
 - **A product's history** on its page: the runs that made it, its orders, its purchases, its adjustments and the stocktakes that counted it, a variation at a time; and its usage and the recipes using it.
+- **Call recipes and bases your own words.** An admin names them in Settings › Words, such as "formula" or "bill of materials" for a recipe and "blend" or "sub-assembly" for a base, and every page says it, as typed. Leave one empty and Hoard says "recipe" or "base" in your language.
+- **A crafts and assembly starting setup,** for jewellery, pins, games and merch: it calls recipes bills of materials and bases sub-assemblies, and brings Jewellery, Pins and Games as made products, Merch as bought, gift sets as a bundle, Components and Packaging as material types, and categories, units, properties and waste reasons of its own.
 
 ### Changed
 
@@ -49,6 +51,7 @@ All notable changes to Hoard are recorded here. The format follows
 - **Your units become Hoard's standard units.** A unit named like a standard one ("g", "grams", "Kg") becomes that unit, and two of yours that are the same unit become one. A material bought and tracked in standard units, such as kilograms and grams, takes their real conversion in place of the number typed in; purchases already received keep what they recorded.
 - **A tracking unit can't change once something is counted in it:** stock movements, purchases, stocktakes, recipes or runs. Before then it changes freely.
 - Starting setups no longer bring the standard units, which every community has.
+- **Every starting setup brings types.** Each adds Packaging for materials, its kinds of base where it has more than one, such as Oil blend and Fragrance blend, bought products, and a gift box or set as a bundle, with its categories defaulting to them. Cosmetics and soap calls recipes formulas.
 - **Every material, base and product takes its kind's default type,** and a page an admin laid out before this update becomes that type's page, so nothing looks different until you add types.
 - **Archived products leave the products list and the item pickers** until you ask for archived ones, as archived bases and materials do. Recipes, bundles, orders and runs that use one keep working.
 
