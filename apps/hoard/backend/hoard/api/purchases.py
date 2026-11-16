@@ -27,7 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, exists, select
 
-from hoard import events, purchases, units
+from hoard import codes, events, purchases, units
 from hoard.api.adjustments import (
     NOT_FOUND,
     NOTES,
@@ -367,11 +367,6 @@ async def _tracking(
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
 
 
-async def _next_code(db: WriteSession) -> str:
-    latest = (await db.exec(select(func.max(Purchase.id)))).one()
-    return f"P-{(latest or 0) + 1:04d}"
-
-
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
@@ -394,7 +389,7 @@ async def create_purchase(
     )
     purchase = Purchase(
         organization_id=db.organization_id,
-        code=body.code or await _next_code(db),
+        code=body.code or await codes.next_code(db, Purchase, "P"),
         dated_on=body.dated_on or date.today(),
         supplier_contact_id=body.supplier_contact_id,
         location_id=await location_or_main(db, body.location_id),

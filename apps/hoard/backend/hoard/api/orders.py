@@ -26,7 +26,7 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, exists, select
 
-from hoard import channels, holds, orders, stock
+from hoard import channels, codes, holds, orders, stock
 from hoard.api.adjustments import (
     NOT_FOUND,
     AdjustmentItem,
@@ -515,11 +515,6 @@ class OrderCreate(BaseModel):
     lines: list[OrderLineCreate] = Field(default_factory=list, max_length=500)
 
 
-async def _next_code(db: WriteSession) -> str:
-    latest = (await db.exec(select(func.max(Order.id)))).one()
-    return f"O-{(latest or 0) + 1:04d}"
-
-
 @router.post(
     "",
     status_code=status.HTTP_201_CREATED,
@@ -534,7 +529,7 @@ async def create_order(db: WriteSessionDep, session: SessionDep, body: OrderCrea
     was opened in."""
     order = Order(
         organization_id=db.organization_id,
-        code=body.code or await _next_code(db),
+        code=body.code or await codes.next_code(db, Order, "O"),
         ordered_on=body.ordered_on or date.today(),
         due_on=body.due_on,
         customer_contact_id=body.customer_contact_id,
