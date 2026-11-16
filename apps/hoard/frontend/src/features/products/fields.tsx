@@ -17,11 +17,11 @@ import { builtin, type HoardKind } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { LotsTable } from "@/features/items/lots";
 import { ProductImages } from "@/features/products/ProductImages";
 import { VariationDialog } from "@/features/products/VariationDialog";
-import { StatusBadge, useVariationName } from "@/features/products/variations";
+import { useVariationName } from "@/features/products/variations";
 import { RecipeSection } from "@/features/recipes/RecipeSection";
 import { useSettingsNames } from "@/features/settings/names";
 import { StoreSection } from "@/features/stores/StoreSection";
@@ -117,7 +117,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
     },
     builtin(
       "status",
-      "catalog:products.status",
+      "catalog:items.status",
       (product) => product.status,
       ({ item }) => <StatusBadge status={item.status} />
     ),

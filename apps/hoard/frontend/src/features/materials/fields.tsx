@@ -1,13 +1,16 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 import type { MaterialDetail, MaterialRead } from "@/api/generated/hoard.schemas";
+import { getReadMaterialQueryKey } from "@/api/generated/materials/materials";
 import { useSupplierNames } from "@/features/contacts/SupplierPicker";
 import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
+import { ItemPicture } from "@/features/items/ItemPicture";
 import { LotsTable } from "@/features/items/lots";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMoney } from "@/lib/money";
@@ -76,8 +79,22 @@ const AverageCost = ({ item }: Shown) => {
   );
 };
 
+/** Reads a material again once something on its page changed it. */
+const useRefetch = (item: MaterialDetail) => {
+  const queryClient = useQueryClient();
+  return () => void queryClient.invalidateQueries({ queryKey: getReadMaterialQueryKey(item.id) });
+};
+
 const Stock = ({ item }: { item: MaterialDetail }) => (
-  <StockTable stock={item.stock} unit={useSettingsNames().unit(item.tracking_unit_id)} />
+  <StockTable
+    stock={item.stock}
+    unit={useSettingsNames().unit(item.tracking_unit_id)}
+    bins={{ itemId: item.id, onChanged: useRefetch(item) }}
+  />
+);
+
+const Picture = ({ item }: { item: MaterialDetail }) => (
+  <ItemPicture item={item} onChanged={useRefetch(item)} />
 );
 
 const field = (id: string) => ({ type: "field", props: { field: id } });
@@ -95,6 +112,12 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       requireable: false,
       value: (material) => material.name,
     },
+    builtin(
+      "status",
+      "catalog:items.status",
+      (material) => material.status,
+      ({ item }) => <StatusBadge status={item.status} />
+    ),
     builtin(
       "sku",
       "hoard:common.sku",
@@ -147,6 +170,13 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
     ),
   ],
   pageFields: [
+    builtin("picture", "catalog:items.picture", (material) => material.picture_id, Picture),
+    builtin(
+      "notes",
+      "hoard:common.notes",
+      (material) => material.notes,
+      ({ item }) => item.notes && <p className="text-sm whitespace-pre-line">{item.notes}</p>
+    ),
     builtin("stock", "catalog:items.stock", (material) => material.id, Stock),
     builtin(
       "lots",
@@ -167,7 +197,7 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       ({ item }) => <DocumentsSection of="material" id={item.id} />
     ),
   ],
-  columns: ["name", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
+  columns: ["name", "status", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
   costs: new Set(["average_cost"]),
   spec: detailLayoutSpec({
     kind: "material",
@@ -189,11 +219,13 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
             "average_cost",
           ].map(field),
         }),
-        at(3, field("stock")),
-        at(4, field("lots")),
-        at(5, field("declarations")),
-        at(6, field("documents")),
-        at(7, { type: "byline" }),
+        at(3, field("picture")),
+        at(4, field("notes")),
+        at(5, field("stock")),
+        at(6, field("lots")),
+        at(7, field("declarations")),
+        at(8, field("documents")),
+        at(9, { type: "byline" }),
       ],
       side: [at(2, { type: "section", children: [{ type: "properties" }] })],
     },

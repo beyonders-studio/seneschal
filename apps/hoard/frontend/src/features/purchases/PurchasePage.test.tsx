@@ -7,7 +7,7 @@ import { openSignedIn, signedIn } from "@/testing";
 
 const line = (overrides: Partial<PurchaseLineRead> = {}): PurchaseLineRead => ({
   id: 9,
-  material: { id: 3, kind: "material", name: "Flour", attributes: {} },
+  material: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
   sku: "FL-1",
   category_id: 2,
   purchase_quantity: "1.000000",

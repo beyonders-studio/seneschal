@@ -9,15 +9,11 @@ import {
   useListProductImages,
 } from "@/api/generated/products/products";
 import { toast } from "@/components/Toaster";
+import { IMAGE_TYPES, pictureRefused } from "@/features/items/ItemPicture";
 import { errorMessage } from "@/lib/errors";
 import { useSession } from "@/session";
 import { Button } from "@/ui/button";
 import { FileDropArea } from "@/ui/file-drop";
-
-/** The pictures Hoard keeps of a product (the backend's `IMAGE_TYPES`). */
-const IMAGE_TYPES = ["image/gif", "image/jpeg", "image/png", "image/webp"];
-/** The most one picture may hold (the backend's `MAX_IMAGE_BYTES`). */
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 /** Where a product's image is read from. */
 export const imageUrl = (productId: number, imageId: number) =>
@@ -45,8 +41,8 @@ export function ProductImages({ productId, name }: { productId: number; name: st
   });
 
   const addFile = (file: File) => {
-    if (!IMAGE_TYPES.includes(file.type)) return toast.error(t("errors.IMAGE_TYPE"));
-    if (file.size > MAX_IMAGE_BYTES) return toast.error(t("errors.IMAGE_TOO_LARGE"));
+    const refused = pictureRefused(file, t);
+    if (refused) return toast.error(refused);
     add.mutate(file);
   };
 

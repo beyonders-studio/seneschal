@@ -6,7 +6,7 @@ import { openSignedIn } from "@/testing";
 
 const adjustment = (overrides: Partial<AdjustmentRead>): AdjustmentRead => ({
   id: 1,
-  item: { id: 3, kind: "material", name: "Flour", attributes: {} },
+  item: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
   location_id: 1,
   lot_id: null,
   kind: "manual",
@@ -35,7 +35,7 @@ describe("AdjustmentsPage", () => {
             adjustment({}),
             adjustment({
               id: 2,
-              item: { id: 4, kind: "variation", name: "Chai", attributes: {} },
+              item: { id: 4, kind: "variation", name: "Chai", attributes: {}, archived: false },
               order_id: 5,
             }),
           ],

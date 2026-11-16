@@ -11,7 +11,7 @@ import {
 import { LayoutsButton, RecordDetail } from "@/features/fields/records";
 import { isLow } from "@/features/items/format";
 import { ItemHeader } from "@/features/items/ItemHeader";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { MATERIALS } from "@/features/materials/fields";
 import { MaterialDialog } from "@/features/materials/MaterialDialog";
 import { errorMessage } from "@/lib/errors";
@@ -44,6 +44,7 @@ export function MaterialPage({ materialId }: { materialId: number }) {
         title={material.name}
         marks={
           <>
+            <StatusBadge status={material.status} />
             {isLow(material.on_hand, material.low_stock_limit) && <LowStockBadge />}
             {!material.inventoriable && (
               <Badge variant="outline">{t("materials.notInventoriable")}</Badge>

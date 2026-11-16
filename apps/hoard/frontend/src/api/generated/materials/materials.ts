@@ -23,6 +23,7 @@ import type {
 import type {
   HTTPValidationError,
   ListMaterialsParams,
+  MaterialCreate,
   MaterialDetail,
   MaterialWrite,
   PageMaterialRead,
@@ -49,7 +50,8 @@ const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKe
 };
 
 /**
- * Materials by name: those whose name or SKU holds ``q``, when it is given.
+ * Materials by name: those whose name or SKU holds ``q``, when it is
+ * given, and archived ones only when asked for.
  * @summary List Materials
  */
 export const listMaterials = (
@@ -95,7 +97,8 @@ export type ListMaterialsQueryResult = NonNullable<Awaited<ReturnType<typeof lis
 export type ListMaterialsQueryError = ErrorType<void | HTTPValidationError>;
 
 /**
- * Materials by name: those whose name or SKU holds ``q``, when it is given.
+ * Materials by name: those whose name or SKU holds ``q``, when it is
+ * given, and archived ones only when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -118,7 +121,8 @@ export function useListMaterials<
   queryClient?: QueryClient
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Materials by name: those whose name or SKU holds ``q``, when it is given.
+ * Materials by name: those whose name or SKU holds ``q``, when it is
+ * given, and archived ones only when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -141,7 +145,8 @@ export function useListMaterials<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Materials by name: those whose name or SKU holds ``q``, when it is given.
+ * Materials by name: those whose name or SKU holds ``q``, when it is
+ * given, and archived ones only when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -156,7 +161,8 @@ export function useListMaterials<
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
- * Materials by name: those whose name or SKU holds ``q``, when it is given.
+ * Materials by name: those whose name or SKU holds ``q``, when it is
+ * given, and archived ones only when asked for.
  * @summary List Materials
  */
 export function useListMaterials<
@@ -180,10 +186,11 @@ export function useListMaterials<
 }
 
 /**
+ * Add a material, with its bin and starting stock where it starts.
  * @summary Create Material
  */
 export const createMaterial = (
-  materialWrite: BodyType<MaterialWrite>,
+  materialCreate: BodyType<MaterialCreate>,
   options?: SecondParameter<typeof apiMutator>,
   signal?: AbortSignal
 ) => {
@@ -192,7 +199,7 @@ export const createMaterial = (
       url: `/api/v1/materials`,
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      data: materialWrite,
+      data: materialCreate,
       signal,
     },
     options
@@ -238,11 +245,14 @@ export const getCreateMaterialMutationOptions = <
 };
 
 export type CreateMaterialMutationResult = NonNullable<Awaited<ReturnType<typeof createMaterial>>>;
-export type CreateMaterialMutationBody = BodyType<MaterialWrite>;
+export type CreateMaterialMutationBody = BodyType<MaterialCreate>;
 export type CreateMaterialMutationError = ErrorType<void>;
-export type CreateMaterialMutationVariables = { data: BodyType<MaterialWrite> };
+export type CreateMaterialMutationVariables = { data: BodyType<MaterialCreate> };
 
-/** @summary Create Material */
+/**
+ * Add a material, with its bin and starting stock where it starts.
+ * @summary Create Material
+ */
 export const useCreateMaterial = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<

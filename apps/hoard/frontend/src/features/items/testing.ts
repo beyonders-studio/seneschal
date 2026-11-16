@@ -53,6 +53,8 @@ const STAMPS = {
 export const material = (fields: Partial<MaterialRead> = {}): MaterialRead => ({
   id: 5,
   name: "Oolong",
+  status: "active",
+  notes: null,
   sku: "OOL-1",
   inventoriable: true,
   tracking_unit_id: 1,
@@ -74,6 +76,7 @@ export const materialDetail = (fields: Partial<MaterialDetail> = {}): MaterialDe
   ...STAMPS,
   stock: [],
   lots: [],
+  picture_id: null,
   ...fields,
 });
 
@@ -104,6 +107,8 @@ export const productDetail = (fields: Partial<ProductDetail> = {}): ProductDetai
 export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
   id: 8,
   name: "Chai spice",
+  status: "active",
+  notes: null,
   sku: null,
   tracking_unit_id: 1,
   low_stock_limit: null,
@@ -120,5 +125,6 @@ export const baseDetail = (fields: Partial<BaseDetail> = {}): BaseDetail => ({
   ...STAMPS,
   stock: [],
   lots: [],
+  picture_id: null,
   ...fields,
 });

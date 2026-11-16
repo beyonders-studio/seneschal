@@ -35,11 +35,6 @@
     "emptyBody": "The products you sell will be here, with their variations, pictures and stock.",
     "add": "Add product",
     "edit": "Edit product",
-    "status": "Status",
-    "statuses": {
-      "active": "Active",
-      "archived": "Archived"
-    },
     "defaultPrice": "Default price",
     "usesDefaultPrice": "Default",
     "priceHint": "Leave it blank to sell it at the product's default price.",
@@ -136,6 +131,14 @@
       "add": "Add hold reason",
       "empty": "No hold reasons yet.",
       "name": "Reason"
+    },
+    "labourRate": {
+      "title": "Labour rate",
+      "description": "What an hour of work costs. Recipes cost their minutes at this rate.",
+      "perHour": "Per hour",
+      "hint": "Leave it blank to cost no labour.",
+      "unset": "Not set",
+      "saved": "Labour rate saved."
     }
   },
   "errors": {
@@ -151,7 +154,8 @@
     "LISTED_IN_STORE": "It's listed in a synced store. Archive the product instead, or delete it in the store first.",
     "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now.",
     "TRACKING_UNIT_IN_USE": "Stock, purchases, stocktakes, recipes or runs already count in this unit, so it stays. If all it has is its starting stock, delete that adjustment first.",
-    "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted."
+    "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted.",
+    "NOT_INVENTORIABLE": "That material carries no stock, so it can't start with any."
   },
   "items": {
     "stock": "Stock by location",
@@ -172,6 +176,34 @@
     "cureDays": "Cure time, in days",
     "cureDaysValue_one": "{{count}} day",
     "cureDaysValue_other": "{{count}} days",
-    "cureDaysHint": "What a run makes waits on hold, curing, this long."
+    "cureDaysHint": "What a run makes waits on hold, curing, this long.",
+    "status": "Status",
+    "statuses": {
+      "active": "Active",
+      "archived": "Archived"
+    },
+    "showArchived": "Show archived",
+    "picture": "Picture",
+    "noPicture": "No picture yet.",
+    "picturePrompt": "Drop a GIF, JPEG, PNG or WebP picture of up to 5 MB here.",
+    "pictureReplace": "Drop another picture here to replace it.",
+    "pictureOf": "{{name}}",
+    "removePicture": "Delete the picture",
+    "pictureFailed": "Couldn't change the picture.",
+    "bin": {
+      "title": "Bin",
+      "zone": "Zone",
+      "section": "Section",
+      "position": "Position",
+      "add": "Set a bin",
+      "edit": "Bin at {{location}}",
+      "hint": "Leave every part blank to clear the bin.",
+      "saveFailed": "Couldn't save the bin."
+    },
+    "start": {
+      "title": "Where it starts",
+      "quantity": "Starting stock, in {{unit}}",
+      "unitCostHint": "What one of it cost. Leave it blank if you don't know."
+    }
   }
 }

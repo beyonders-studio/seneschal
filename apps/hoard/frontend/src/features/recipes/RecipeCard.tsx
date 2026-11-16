@@ -13,6 +13,7 @@ import { toast } from "@/components/Toaster";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { useQuantity, useRatio, useShare } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { StatusBadge } from "@/features/items/ItemList";
 import { RecipeDialog } from "@/features/recipes/RecipeDialog";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
@@ -121,6 +122,7 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
           </span>
         </div>
       )}
+      {recipe.notes && <p className="text-sm whitespace-pre-line">{recipe.notes}</p>}
       {shown.lines.length === 0 ? (
         <p className="text-sm text-muted-foreground">{t("card.noLines")}</p>
       ) : (
@@ -136,7 +138,12 @@ export function RecipeCard({ recipe, heading }: { recipe: RecipeRead; heading?: 
           <TableBody>
             {shown.lines.map((line) => (
               <TableRow key={line.item.id}>
-                <TableCell>{item(line.item)}</TableCell>
+                <TableCell>
+                  <span className="inline-flex items-center gap-2">
+                    {item(line.item)}
+                    <StatusBadge status={line.item.archived ? "archived" : "active"} />
+                  </span>
+                </TableCell>
                 {!bundle && (
                   <TableCell className="text-end tabular-nums">{ratio(line.ratio)}</TableCell>
                 )}

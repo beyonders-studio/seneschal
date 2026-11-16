@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ProductStatus } from "@/api/generated/hoard.schemas";
+import { ItemStatus } from "@/api/generated/hoard.schemas";
 import {
   deleteProduct,
   getListProductsQueryKey,
@@ -13,7 +13,7 @@ import {
 import { LayoutsButton, RecordDetail } from "@/features/fields/records";
 import { isLow } from "@/features/items/format";
 import { ItemHeader } from "@/features/items/ItemHeader";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { PRODUCTS } from "@/features/products/fields";
 import { ProductDialog } from "@/features/products/ProductDialog";
 import {
@@ -21,7 +21,6 @@ import {
   useListedIn,
   useRefreshStoreProducts,
 } from "@/features/products/storeVersions";
-import { StatusBadge } from "@/features/products/variations";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
 import { StatusMessage } from "@/ui/status-message";
@@ -50,12 +49,12 @@ export function ProductPage({ productId }: { productId: number }) {
     );
   if (!product) return <p className="text-sm text-muted-foreground">{t("hoard:common.loading")}</p>;
 
-  const archived = product.status === ProductStatus.archived;
+  const archived = product.status === ItemStatus.archived;
   const archive = async () => {
     try {
       await updateProduct(product.id, {
         ...productWrite(product, seesCosts),
-        status: ProductStatus.archived,
+        status: ItemStatus.archived,
       });
     } finally {
       void queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });

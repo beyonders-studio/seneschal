@@ -19,6 +19,7 @@ import {
 import { toast } from "@/components/Toaster";
 import { today, useMovementLabels } from "@/features/adjustments/labels";
 import { ItemFacts } from "@/features/items/ItemHeader";
+import { StatusBadge } from "@/features/items/ItemList";
 import { RunDialog } from "@/features/runs/RunDialog";
 import { RunBadges } from "@/features/runs/RunsPage";
 import { errorMessage } from "@/lib/errors";
@@ -212,7 +213,12 @@ function Run({ run }: { run: RunRead }) {
         <TableBody>
           {run.lines.map((line) => (
             <TableRow key={line.id}>
-              <TableCell>{item(line.item)}</TableCell>
+              <TableCell>
+                <span className="inline-flex items-center gap-2">
+                  {item(line.item)}
+                  <StatusBadge status={line.item.archived ? "archived" : "active"} />
+                </span>
+              </TableCell>
               <TableCell className="text-right">
                 <span className="inline-flex items-center gap-2 tabular-nums">
                   {line.short && (

@@ -2,11 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import {
-  type ProductDetail,
-  ProductStatus,
-  type ProductWrite,
-} from "@/api/generated/hoard.schemas";
+import { ItemStatus, type ProductDetail, type ProductWrite } from "@/api/generated/hoard.schemas";
 import {
   createProduct,
   getListProductsQueryKey,
@@ -16,6 +12,7 @@ import {
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
+import { StatusField } from "@/features/items/ItemList";
 import {
   changedInStore,
   storeVersions,
@@ -37,7 +34,6 @@ import {
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Label } from "@/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 
 /**
  * Adding a product, or editing `product`, in a dialog. Closing it drops what
@@ -86,7 +82,7 @@ function ProductForm({
   const seesCosts = useSeesCosts();
   const { categoriesOf } = useSettingsNames();
   const [name, setName] = useState(product?.name ?? "");
-  const [status, setStatus] = useState<ProductStatus>(product?.status ?? ProductStatus.active);
+  const [status, setStatus] = useState<ItemStatus>(product?.status ?? ItemStatus.active);
   const [categoryId, setCategoryId] = useState(product?.category_id ?? null);
   const [lowStockLimit, setLowStockLimit] = useState(product?.low_stock_limit ?? "");
   const [defaultPrice, setDefaultPrice] = useState(product?.default_price ?? "");
@@ -142,20 +138,7 @@ function ProductForm({
               none={t("hoard:common.none")}
             />
           </Field>
-          <Field label={t("products.status")}>
-            <Select value={status} onValueChange={(value) => setStatus(value as ProductStatus)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(ProductStatus).map((value) => (
-                  <SelectItem key={value} value={value}>
-                    {t(`products.statuses.${value}`)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <StatusField value={status} onChange={setStatus} />
           <Field label={t("hoard:common.lowStockLimit")}>
             <Input
               inputMode="decimal"

@@ -9,7 +9,7 @@ import { BASES } from "@/features/bases/fields";
 import { LayoutsButton, RecordDetail } from "@/features/fields/records";
 import { isLow } from "@/features/items/format";
 import { ItemHeader } from "@/features/items/ItemHeader";
-import { LowStockBadge } from "@/features/items/ItemList";
+import { LowStockBadge, StatusBadge } from "@/features/items/ItemList";
 import { errorMessage } from "@/lib/errors";
 import { StatusMessage } from "@/ui/status-message";
 
@@ -36,7 +36,12 @@ export function BasePage({ baseId }: { baseId: number }) {
       <ItemHeader
         back={{ to: "/stock/bases", label: t("hoard:stock.bases") }}
         title={base.name}
-        marks={isLow(base.on_hand, base.low_stock_limit) && <LowStockBadge />}
+        marks={
+          <>
+            <StatusBadge status={base.status} />
+            {isLow(base.on_hand, base.low_stock_limit) && <LowStockBadge />}
+          </>
+        }
         onEdit={() => setEditing(true)}
         remove={() => deleteBase(baseId)}
         onRemoved={() => {

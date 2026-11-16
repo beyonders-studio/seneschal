@@ -7,7 +7,7 @@ import { openSignedIn, signedIn } from "@/testing";
 
 const SPICE = baseDetail({
   on_hand: "400.000000",
-  stock: [{ location_id: 10, quantity: "400.000000" }],
+  stock: [{ location_id: 10, quantity: "400.000000", bin: null }],
 });
 
 const RECIPE: RecipeRead = {
@@ -24,9 +24,10 @@ const RECIPE: RecipeRead = {
   batch_quantity: "500.000000",
   batches: "1",
   minutes: 20,
+  notes: "Toast the spice first.",
   lines: [
     {
-      item: { id: 5, kind: "material", name: "Black tea", attributes: {} },
+      item: { id: 5, kind: "material", name: "Black tea", attributes: {}, archived: false },
       unit_id: 1,
       written: "300.000000",
       amount: "300.000000",
@@ -36,7 +37,7 @@ const RECIPE: RecipeRead = {
       percent: "60.00",
     },
     {
-      item: { id: 9, kind: "base", name: "Syrup", attributes: {} },
+      item: { id: 9, kind: "base", name: "Syrup", attributes: {}, archived: false },
       unit_id: 1,
       written: "200.000000",
       amount: "200.000000",
@@ -66,6 +67,52 @@ describe("BasePage", () => {
     within(lines).getByText("60%");
     within(lines).getByText("40%");
     await within(stock).findByText("400 g");
+  });
+
+  it("shows its picture, notes and bins and its recipe's method, and sets a bin", async () => {
+    const asked = await openSignedIn("/stock/bases/8", signedIn(), {
+      ...SETTINGS,
+      ...recipes({
+        ...RECIPE,
+        lines: [{ ...RECIPE.lines[0], item: { ...RECIPE.lines[0].item, archived: true } }],
+      }),
+      "GET /api/v1/bases/8": {
+        status: 200,
+        data: {
+          ...SPICE,
+          notes: "Keeps a month.",
+          picture_id: 4,
+          stock: [
+            {
+              location_id: 10,
+              quantity: "400.000000",
+              bin: { zone: "A", section: "2", position: null },
+            },
+          ],
+        },
+      },
+      "PUT /api/v1/items/8/bins/10": { status: 204 },
+    });
+
+    const picture = await screen.findByRole("img", { name: "Chai spice" });
+    expect(picture.getAttribute("src")).toBe("/api/v1/items/8/picture/4");
+    screen.getByText("Keeps a month.");
+    await screen.findByText("Toast the spice first.");
+    const tea = (await screen.findByText("Black tea")).closest("tr");
+    if (!tea) throw new Error("no line");
+    within(tea).getByText("Archived");
+    await screen.findByText("A, 2");
+
+    fireEvent.click(screen.getByRole("button", { name: "Bin at Main location" }));
+    const dialog = await screen.findByRole("dialog", { name: "Bin at Main location" });
+    fireEvent.change(within(dialog).getByLabelText("Position"), { target: { value: "Top" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(asked.find((request) => request.url === "/api/v1/items/8/bins/10")?.data).toBe(
+        JSON.stringify({ zone: "A", section: "2", position: "Top" })
+      )
+    );
   });
 
   it("scales the recipe to make another quantity", async () => {

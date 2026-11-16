@@ -12,7 +12,7 @@ const lot = { id: 4, number: "L-1", expires_on: null, balance: "10.000000" };
 
 const line = (overrides: Partial<RunLineRead> = {}): RunLineRead => ({
   id: 9,
-  item: { id: 3, kind: "material", name: "Flour", attributes: {} },
+  item: { id: 3, kind: "material", name: "Flour", attributes: {}, archived: false },
   quantity: "4.000000",
   lot: null,
   assumed: false,
@@ -23,7 +23,7 @@ const line = (overrides: Partial<RunLineRead> = {}): RunLineRead => ({
 const run = (overrides: Partial<RunRead> = {}): RunRead => ({
   id: 5,
   code: "R-0005",
-  item: { id: 8, kind: "base", name: "Dough", attributes: {} },
+  item: { id: 8, kind: "base", name: "Dough", attributes: {}, archived: false },
   status: "in_progress",
   location_id: 1,
   initiative_id: 7,
@@ -129,8 +129,20 @@ describe("RunPage, before it is completed", () => {
 
 describe("RunDialog", () => {
   it("plans as much as one ingredient allows, with what is short", async () => {
-    const flour = { id: 3, kind: "material" as const, name: "Flour", attributes: {} };
-    const salt = { id: 4, kind: "material" as const, name: "Salt", attributes: {} };
+    const flour = {
+      id: 3,
+      kind: "material" as const,
+      name: "Flour",
+      attributes: {},
+      archived: false,
+    };
+    const salt = {
+      id: 4,
+      kind: "material" as const,
+      name: "Salt",
+      attributes: {},
+      archived: false,
+    };
     await openSignedIn("/production/runs", signedIn({ page: "production" }), {
       ...SETTINGS,
       "GET /api/v1/runs": { status: 200, data: { items: [], total: 0 } },

@@ -14,7 +14,8 @@ export function MaterialsPage() {
   const { t } = useTranslation("catalog");
   const navigate = useNavigate();
   const search = useItemSearch();
-  const materials = useListMaterials(search.params);
+  const [archived, setArchived] = useState(false);
+  const materials = useListMaterials({ ...search.params, ...(archived && { archived }) });
   const [adding, setAdding] = useState(false);
 
   return (
@@ -32,6 +33,7 @@ export function MaterialsPage() {
         failed={materials.isError}
         onRetry={() => void materials.refetch()}
         more={<LayoutsButton of={MATERIALS} rows={materials.data?.items ?? []} />}
+        archived={{ shown: archived, onShownChange: setArchived }}
       >
         <RecordTable of={MATERIALS} items={materials.data?.items ?? []} />
         {materials.data?.items.length === 0 && (

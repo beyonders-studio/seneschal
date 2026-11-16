@@ -10,7 +10,7 @@ const recall: TraceRecallRead = {
   traces: [
     {
       lot: { id: 3, number: "L-3" },
-      item: { id: 5, kind: "material", name: "Oolong", attributes: {} },
+      item: { id: 5, kind: "material", name: "Oolong", attributes: {}, archived: false },
       dated_on: "2026-11-01",
       steps: [
         traceStep(),
