@@ -8,6 +8,7 @@ import {
   useReadDeclaration,
   useUpdateLotDeclaration,
   useUpdateMaterialDeclaration,
+  useUpdateProductDeclaration,
 } from "@/api/generated/declarations/declarations";
 import { Allergen, type DeclarationRead, FragranceAllergen } from "@/api/generated/hoard.schemas";
 import { toast } from "@/components/Toaster";
@@ -31,10 +32,18 @@ import { Label } from "@/ui/label";
 import { listFormat, numberFormat } from "@/ui/lib/intl";
 import { Switch } from "@/ui/switch";
 
+/** A record that declares what it records of its own. */
+type Of = "material" | "product" | "lot";
+
+/** What a material or a product records of its own, each shown as a field
+ *  of its page. */
+export type Own = "ingredient_name" | "allergens" | "fragrance_allergens";
+
 /** What a material, a product or a lot declares: its allergens, ingredients and
  *  EU fragrance allergens, rolled up through recipes. A material, and a bought
- *  lot, record their own. */
-export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lot"; id: number }) {
+ *  lot, record their own here; a product records its own in the fields of
+ *  its page that show them ({@link OwnDeclaration}). */
+export function DeclarationsPanel({ of, id }: { of: Of; id: number }) {
   const { t, i18n } = useTranslation("declarations");
   const { read_only } = useSession();
   const [editing, setEditing] = useState(false);
@@ -109,16 +118,71 @@ export function DeclarationsPanel({ of, id }: { of: "material" | "product" | "lo
   );
 }
 
+/**
+ * One of what a material or a product records of its own, `own`, as a field
+ * of its page: what it records, or that nothing is, and, while Hoard may
+ * change, a button that records it. A product declares what it records while
+ * it has no recipe, whatever its page shows.
+ */
+export function OwnDeclaration({
+  of,
+  id,
+  own,
+}: {
+  of: "material" | "product";
+  id: number;
+  own: Own;
+}) {
+  const { t, i18n } = useTranslation("declarations");
+  const { read_only } = useSession();
+  const [editing, setEditing] = useState(false);
+  const declared = useReadDeclaration(of, id).data;
+  if (!declared) return null;
+  const list = (names: string[]) => listFormat(i18n.resolvedLanguage).format(names);
+  const recorded = {
+    ingredient_name: declared.ingredient_name,
+    allergens:
+      declared.recorded_allergens &&
+      (declared.recorded_allergens.length
+        ? list(declared.recorded_allergens.map((each) => t(`allergens.${each}`)))
+        : t("panel.noAllergens")),
+    fragrance_allergens:
+      declared.recorded_fragrance &&
+      (Object.keys(declared.recorded_fragrance).length
+        ? list(
+            Object.entries(declared.recorded_fragrance).map(([each, share]) =>
+              t("own.share", { name: t(`fragrances.${each}`), share })
+            )
+          )
+        : t("fragrance.none")),
+  }[own];
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-sm">
+      {recorded ? (
+        <span>{recorded}</span>
+      ) : (
+        <span className="text-muted-foreground">{t("own.unrecorded")}</span>
+      )}
+      {!read_only && (
+        <Button variant="ghost" size="sm" onClick={() => setEditing(true)}>
+          {t(`own.edits.${own}`)}
+        </Button>
+      )}
+      <Dialog open={editing} onOpenChange={setEditing}>
+        <DialogContent>
+          {editing && (
+            <DeclarationForm of={of} id={id} declared={declared} done={() => setEditing(false)} />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 /** The EU fragrance allergens past the threshold its label declares them at,
  *  leave-on or rinse-off, and the materials whose fragrance allergens nobody
  *  has recorded. */
-function FragranceDeclaration({
-  of,
-  declared,
-}: {
-  of: "material" | "product" | "lot";
-  declared: DeclarationRead;
-}) {
+function FragranceDeclaration({ of, declared }: { of: Of; declared: DeclarationRead }) {
   const { t, i18n } = useTranslation("declarations");
   const percent = numberFormat(i18n.resolvedLanguage, {
     style: "percent",
@@ -162,15 +226,15 @@ function FragranceDeclaration({
   );
 }
 
-/** A material's ingredient name, allergens and fragrance allergens, or a
- *  bought lot's own. */
+/** A material's or a product's ingredient name, allergens and fragrance
+ *  allergens, or a bought lot's own. */
 function DeclarationForm({
   of,
   id,
   declared,
   done,
 }: {
-  of: "material" | "lot";
+  of: Of;
   id: number;
   declared: DeclarationRead;
   done: () => void;
@@ -194,16 +258,17 @@ function DeclarationForm({
     onError: (error: unknown) => toast.error(errorMessage(error, t, "panel.saveFailed")),
   };
   const material = useUpdateMaterialDeclaration({ mutation: saved });
+  const product = useUpdateProductDeclaration({ mutation: saved });
   const lot = useUpdateLotDeclaration({ mutation: saved });
   const allergens = known ? Object.values(Allergen).filter((each) => chosen.has(each)) : null;
   const fragrance_allergens = fragranceKnown ? shares : null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    const data = { ingredient_name: name.trim() || null, allergens, fragrance_allergens };
     if (of === "material") {
-      material.mutate({
-        materialId: id,
-        data: { ingredient_name: name.trim() || null, allergens, fragrance_allergens },
-      });
+      material.mutate({ materialId: id, data });
+    } else if (of === "product") {
+      product.mutate({ productId: id, data });
     } else {
       lot.mutate({ lotId: id, data: { allergens, fragrance_allergens } });
     }
@@ -228,16 +293,15 @@ function DeclarationForm({
         <DialogTitle>{t("panel.title")}</DialogTitle>
       </DialogHeader>
       <DialogBody className="flex flex-col gap-4">
-        {of === "material" && (
+        {of === "product" && <p className="text-sm text-muted-foreground">{t("own.hint")}</p>}
+        {of !== "lot" && (
           <Field label={t("form.ingredientName")} hint={t("form.ingredientNameHint")}>
             <Input value={name} maxLength={200} onChange={(event) => setName(event.target.value)} />
           </Field>
         )}
         <div className="flex items-center gap-2">
           <Switch id="declares" checked={known} onCheckedChange={setKnown} />
-          <Label htmlFor="declares">
-            {of === "material" ? t("form.known") : t("form.lotKnown")}
-          </Label>
+          <Label htmlFor="declares">{of === "lot" ? t("form.lotKnown") : t("form.known")}</Label>
         </div>
         {known && (
           <fieldset className="grid grid-cols-fill-40/3 gap-2">
@@ -261,7 +325,7 @@ function DeclarationForm({
             onCheckedChange={setFragranceKnown}
           />
           <Label htmlFor="declares-fragrance">
-            {of === "material" ? t("form.fragranceKnown") : t("form.lotFragranceKnown")}
+            {of === "lot" ? t("form.lotFragranceKnown") : t("form.fragranceKnown")}
           </Label>
         </div>
         {fragranceKnown && (
@@ -299,7 +363,7 @@ function DeclarationForm({
       </DialogBody>
       <DialogFooter
         submitLabel={t("hoard:common.save")}
-        pending={material.isPending || lot.isPending}
+        pending={material.isPending || product.isPending || lot.isPending}
         pendingLabel={t("hoard:common.saving")}
       />
     </form>

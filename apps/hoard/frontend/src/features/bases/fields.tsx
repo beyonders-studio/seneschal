@@ -3,7 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getReadBaseQueryKey } from "@/api/generated/bases/bases";
 import type { BaseDetail, BaseRead } from "@/api/generated/hoard.schemas";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
-import { builtin, type HoardKind } from "@/features/fields/records";
+import { builtin, type HoardKind, shapeSpecs, typeField } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import {
@@ -20,7 +20,7 @@ import { BaseRecipe } from "@/features/recipes/BaseRecipe";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
-import { at, detailLayoutSpec } from "@/ui/layouts/detailLayout";
+import { at } from "@/ui/layouts/detailLayout";
 
 type Shown = { item: BaseRead };
 
@@ -98,6 +98,42 @@ const Picture = ({ item }: { item: BaseDetail }) => (
 
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
+/** A base's page, as the Base shape draws it. */
+const BASE = {
+  header: [],
+  main: [
+    at(1, {
+      type: "section",
+      children: [
+        "on_hand",
+        "potential",
+        "made",
+        "last_stocktake",
+        "low_stock_limit",
+        "sku",
+        "category",
+        "type",
+        "tracking_unit",
+        "cure_days",
+        "average_cost",
+      ].map(field),
+    }),
+    at(3, field("picture")),
+    at(4, field("notes")),
+    at(5, field("recipe")),
+    at(6, field("stock")),
+    at(7, field("lots")),
+    at(8, field("runs")),
+    at(9, field("adjustments")),
+    at(10, field("stocktakes")),
+    at(11, field("documents")),
+    at(12, { type: "byline" }),
+  ],
+  side: [at(2, { type: "section", children: [{ type: "properties" }] })],
+};
+
+const SHAPES = shapeSpecs("base", BASE, { base: BASE });
+
 /** Bases, as their table lists them and a base's page shows one. */
 export const BASES: HoardKind<BaseRead, BaseDetail> = {
   kind: "base",
@@ -124,6 +160,7 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       ({ item }) => item.sku
     ),
     builtin("category", "hoard:common.category", (base) => base.category_id, Category),
+    typeField(),
     builtin("on_hand", "hoard:common.onHand", (base) => base.on_hand, OnHand),
     builtin(
       "low_stock_limit",
@@ -199,43 +236,19 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       ({ item }) => <DocumentsSection of="base" id={item.id} />
     ),
   ],
-  columns: ["name", "status", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
+  columns: [
+    "name",
+    "status",
+    "sku",
+    "category",
+    "type",
+    "on_hand",
+    "low_stock_limit",
+    "average_cost",
+  ],
   costs: new Set(["average_cost"]),
-  spec: detailLayoutSpec({
-    kind: "base",
-    shipped: {
-      header: [],
-      main: [
-        at(1, {
-          type: "section",
-          children: [
-            "on_hand",
-            "potential",
-            "made",
-            "last_stocktake",
-            "low_stock_limit",
-            "sku",
-            "category",
-            "tracking_unit",
-            "cure_days",
-            "average_cost",
-          ].map(field),
-        }),
-        at(3, field("picture")),
-        at(4, field("notes")),
-        at(5, field("recipe")),
-        at(6, field("stock")),
-        at(7, field("lots")),
-        at(8, field("runs")),
-        at(9, field("adjustments")),
-        at(10, field("stocktakes")),
-        at(11, field("documents")),
-        at(12, { type: "byline" }),
-      ],
-      side: [at(2, { type: "section", children: [{ type: "properties" }] })],
-    },
-    fieldParts: ["field", "properties"],
-  }),
+  spec: SHAPES.base,
+  shapes: SHAPES,
   parts: { byline: (_node, item) => <RecordStamps record={item} /> },
   href: (base) => `/stock/bases/${base.id}`,
 };

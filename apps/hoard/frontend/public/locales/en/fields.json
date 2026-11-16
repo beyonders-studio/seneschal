@@ -17,6 +17,11 @@
     "product": "Product page",
     "lot": "Lot"
   },
+  "typePages": {
+    "material": "{{name}} material page",
+    "base": "{{name}} base page",
+    "product": "{{name}} product page"
+  },
   "pageHelp": "What a record shows on its own, and where.",
   "shipped": "This page is shown as Hoard ships it.",
   "titleHelp": "Its name heads the page, and always shows.",

@@ -11,9 +11,13 @@ import type {
 import { deleteProductVariation, getReadProductQueryKey } from "@/api/generated/products/products";
 import { toast } from "@/components/Toaster";
 import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
-import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
+import {
+  DeclarationsPanel,
+  type Own,
+  OwnDeclaration,
+} from "@/features/declarations/DeclarationsPanel";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
-import { builtin, type HoardKind } from "@/features/fields/records";
+import { builtin, type HoardKind, shapeSpecs, typeField, without } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
 import { isLow, useQuantity } from "@/features/items/format";
 import { RecordStamps, StockTable } from "@/features/items/Holdings";
@@ -32,7 +36,7 @@ import { useSession } from "@/session";
 import { Button } from "@/ui/button";
 import { ConfirmDialog } from "@/ui/confirm-dialog";
 import { DropdownMenuItem } from "@/ui/dropdown-menu";
-import { at, detailLayoutSpec } from "@/ui/layouts/detailLayout";
+import { at } from "@/ui/layouts/detailLayout";
 import { RowActionsMenu } from "@/ui/row-actions-menu";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 
@@ -102,6 +106,66 @@ const Lots = ({ item }: { item: ProductDetail }) => {
 
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
+/** What a product records of its own, each a field of its page: what it
+ *  declares while it has no recipe. */
+const OWN: Own[] = ["ingredient_name", "allergens", "fragrance_allergens"];
+
+const own = (id: Own) =>
+  builtin<ProductDetail>(
+    id,
+    `declarations:own.${id}`,
+    (product) => product.id,
+    ({ item }) => <OwnDeclaration of="product" id={item.id} own={id} />
+  );
+
+/** Everything a product's page can place, which every shape knows: what it
+ *  records of its own follows the declaration it rolls up. */
+const EVERYTHING = {
+  header: [],
+  main: [
+    at(1, {
+      type: "section",
+      children: [
+        "on_hand",
+        "low_stock_limit",
+        "category",
+        "type",
+        "default_price",
+        "cure_days",
+        "traceability_list",
+        "rinse_off",
+      ].map(field),
+    }),
+    at(3, field("images")),
+    at(4, field("variations")),
+    at(5, field("recipe")),
+    at(6, field("stock")),
+    at(7, field("lots")),
+    at(8, field("declarations")),
+    at(9, { type: "section", children: OWN.map(field) }),
+    at(10, field("documents")),
+    at(11, field("stores")),
+    at(12, field("auto_manufacture")),
+    at(13, { type: "byline" }),
+  ],
+  side: [at(2, { type: "section", children: [{ type: "properties" }] })],
+};
+
+/** Without them, an empty section stays out of the shapes that hide them. */
+const MADE = (() => {
+  const shown = without(EVERYTHING, OWN);
+  return { ...shown, main: shown.main.filter((node) => node.children?.length !== 0) };
+})();
+
+/** A product's pages by the shape of its type: Made, by its recipe; Bought
+ *  finished, its recipe hidden as well; and a Bundle, which holds no stock or
+ *  lots of its own. */
+const SHAPES = shapeSpecs("product", EVERYTHING, {
+  made: MADE,
+  bought: without(MADE, ["recipe"]),
+  bundle: without(MADE, ["stock", "lots"]),
+});
+
 /** Products, as their table lists them and a product's page shows one. */
 export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
   kind: "product",
@@ -122,6 +186,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       ({ item }) => <StatusBadge status={item.status} />
     ),
     builtin("category", "hoard:common.category", (product) => product.category_id, Category),
+    typeField(),
     builtin("on_hand", "hoard:common.onHand", (product) => product.on_hand, OnHand),
     builtin(
       "low_stock_limit",
@@ -181,6 +246,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       (product) => product.id,
       ({ item }) => <DeclarationsPanel of="product" id={item.id} />
     ),
+    ...OWN.map(own),
     builtin(
       "documents",
       "documents:section.title",
@@ -200,40 +266,10 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       ({ item }) => <AutoManufactureField product={item} />
     ),
   ],
-  columns: ["name", "status", "category", "on_hand", "low_stock_limit", "default_price"],
+  columns: ["name", "status", "category", "type", "on_hand", "low_stock_limit", "default_price"],
   costs: new Set(["default_price"]),
-  spec: detailLayoutSpec({
-    kind: "product",
-    shipped: {
-      header: [],
-      main: [
-        at(1, {
-          type: "section",
-          children: [
-            "on_hand",
-            "low_stock_limit",
-            "category",
-            "default_price",
-            "cure_days",
-            "traceability_list",
-            "rinse_off",
-          ].map(field),
-        }),
-        at(3, field("images")),
-        at(4, field("variations")),
-        at(5, field("recipe")),
-        at(6, field("stock")),
-        at(7, field("lots")),
-        at(8, field("declarations")),
-        at(9, field("documents")),
-        at(10, field("stores")),
-        at(11, field("auto_manufacture")),
-        at(12, { type: "byline" }),
-      ],
-      side: [at(2, { type: "section", children: [{ type: "properties" }] })],
-    },
-    fieldParts: ["field", "properties"],
-  }),
+  spec: SHAPES.made,
+  shapes: SHAPES,
   parts: { byline: (_node, item) => <RecordStamps record={item} /> },
   href: (product) => `/stock/products/${product.id}`,
 };

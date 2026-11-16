@@ -11,6 +11,7 @@ import { LabourRateSection } from "@/features/settings/LabourRateSection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
+import { TypesSection } from "@/features/settings/TypesSection";
 import { UnitsSection } from "@/features/settings/UnitsSection";
 import { StoresSection } from "@/features/stores/StoresSection";
 import { TrackingSection } from "@/features/tracking/TrackingSection";
@@ -28,6 +29,7 @@ function SettingsPage() {
         <LabourRateSection />
         <UnitsSection />
         <CategoriesSection />
+        <TypesSection />
         <LocationsSection />
         <ReasonsSection />
         <HoldReasonsSection />

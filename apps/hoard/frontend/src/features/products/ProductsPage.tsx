@@ -21,6 +21,7 @@ export function ProductsPage() {
     <>
       <ItemList
         search={search}
+        typed="product"
         total={products.data?.total}
         addLabel={t("products.add")}
         onAdd={() => setAdding(true)}

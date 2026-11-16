@@ -4,9 +4,13 @@ import { useTranslation } from "react-i18next";
 import type { MaterialDetail, MaterialRead } from "@/api/generated/hoard.schemas";
 import { getReadMaterialQueryKey } from "@/api/generated/materials/materials";
 import { useSupplierNames } from "@/features/contacts/SupplierPicker";
-import { DeclarationsPanel } from "@/features/declarations/DeclarationsPanel";
+import {
+  DeclarationsPanel,
+  type Own,
+  OwnDeclaration,
+} from "@/features/declarations/DeclarationsPanel";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
-import { builtin, type HoardKind } from "@/features/fields/records";
+import { builtin, type HoardKind, shapeSpecs, typeField, without } from "@/features/fields/records";
 import { isLow, useQuantity } from "@/features/items/format";
 import {
   AdjustmentsHistory,
@@ -21,7 +25,7 @@ import { LotsTable } from "@/features/items/lots";
 import { useSettingsNames } from "@/features/settings/names";
 import { useMoney } from "@/lib/money";
 import { useSeesCosts } from "@/lib/permissions";
-import { at, detailLayoutSpec } from "@/ui/layouts/detailLayout";
+import { at } from "@/ui/layouts/detailLayout";
 
 type Shown = { item: MaterialRead };
 
@@ -105,6 +109,67 @@ const Picture = ({ item }: { item: MaterialDetail }) => (
 
 const field = (id: string) => ({ type: "field", props: { field: id } });
 
+/** What a material records of its own and declares, each a field of its page. */
+const own = (id: Own, label: string) =>
+  builtin<MaterialDetail>(
+    id,
+    label,
+    (material) => material.id,
+    ({ item }) => <OwnDeclaration of="material" id={item.id} own={id} />
+  );
+
+/** A material's page as the Ingredient shape draws it: everything a material
+ *  has, which every shape knows. */
+const INGREDIENT = {
+  header: [],
+  main: [
+    at(1, {
+      type: "section",
+      children: [
+        "on_hand",
+        "last_stocktake",
+        "low_stock_limit",
+        "sku",
+        "category",
+        "type",
+        "tracking_unit",
+        "purchase_unit",
+        "unit_weight",
+        "ingredient_name",
+        "allergens",
+        "fragrance_allergens",
+        "supplier",
+        "supplier_code",
+        "average_cost",
+      ].map(field),
+    }),
+    at(3, field("picture")),
+    at(4, field("notes")),
+    at(5, field("stock")),
+    at(6, field("lots")),
+    at(7, field("declarations")),
+    at(8, field("runs")),
+    at(9, field("adjustments")),
+    at(10, field("stocktakes")),
+    at(11, field("documents")),
+    at(12, { type: "byline" }),
+  ],
+  side: [at(2, { type: "section", children: [{ type: "properties" }] })],
+};
+
+/** A material's pages by the shape of its type: Packaging, such as tins,
+ *  cards and labels, without what an ingredient declares. */
+const SHAPES = shapeSpecs("material", INGREDIENT, {
+  ingredient: INGREDIENT,
+  packaging: without(INGREDIENT, [
+    "ingredient_name",
+    "allergens",
+    "fragrance_allergens",
+    "unit_weight",
+    "declarations",
+  ]),
+});
+
 /** Materials, as their table lists them and a material's page shows one. */
 export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
   kind: "material",
@@ -131,6 +196,7 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       ({ item }) => item.sku
     ),
     builtin("category", "hoard:common.category", (material) => material.category_id, Category),
+    typeField(),
     builtin("on_hand", "hoard:common.onHand", (material) => material.on_hand, OnHand),
     builtin(
       "low_stock_limit",
@@ -189,6 +255,9 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       (material) => material.notes,
       ({ item }) => item.notes && <p className="text-sm whitespace-pre-line">{item.notes}</p>
     ),
+    own("ingredient_name", "declarations:own.ingredient_name"),
+    own("allergens", "declarations:own.allergens"),
+    own("fragrance_allergens", "declarations:own.fragrance_allergens"),
     builtin("stock", "catalog:items.stock", (material) => material.id, Stock),
     builtin(
       "lots",
@@ -227,44 +296,19 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       ({ item }) => <DocumentsSection of="material" id={item.id} />
     ),
   ],
-  columns: ["name", "status", "sku", "category", "on_hand", "low_stock_limit", "average_cost"],
+  columns: [
+    "name",
+    "status",
+    "sku",
+    "category",
+    "type",
+    "on_hand",
+    "low_stock_limit",
+    "average_cost",
+  ],
   costs: new Set(["average_cost"]),
-  spec: detailLayoutSpec({
-    kind: "material",
-    shipped: {
-      header: [],
-      main: [
-        at(1, {
-          type: "section",
-          children: [
-            "on_hand",
-            "last_stocktake",
-            "low_stock_limit",
-            "sku",
-            "category",
-            "tracking_unit",
-            "purchase_unit",
-            "unit_weight",
-            "supplier",
-            "supplier_code",
-            "average_cost",
-          ].map(field),
-        }),
-        at(3, field("picture")),
-        at(4, field("notes")),
-        at(5, field("stock")),
-        at(6, field("lots")),
-        at(7, field("declarations")),
-        at(8, field("runs")),
-        at(9, field("adjustments")),
-        at(10, field("stocktakes")),
-        at(11, field("documents")),
-        at(12, { type: "byline" }),
-      ],
-      side: [at(2, { type: "section", children: [{ type: "properties" }] })],
-    },
-    fieldParts: ["field", "properties"],
-  }),
+  spec: SHAPES.ingredient,
+  shapes: SHAPES,
   parts: { byline: (_node, item) => <RecordStamps record={item} /> },
   href: (material) => `/stock/materials/${material.id}`,
 };

@@ -1,15 +1,17 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { LayoutTemplate } from "lucide-react";
-import { type ComponentType, type ReactNode, useMemo, useRef, useState } from "react";
+import { type ComponentType, type ReactNode, useContext, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  CategoryKind,
   HoardDetailLayoutDefinitionOutput,
   HoardDetailLayoutRead,
   HoardLayoutSet,
   HoardListLayoutRead,
   HoardPropertyRead,
   HoardPropertySummary,
+  HoardPropertyValueInput,
   RecordKind,
 } from "@/api/generated/hoard.schemas";
 import {
@@ -26,18 +28,33 @@ import {
   setPropertyValues,
   useListProperties,
 } from "@/api/generated/properties/properties";
+import { useListSettingsTypes } from "@/api/generated/settings/settings";
 import { toast } from "@/components/Toaster";
 import { useInitiativeFiles } from "@/features/documents/files";
+import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useIsAdmin, useSeesCosts } from "@/lib/permissions";
 import { useSession } from "@/session";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/ui/dialog";
 import { type DetailKind, DetailLayoutView, type ItemHome } from "@/ui/layouts/DetailLayoutView";
-import type { DetailLayoutSpec, StoredRegions } from "@/ui/layouts/detailLayout";
+import {
+  type DetailLayoutSpec,
+  detailLayoutSpec,
+  missingRequired,
+  propertyFilled,
+  type Region,
+  requiredKeys,
+  type StoredRegions,
+} from "@/ui/layouts/detailLayout";
 import { columnsOf } from "@/ui/layouts/draft";
-import type { FieldSaveState, ItemEdit } from "@/ui/layouts/editing";
-import { ReadField } from "@/ui/layouts/editing";
+import {
+  type FieldSaveState,
+  ItemDraftContext,
+  type ItemEdit,
+  ReadField,
+} from "@/ui/layouts/editing";
+import { FillRequiredDialog } from "@/ui/layouts/FillRequiredDialog";
 import type { ItemSaves, PropertyEnv } from "@/ui/layouts/fieldEditors";
 import {
   type FieldDef,
@@ -48,7 +65,7 @@ import {
   withDisplays,
 } from "@/ui/layouts/fields";
 import { type EditableDetail, type EditableLists, LayoutEditor } from "@/ui/layouts/LayoutEditor";
-import type { SaveLayouts } from "@/ui/layouts/layoutSet";
+import type { LayoutSet, SaveLayouts } from "@/ui/layouts/layoutSet";
 import type { LayoutNode, Parts } from "@/ui/layouts/tree";
 import type { Member, MemberId } from "@/ui/member-picker";
 import { listedValue, type PropertyDefinition } from "@/ui/properties/propertyHelpers";
@@ -57,8 +74,14 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 /** Where the words of Hoard's fields are. */
 const NAMESPACES = ["fields", "catalog", "hoard", "layouts", "recipes", "declarations"] as const;
 
-/** A record that holds properties: a material, a product or a lot. */
-export type HoardRecord = { id: number; properties: HoardPropertySummary[]; updated_at?: string };
+/** A record that holds properties: a material, a base, a product, a lot or
+ *  a run; the first three of a type, whose page is laid out on its own. */
+export type HoardRecord = {
+  id: number;
+  properties: HoardPropertySummary[];
+  updated_at?: string;
+  type_id?: number;
+};
 
 /** One kind of record, as its table lists it (`R`) and its page shows it (`I`). */
 export interface HoardKind<R extends HoardRecord, I extends R = R> {
@@ -72,12 +95,60 @@ export interface HoardKind<R extends HoardRecord, I extends R = R> {
   /** Its fields of what goods cost and sell for, which only a member who
    *  sees costs is shown. */
   costs?: ReadonlySet<string>;
-  /** Its page as shipped. */
+  /** Its page as shipped: for a kind of record laid out per type, its
+   *  default type's, which knows every part the kind's pages can place. */
   spec: DetailLayoutSpec;
+  /** For a kind laid out per type, the page each shape draws until a type's
+   *  layout is changed, by shape. */
+  shapes?: Readonly<Record<string, DetailLayoutSpec>>;
   /** Its own parts on its page, beside its fields. */
   parts?: Parts<I>;
   /** The page a record's name opens. */
   href: (item: R) => string;
+}
+
+type Regions = Record<Region, LayoutNode[]>;
+
+/** `regions` without the fields `hidden` names, wherever they are placed. */
+export const without = (regions: Regions, hidden: readonly string[]): Regions => {
+  const kept = (nodes: LayoutNode[]): LayoutNode[] =>
+    nodes
+      .filter((node) => node.type !== "field" || !hidden.includes(String(node.props?.field)))
+      .map((node) => (node.children ? { ...node, children: kept(node.children) } : node));
+  return { header: kept(regions.header), main: kept(regions.main), side: kept(regions.side) };
+};
+
+/** A kind's pages: each shape's as it ships, every one knowing what `knows`
+ *  places, so the layout editor offers every part and field the kind has. */
+export const shapeSpecs = (
+  kind: RecordKind,
+  knows: Regions,
+  shapes: Readonly<Record<string, Regions>>
+): Record<string, DetailLayoutSpec> =>
+  Object.fromEntries(
+    Object.entries(shapes).map(([shape, shipped]) => [
+      shape,
+      detailLayoutSpec({ kind, shipped, fieldParts: ["field", "properties"], knows }),
+    ])
+  );
+
+const TypeName = ({ item }: { item: { type_id: number } }) => useSettingsNames().type(item.type_id);
+
+/** A record's type, as its table lists it and its page shows it. */
+export const typeField = <R extends { type_id: number }>(): FieldDef<R> =>
+  builtin("type", "catalog:items.type", (record) => record.type_id, TypeName);
+
+/** The page a record of a kind laid out per type is drawn as until its
+ *  type's layout is changed: its type's shape's, or the kind's own. */
+function useShapeOf<R extends HoardRecord, I extends R>(
+  of: HoardKind<R, I>
+): (typeId: number | undefined) => DetailLayoutSpec {
+  const types = useListSettingsTypes().data;
+  const { shapes, spec } = of;
+  return useMemo(() => {
+    const shapeOf = new Map(types?.map((type) => [type.id, type.shape]));
+    return (typeId) => shapes?.[shapeOf.get(typeId ?? 0) ?? ""] ?? spec;
+  }, [types, shapes, spec]);
 }
 
 /** Every field of a kind's page. */
@@ -197,14 +268,28 @@ function useLayoutEnv<I>(
   );
 }
 
-/** The kind's layouts as stored: its table's, and its page's as the kit
- *  draws a stored page. */
+/** The kind's layouts as stored: its table's, and its page's, for a kind
+ *  laid out per type a type's, as the kit draws a stored page. */
 function useStoredLayouts(kind: RecordKind) {
   const { data } = useReadLayouts(kind);
   const table = data?.layouts.find((each): each is HoardListLayoutRead => each.kind === "table");
-  const page = data?.layouts.find((each): each is HoardDetailLayoutRead => each.kind !== "table");
-  return { set: data, table, page: page?.updated_at ? regionsOf(page.definition) : null };
+  const page = (typeId?: number): StoredRegions | null => {
+    const stored = data?.layouts.find(
+      (each): each is HoardDetailLayoutRead =>
+        each.kind !== "table" && (each.type_id ?? undefined) === typeId
+    );
+    return stored?.updated_at ? regionsOf(stored.definition) : null;
+  };
+  return { set: data, table, page };
 }
+
+/** A kind's layouts as the kit's editor reads them: a type's page names its
+ *  type as a task type's does. */
+const kitSet = (set: HoardLayoutSet): LayoutSet => ({
+  layouts: set.layouts.map((layout) =>
+    "type_id" in layout ? { ...layout, task_type_id: layout.type_id } : layout
+  ),
+});
 
 /** A stored part, as a tree's node. */
 const nodeOf = (
@@ -319,12 +404,19 @@ export function RecordTable<R extends HoardRecord, I extends R>({
  *  they can be changed, and what can be done with it. */
 type Home<I> = ItemHome<I, never>;
 
-/** A kind's page, as the kit draws it. */
+/** A kind's page, as the kit draws it: for a kind laid out per type, each
+ *  record's type's, drawn as `shapeOf` says until it is changed. What a
+ *  layout requires is a property, which a record fills by holding a value. */
 function detailOf<R extends HoardRecord, I extends R>(
-  of: HoardKind<R, I>
+  of: HoardKind<R, I>,
+  shapeOf: (typeId: number | undefined) => DetailLayoutSpec
 ): DetailKind<I, Home<I>, never, object, HoardPropertyRead> {
   const kind: DetailKind<I, Home<I>, never, object, HoardPropertyRead> = {
     spec: of.spec,
+    ...(of.shapes && {
+      typed: { typeOf: (item: I) => item.type_id ?? 0, spec: (item: I) => shapeOf(item.type_id) },
+    }),
+    filled: (item, key) => propertyFilled(item.properties, key),
     fields: (definitions, added) => fieldMap(pageFields(of), definitions, added),
     namespaces: NAMESPACES,
     editors: {},
@@ -367,11 +459,23 @@ function detailOf<R extends HoardRecord, I extends R>(
   return kind;
 }
 
-/** One property field's save of a record's values. */
+/** One property field's save of a record's values: into the draft, while
+ *  a record's values are asked for before a change (`FillRequiredDialog`). */
 function useValueSave<I>(kind: RecordKind, id: number, onSaved: () => void) {
   const { t } = useTranslation("fields");
+  const drafting = useContext(ItemDraftContext);
   const [state, setState] = useState<FieldSaveState>("idle");
   const last = useRef<ItemEdit<I, never> | null>(null);
+  if (drafting) {
+    return {
+      state,
+      retry: () => {},
+      save: async (edit: ItemEdit<I, never>) => {
+        drafting.edit(edit as ItemEdit<unknown, unknown>);
+        return true;
+      },
+    };
+  }
   const save = async (edit: ItemEdit<I, never>) => {
     if (!("properties" in edit)) return false;
     last.current = edit;
@@ -419,12 +523,95 @@ export function RecordDetail<R extends HoardRecord, I extends R>({
   onSaved: () => void;
 }) {
   const { read_only } = useSession();
-  const detail = useMemo(() => detailOf(of), [of]);
+  const shapeOf = useShapeOf(of);
+  const detail = useMemo(() => detailOf(of, shapeOf), [of, shapeOf]);
   const saves = savesOf(of.kind, item, onSaved);
   const { page } = useStoredLayouts(of.kind);
   const home: Home<I> = { saves, readOnly: read_only, canOpen: { tool: of.kind, id: item.id } };
-  return <DetailLayoutView detail={detail} item={item} context={home} layout={page} />;
+  return (
+    <DetailLayoutView detail={detail} item={item} context={home} layout={page(item.type_id)} />
+  );
 }
+
+/**
+ * The type a record's dialog writes, for a kind laid out per type: the one
+ * chosen; else the record's; else, for a new record, its category's default
+ * type once a category is chosen (`category`), or its kind's default.
+ *
+ * Moving `item` to another type asks first for the properties the new type's
+ * page requires that it leaves empty, each filled in a dialog (`dialog`):
+ * `move` goes ahead at once when nothing is missing, and otherwise once the
+ * dialog is filled, handing `then` the values to save with the move.
+ */
+export function useTypeChoice<R extends HoardRecord, I extends R>(
+  of: HoardKind<R, I>,
+  item: I | undefined
+) {
+  const { t } = useTranslation("layouts");
+  const names = useSettingsNames();
+  const kind = of.kind as CategoryKind;
+  const [chosen, setChosen] = useState(item?.type_id ?? null);
+  const typeId = chosen ?? names.typesOf(kind)[0]?.id ?? null;
+  const definitions = useListProperties({ kind: of.kind }).data;
+  const shapeOf = useShapeOf(of);
+  const detail = useMemo(() => detailOf(of, shapeOf), [of, shapeOf]);
+  const { page } = useStoredLayouts(of.kind);
+  const [asking, setAsking] = useState<{
+    typeId: number;
+    keys: string[];
+    then: (values: HoardPropertyValueInput[]) => void;
+  } | null>(null);
+  const move = (then: (values: HoardPropertyValueInput[]) => void) => {
+    const keys =
+      item && typeId !== null && typeId !== item.type_id
+        ? missingRequired(
+            requiredKeys(page(typeId)),
+            (key) => propertyFilled(item.properties, key),
+            definitions
+          )
+        : [];
+    if (typeId === null || keys.length === 0) then([]);
+    else setAsking({ typeId, keys, then });
+  };
+  return {
+    typeId,
+    choose: setChosen,
+    category: (categoryId: number | null) => {
+      const preferred = names
+        .categoriesOf(kind)
+        .find((each) => each.id === categoryId)?.default_type_id;
+      if (!item && preferred) setChosen(preferred);
+    },
+    /** What a write sends of it: nothing while the types load. */
+    body: typeId === null ? {} : { type_id: typeId },
+    move,
+    dialog:
+      item && asking ? (
+        <FillRequiredDialog
+          open
+          onOpenChange={(open) => !open && setAsking(null)}
+          detail={detail}
+          item={{ ...item, type_id: asking.typeId }}
+          context={{
+            saves: savesOf(of.kind, item, () => {}),
+            readOnly: false,
+            canOpen: { tool: of.kind, id: item.id },
+          }}
+          definitions={definitions}
+          keys={asking.keys}
+          title={t("required.retypeTitle", { type: names.type(asking.typeId) })}
+          onConfirm={(written) => {
+            setAsking(null);
+            asking.then(written.properties);
+          }}
+        />
+      ) : null,
+  };
+}
+
+/** Saves the values a record moved to another type was asked for. */
+export const saveMoved = (kind: RecordKind, id: number, values: HoardPropertyValueInput[]) =>
+  values.length > 0 ? setPropertyValues(kind, id, { values }) : Promise.resolve();
 
 /** For an admin, a button that opens the kit's layout editor on a kind's
  *  table, drawn with `rows`, and, given a record, on its page drawn with it. */
@@ -476,7 +663,9 @@ function Editor<R extends HoardRecord, I extends R>({
   const propertyEnv = usePropertyEnv(of.kind);
   const env = useLayoutEnv(of.href, propertyEnv);
   const { set } = useStoredLayouts(of.kind);
-  const detail = useMemo(() => detailOf(of), [of]);
+  const shapeOf = useShapeOf(of);
+  const detail = useMemo(() => detailOf(of, shapeOf), [of, shapeOf]);
+  const types = useSettingsNames().typesOf(of.kind as CategoryKind);
   // A record's page drawn with nothing to change: the editor's preview.
   const home: Home<I> = {
     saves: {
@@ -493,8 +682,21 @@ function Editor<R extends HoardRecord, I extends R>({
     try {
       for (const change of changes) {
         // A kind has one table, which it always opens on.
-        if ("save" in change) stored = await saveLayout(of.kind, change.save);
-        else if ("reset" in change) stored = await resetLayout(of.kind, change.reset);
+        if ("save" in change) {
+          const { task_type_id, ...layout } = change.save as typeof change.save & {
+            task_type_id?: number | null;
+          };
+          stored = await saveLayout(of.kind, {
+            ...layout,
+            ...(task_type_id ? { type_id: task_type_id } : {}),
+          } as Parameters<typeof saveLayout>[1]);
+        } else if ("reset" in change) {
+          stored = await resetLayout(
+            of.kind,
+            change.reset,
+            change.taskTypeId ? { type_id: change.taskTypeId } : undefined
+          );
+        }
       }
     } catch (error) {
       toast.error(errorMessage(error, t, "fields:saveFailed"));
@@ -502,7 +704,7 @@ function Editor<R extends HoardRecord, I extends R>({
     } finally {
       await queryClient.invalidateQueries({ queryKey: getReadLayoutsQueryKey(of.kind) });
     }
-    return stored;
+    return stored && kitSet(stored);
   };
   const lists: EditableLists<HoardPropertyRead> = {
     fields: (definitions, plugins) => fieldMap(of.fields, definitions, plugins),
@@ -523,10 +725,14 @@ function Editor<R extends HoardRecord, I extends R>({
       ),
     help: () => "fields:tableHelp",
   };
-  const pageLayout: EditableDetail<HoardPropertyRead> = {
-    spec: of.spec,
+  // A page per type for a kind laid out per type, each previewing the record
+  // as one of that type; one page for any other kind.
+  const pageLayout = (type?: { id: number; name: string }): EditableDetail<HoardPropertyRead> => ({
+    spec: type ? shapeOf(type.id) : of.spec,
+    taskTypeId: type?.id,
+    typeName: type?.name,
     words: {
-      name: `fields:pages.${of.kind}`,
+      name: type ? `fields:typePages.${of.kind}` : `fields:pages.${of.kind}`,
       help: "fields:pageHelp",
       shipped: "fields:shipped",
       titleHelp: "fields:titleHelp",
@@ -538,22 +744,23 @@ function Editor<R extends HoardRecord, I extends R>({
       item ? (
         <DetailLayoutView
           detail={detail}
-          item={item}
+          item={type ? { ...item, type_id: type.id } : item}
           context={home}
           layout={treeRegions(tree)}
           editing
         />
       ) : null,
-  };
+  });
+  const pages = !item ? [] : of.shapes ? types.map(pageLayout) : [pageLayout()];
   return (
     <LayoutEditor
       t={env.t}
       lists={lists}
-      details={item ? [pageLayout] : []}
+      details={pages}
       propertyEnv={propertyEnv}
-      layouts={set}
+      layouts={kitSet(set)}
       save={save}
-      initialKind={item ? of.kind : "table"}
+      initialKind={!item ? "table" : of.shapes ? `${of.kind}:${item.type_id}` : of.kind}
       metadataHref="/settings#settings-properties"
       onClose={onClose}
     />

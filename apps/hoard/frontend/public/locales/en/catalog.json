@@ -103,6 +103,46 @@
         "add": "Add product category",
         "empty": "No product categories yet.",
         "name": "Category"
+      },
+      "typeHint": "A category can name the type a record made in it takes, which can still be changed. A new default type changes no record's type.",
+      "defaultType": "Type a new record in {{name}} takes",
+      "noDefaultType": "No default type"
+    },
+    "types": {
+      "title": "Types",
+      "hint": "A type decides the page its records are shown on: which fields it shows, and where. It never changes what a record does, and a field its page hides still counts. Lay out a type's page from the page of one of its records.",
+      "material": "Material types",
+      "base": "Base types",
+      "product": "Product types",
+      "materials": {
+        "add": "Add material type",
+        "empty": "No material types yet.",
+        "name": "Type"
+      },
+      "bases": {
+        "add": "Add base type",
+        "empty": "No base types yet.",
+        "name": "Type"
+      },
+      "products": {
+        "add": "Add product type",
+        "empty": "No product types yet.",
+        "name": "Type"
+      },
+      "defaults": {
+        "material": "Ingredient",
+        "base": "Base",
+        "product": "Made"
+      },
+      "default": "Default",
+      "shape": "Page {{name}} starts from",
+      "shapes": {
+        "ingredient": "Ingredient",
+        "packaging": "Packaging",
+        "base": "Base",
+        "made": "Made",
+        "bought": "Bought",
+        "bundle": "Bundle"
       }
     },
     "locations": {
@@ -155,7 +195,9 @@
     "STORE_PRODUCT_CHANGED": "This product changed in the store since you opened it, so nothing was saved. Its newest version is shown now.",
     "TRACKING_UNIT_IN_USE": "Stock, purchases, stocktakes, recipes or runs already count in this unit, so it stays. If all it has is its starting stock, delete that adjustment first.",
     "UNIT_STANDARD": "Hoard's standard units can't be renamed or deleted.",
-    "NOT_INVENTORIABLE": "That material carries no stock, so it can't start with any."
+    "NOT_INVENTORIABLE": "That material carries no stock, so it can't start with any.",
+    "SHAPE_UNKNOWN": "That page shape isn't one Hoard ships for this kind of record.",
+    "TYPE_DEFAULT": "Each kind keeps its default type. Rename it instead."
   },
   "items": {
     "stock": "Stock by location",
@@ -208,7 +250,9 @@
     "potential": "Potential",
     "made": "Made",
     "lastStocktake": "Last stocktake",
-    "couldMake": "Could make"
+    "couldMake": "Could make",
+    "type": "Type",
+    "allTypes": "All types"
   },
   "history": {
     "runs": "Production runs",
@@ -223,5 +267,12 @@
     "expected": "Expected",
     "counted": "Counted",
     "notCounted": "Not counted yet"
+  },
+  "types": {
+    "choose": "Choose a type",
+    "search": "Search types",
+    "none": "No type is named that.",
+    "useNew": "Use “{{name}}” as a new type",
+    "addFailed": "Couldn't add that type."
   }
 }

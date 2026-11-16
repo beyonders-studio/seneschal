@@ -2,17 +2,26 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ItemStatus, type ProductDetail, type ProductWrite } from "@/api/generated/hoard.schemas";
+import {
+  type HoardPropertyValueInput,
+  ItemStatus,
+  type ProductDetail,
+  type ProductWrite,
+} from "@/api/generated/hoard.schemas";
 import {
   createProduct,
   getListProductsQueryKey,
   getReadProductQueryKey,
+  readProduct,
   updateProduct,
 } from "@/api/generated/products/products";
+import { saveMoved, useTypeChoice } from "@/features/fields/records";
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { StatusField } from "@/features/items/ItemList";
+import { TypePicker } from "@/features/items/TypePicker";
+import { PRODUCTS } from "@/features/products/fields";
 import {
   changedInStore,
   storeVersions,
@@ -91,9 +100,20 @@ function ProductForm({
   const [rinseOff, setRinseOff] = useState(product?.rinse_off ?? false);
   const listedIn = useListedIn();
   const refresh = useRefreshStoreProducts();
+  const type = useTypeChoice(PRODUCTS, product);
   const save = useMutation({
-    mutationFn: (body: ProductWrite) =>
-      product ? updateProduct(product.id, body) : createProduct(body),
+    mutationFn: async ({
+      body,
+      moved,
+    }: {
+      body: ProductWrite;
+      moved: HoardPropertyValueInput[];
+    }) => {
+      if (!product) return createProduct(body);
+      const saved = await updateProduct(product.id, body);
+      await saveMoved("product", product.id, moved);
+      return moved.length ? readProduct(product.id) : saved;
+    },
     onSuccess: async (saved) => {
       queryClient.setQueryData(getReadProductQueryKey(saved.id), saved);
       await queryClient.invalidateQueries({ queryKey: getListProductsQueryKey() });
@@ -107,7 +127,7 @@ function ProductForm({
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    save.mutate({
+    const body: ProductWrite = {
       name: name.trim(),
       status,
       category_id: categoryId,
@@ -116,8 +136,10 @@ function ProductForm({
       traceability_list: traceabilityList,
       rinse_off: rinseOff,
       ...(seesCosts ? { default_price: orNull(defaultPrice) } : {}),
+      ...type.body,
       ...(product ? { store_versions: storeVersions(product) } : {}),
-    });
+    };
+    type.move((moved) => save.mutate({ body, moved }));
   };
 
   return (
@@ -134,9 +156,15 @@ function ProductForm({
             <IdSelect
               value={categoryId}
               options={categoriesOf("product")}
-              onChange={setCategoryId}
+              onChange={(next) => {
+                setCategoryId(next);
+                type.category(next);
+              }}
               none={t("hoard:common.none")}
             />
+          </Field>
+          <Field label={t("items.type")}>
+            <TypePicker kind="product" value={type.typeId} onChange={type.choose} />
           </Field>
           <StatusField value={status} onChange={setStatus} />
           <Field label={t("hoard:common.lowStockLimit")}>
@@ -184,6 +212,7 @@ function ProductForm({
               : errorMessage(save.error, t, "products.saveFailed")}
           </p>
         )}
+        {type.dialog}
       </DialogBody>
       <DialogFooter
         submitLabel={t("hoard:common.save")}

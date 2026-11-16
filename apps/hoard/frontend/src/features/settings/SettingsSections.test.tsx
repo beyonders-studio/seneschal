@@ -24,7 +24,17 @@ const SETTINGS: Record<string, Answer> = {
   },
   "GET /api/v1/settings/categories": {
     status: 200,
-    data: [{ id: 2, kind: "material", name: "Tea", picking: "earliest_expiry" }],
+    data: [
+      { id: 2, kind: "material", name: "Tea", picking: "earliest_expiry", default_type_id: 31 },
+    ],
+  },
+  "GET /api/v1/settings/types": {
+    status: 200,
+    data: [
+      { id: 30, kind: "material", name: null, shape: "ingredient", is_default: true },
+      { id: 31, kind: "material", name: "Tins", shape: "packaging", is_default: false },
+      { id: 32, kind: "product", name: null, shape: "made", is_default: true },
+    ],
   },
   "GET /api/v1/settings/locations": {
     status: 200,
@@ -139,6 +149,57 @@ describe("Settings", () => {
         asked.find((request) => request.method === "put" && request.url === "/api/v1/settings")
           ?.data
       ).toBe(JSON.stringify({ labour_rate: "22.5" }))
+    );
+  });
+
+  it("lets an admin keep each kind's types and name a category's default type", async () => {
+    const asked = await openSignedIn("/settings", signedIn({ page: "settings", admin: true }), {
+      ...SETTINGS,
+      "POST /api/v1/settings/types": {
+        status: 201,
+        data: { id: 33, kind: "material", name: "Labels", shape: "ingredient", is_default: false },
+      },
+      "PATCH /api/v1/settings/types/31": { status: 200, data: {} },
+      "PATCH /api/v1/settings/categories/2": { status: 200, data: {} },
+    });
+
+    // Each kind's default type is named in the reader's words, and stays.
+    await screen.findByRole("button", { name: "Actions for Made" });
+    expect(screen.getAllByText("Default")).toHaveLength(2);
+    const [menu] = await screen.findAllByRole("button", { name: "Actions for Ingredient" });
+    fireEvent.keyDown(menu, { key: "Enter" });
+    await screen.findByRole("menuitem", { name: "Rename" });
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+    // Another type is added with a name, and starts from one of its kind's shapes.
+    fireEvent.click(screen.getByRole("button", { name: "Add material type" }));
+    fireEvent.change(await screen.findByLabelText("Type"), { target: { value: "Labels" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(
+        asked.find((request) => request.method === "post" && request.url?.endsWith("/types"))?.data
+      ).toBe(JSON.stringify({ kind: "material", name: "Labels" }))
+    );
+    fireEvent.click(screen.getByRole("combobox", { name: "Page Tins starts from" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Ingredient" }));
+    await waitFor(() =>
+      expect(
+        asked.find((request) => request.method === "patch" && request.url?.endsWith("/types/31"))
+          ?.data
+      ).toBe(JSON.stringify({ shape: "ingredient" }))
+    );
+
+    const preferred = screen.getByRole("combobox", { name: "Type a new record in Tea takes" });
+    within(preferred).getByText("Tins");
+    fireEvent.click(preferred);
+    fireEvent.click(await screen.findByRole("option", { name: "No default type" }));
+    await waitFor(() =>
+      expect(
+        asked.find(
+          (request) => request.method === "patch" && request.url?.endsWith("/categories/2")
+        )?.data
+      ).toBe(JSON.stringify({ default_type_id: null }))
     );
   });
 

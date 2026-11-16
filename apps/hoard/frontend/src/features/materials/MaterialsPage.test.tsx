@@ -20,6 +20,21 @@ const UNITS = {
   },
 };
 
+/** Each kind's default type, and Tins: packaging, which Tea's new materials take. */
+const TYPED = {
+  "GET /api/v1/settings/types": {
+    status: 200,
+    data: [
+      { id: 30, kind: "material", name: null, shape: "ingredient", is_default: true },
+      { id: 33, kind: "material", name: "Tins", shape: "packaging", is_default: false },
+    ],
+  },
+  "GET /api/v1/settings/categories": {
+    status: 200,
+    data: [{ id: 2, kind: "material", name: "Tea", picking: "first_in", default_type_id: 33 }],
+  },
+};
+
 const list = (...items: ReturnType<typeof material>[]) => ({
   "GET /api/v1/materials": { status: 200, data: { items, total: items.length } },
 });
@@ -186,5 +201,58 @@ describe("MaterialsPage", () => {
     const conversion = await within(dialog).findByDisplayValue("1000.000000");
     expect(conversion).toHaveProperty("disabled", true);
     within(dialog).getByText("Set by the two units.");
+  });
+
+  it("lists each material's type and filters by it", async () => {
+    const asked = await openSignedIn("/stock/materials", signedIn(), {
+      ...SETTINGS,
+      ...TYPED,
+      ...list(material(), material({ id: 6, name: "Round tin", type_id: 33 })),
+    });
+
+    const oolong = (await screen.findByRole("link", { name: "Oolong" })).closest("tr");
+    if (!oolong) throw new Error("no row");
+    await within(oolong).findByText("Ingredient");
+    fireEvent.click(screen.getByRole("combobox", { name: "Type" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Tins" }));
+
+    await waitFor(() =>
+      expect(asked.filter((request) => request.url === "/api/v1/materials").at(-1)?.params).toEqual(
+        { type_id: 33, offset: 0, limit: 50 }
+      )
+    );
+  });
+
+  it("gives a new material its category's default type, or one an admin makes there", async () => {
+    const asked = await openSignedIn("/stock/materials", signedIn({ admin: true }), {
+      ...SETTINGS,
+      ...TYPED,
+      ...list(),
+      "POST /api/v1/settings/types": {
+        status: 201,
+        data: { id: 34, kind: "material", name: "Labels", shape: "ingredient", is_default: false },
+      },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Add material" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add material" });
+    const type = within(dialog).getByRole("combobox", { name: "Type" });
+    await within(type).findByText("Ingredient");
+
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Category" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Tea" }));
+    await within(type).findByText("Tins");
+
+    fireEvent.click(type);
+    fireEvent.change(await screen.findByPlaceholderText("Search types"), {
+      target: { value: "Labels" },
+    });
+    fireEvent.click(await screen.findByRole("option", { name: "Use “Labels” as a new type" }));
+    await waitFor(() =>
+      expect(
+        asked.find(
+          (request) => request.url === "/api/v1/settings/types" && request.method === "post"
+        )?.data
+      ).toBe(JSON.stringify({ kind: "material", name: "Labels" }))
+    );
   });
 });

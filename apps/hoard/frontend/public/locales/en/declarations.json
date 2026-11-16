@@ -14,7 +14,7 @@
   },
   "form": {
     "ingredientName": "Name on ingredient lists",
-    "ingredientNameHint": "Leave it empty to use the material's name.",
+    "ingredientNameHint": "Leave it empty to use its name.",
     "known": "Its supplier declares its allergens",
     "lotKnown": "This lot's supplier declares allergens of its own",
     "allergens": "It contains",
@@ -138,5 +138,18 @@
   },
   "errors": {
     "NOT_BOUGHT": "Only a bought lot records allergens of its own."
+  },
+  "own": {
+    "ingredient_name": "Ingredient name",
+    "allergens": "Allergens",
+    "fragrance_allergens": "Fragrance allergens",
+    "unrecorded": "Not recorded",
+    "edits": {
+      "ingredient_name": "Edit ingredient name",
+      "allergens": "Edit allergens it records",
+      "fragrance_allergens": "Edit fragrance allergens it records"
+    },
+    "share": "{{name}} {{share}}%",
+    "hint": "A product declares these while it has no recipe, whatever its page shows."
   }
 }

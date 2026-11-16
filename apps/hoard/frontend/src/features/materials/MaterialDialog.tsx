@@ -3,6 +3,7 @@ import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
+  type HoardPropertyValueInput,
   ItemStatus,
   type MaterialCreate,
   type MaterialDetail,
@@ -11,16 +12,20 @@ import {
   createMaterial,
   getListMaterialsQueryKey,
   getReadMaterialQueryKey,
+  readMaterial,
   updateMaterial,
 } from "@/api/generated/materials/materials";
 import { useReadUnitConversion } from "@/api/generated/settings/settings";
 import { SupplierPicker } from "@/features/contacts/SupplierPicker";
+import { saveMoved, useTypeChoice } from "@/features/fields/records";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { StatusField } from "@/features/items/ItemList";
 import { withPicture } from "@/features/items/ItemPicture";
 import { NO_START, StartFields, startBody } from "@/features/items/start";
+import { TypePicker } from "@/features/items/TypePicker";
 import { UnitPicker } from "@/features/items/UnitPicker";
+import { MATERIALS } from "@/features/materials/fields";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
 import { useSeesCosts } from "@/lib/permissions";
@@ -81,6 +86,7 @@ function MaterialForm({
   const queryClient = useQueryClient();
   const seesCosts = useSeesCosts();
   const { units, unit, categoriesOf } = useSettingsNames();
+  const type = useTypeChoice(MATERIALS, material);
   const [name, setName] = useState(material?.name ?? "");
   const [status, setStatus] = useState<ItemStatus>(material?.status ?? ItemStatus.active);
   const [notes, setNotes] = useState(material?.notes ?? "");
@@ -101,8 +107,18 @@ function MaterialForm({
   const [supplierId, setSupplierId] = useState(material?.supplier_contact_id ?? null);
   const [supplierCode, setSupplierCode] = useState(material?.supplier_code ?? "");
   const save = useMutation({
-    mutationFn: async (body: MaterialCreate) => {
-      if (material) return updateMaterial(material.id, body);
+    mutationFn: async ({
+      body,
+      moved,
+    }: {
+      body: MaterialCreate;
+      moved: HoardPropertyValueInput[];
+    }) => {
+      if (material) {
+        const saved = await updateMaterial(material.id, body);
+        await saveMoved("material", material.id, moved);
+        return moved.length ? readMaterial(material.id) : saved;
+      }
       const made = await createMaterial(body);
       return start.picture ? withPicture(made, start.picture, t) : made;
     },
@@ -113,10 +129,15 @@ function MaterialForm({
     },
   });
 
+  const chooseCategory = (next: number | null) => {
+    setCategoryId(next);
+    type.category(next);
+  };
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (trackingUnitId === null) return;
-    save.mutate({
+    const body: MaterialCreate = {
       name: name.trim(),
       status,
       notes: orNull(notes),
@@ -130,8 +151,10 @@ function MaterialForm({
       inventoriable,
       supplier_contact_id: supplierId,
       supplier_code: orNull(supplierCode),
+      ...type.body,
       ...(material ? {} : { start: startBody(start, inventoriable, seesCosts) }),
-    });
+    };
+    type.move((moved) => save.mutate({ body, moved }));
   };
 
   return (
@@ -151,9 +174,12 @@ function MaterialForm({
             <IdSelect
               value={categoryId}
               options={categoriesOf("material")}
-              onChange={setCategoryId}
+              onChange={chooseCategory}
               none={t("hoard:common.none")}
             />
+          </Field>
+          <Field label={t("items.type")}>
+            <TypePicker kind="material" value={type.typeId} onChange={type.choose} />
           </Field>
           <Field label={t("materials.trackingUnit")}>
             <UnitPicker value={trackingUnitId} onChange={setTrackingUnitId} />
@@ -224,6 +250,7 @@ function MaterialForm({
             {errorMessage(save.error, t, "materials.saveFailed")}
           </p>
         )}
+        {type.dialog}
       </DialogBody>
       <DialogFooter
         submitLabel={t("hoard:common.save")}

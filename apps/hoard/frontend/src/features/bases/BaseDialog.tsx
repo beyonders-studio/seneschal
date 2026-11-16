@@ -6,15 +6,24 @@ import {
   createBase,
   getListBasesQueryKey,
   getReadBaseQueryKey,
+  readBase,
   updateBase,
 } from "@/api/generated/bases/bases";
-import { type BaseCreate, type BaseDetail, ItemStatus } from "@/api/generated/hoard.schemas";
+import {
+  type BaseCreate,
+  type BaseDetail,
+  type HoardPropertyValueInput,
+  ItemStatus,
+} from "@/api/generated/hoard.schemas";
+import { BASES } from "@/features/bases/fields";
+import { saveMoved, useTypeChoice } from "@/features/fields/records";
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { StatusField } from "@/features/items/ItemList";
 import { withPicture } from "@/features/items/ItemPicture";
 import { NO_START, StartFields, startBody } from "@/features/items/start";
+import { TypePicker } from "@/features/items/TypePicker";
 import { UnitPicker } from "@/features/items/UnitPicker";
 import { useSettingsNames } from "@/features/settings/names";
 import { errorMessage } from "@/lib/errors";
@@ -78,9 +87,14 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
   const [trackingUnitId, setTrackingUnitId] = useState(base?.tracking_unit_id ?? null);
   const [lowStockLimit, setLowStockLimit] = useState(base?.low_stock_limit ?? "");
   const [cureDays, setCureDays] = useState(base?.cure_days?.toString() ?? "");
+  const type = useTypeChoice(BASES, base);
   const save = useMutation({
-    mutationFn: async (body: BaseCreate) => {
-      if (base) return updateBase(base.id, body);
+    mutationFn: async ({ body, moved }: { body: BaseCreate; moved: HoardPropertyValueInput[] }) => {
+      if (base) {
+        const saved = await updateBase(base.id, body);
+        await saveMoved("base", base.id, moved);
+        return moved.length ? readBase(base.id) : saved;
+      }
       const made = await createBase(body);
       return start.picture ? withPicture(made, start.picture, t) : made;
     },
@@ -94,7 +108,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (trackingUnitId === null) return;
-    save.mutate({
+    const body: BaseCreate = {
       name: name.trim(),
       status,
       notes: orNull(notes),
@@ -103,8 +117,10 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
       tracking_unit_id: trackingUnitId,
       low_stock_limit: orNull(lowStockLimit),
       cure_days: days(cureDays),
+      ...type.body,
       ...(base ? {} : { start: startBody(start, true, seesCosts) }),
-    });
+    };
+    type.move((moved) => save.mutate({ body, moved }));
   };
 
   return (
@@ -124,9 +140,15 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
             <IdSelect
               value={categoryId}
               options={categoriesOf("base")}
-              onChange={setCategoryId}
+              onChange={(next) => {
+                setCategoryId(next);
+                type.category(next);
+              }}
               none={t("hoard:common.none")}
             />
+          </Field>
+          <Field label={t("items.type")}>
+            <TypePicker kind="base" value={type.typeId} onChange={type.choose} />
           </Field>
           <Field label={t("materials.trackingUnit")}>
             <UnitPicker value={trackingUnitId} onChange={setTrackingUnitId} />
@@ -150,6 +172,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
             {errorMessage(save.error, t, "bases.saveFailed")}
           </p>
         )}
+        {type.dialog}
       </DialogBody>
       <DialogFooter
         submitLabel={t("hoard:common.save")}

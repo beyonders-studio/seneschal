@@ -22,6 +22,7 @@ export function BasesPage() {
     <>
       <ItemList
         search={search}
+        typed="base"
         total={bases.data?.total}
         addLabel={t("bases.add")}
         onAdd={() => setAdding(true)}

@@ -6,6 +6,9 @@ import { materialDetail, SETTINGS, stockRow } from "@/features/items/testing";
 import { SEE_COSTS } from "@/lib/permissions";
 import { openSignedIn, signedIn } from "@/testing";
 
+// The type picker scrolls the option it marks into view, which jsdom can't.
+Element.prototype.scrollIntoView ??= () => {};
+
 const OOLONG = materialDetail({
   on_hand: "13.000000",
   low_stock_limit: "5.000000",
@@ -125,5 +128,124 @@ describe("MaterialPage", () => {
     fireEvent.click(within(buyer).getByRole("combobox"));
 
     await screen.findByRole("option", { name: /Bo/ });
+  });
+
+  describe("by its type", () => {
+    /** Tins: packaging, whose page asks for each tin's origin. */
+    const typed = {
+      ...opened,
+      "GET /api/v1/settings/types": {
+        status: 200,
+        data: [
+          { id: 30, kind: "material", name: null, shape: "ingredient", is_default: true },
+          { id: 33, kind: "material", name: "Tins", shape: "packaging", is_default: false },
+        ],
+      },
+      "GET /api/v1/declarations/material/5": {
+        status: 200,
+        data: {
+          records_own: true,
+          recorded_allergens: ["milk"],
+          ingredient_name: null,
+          ingredients: ["Oolong"],
+          unweighed: [],
+          allergens: ["milk"],
+          undeclared: [],
+          recorded_fragrance: null,
+          fragrance_recorded: false,
+          rinse_off: false,
+          fragrance_threshold: "0.001",
+          fragrance_shares: {},
+          fragrance_allergens: [],
+          fragrance_undeclared: ["Oolong"],
+        },
+      },
+      "GET /api/v1/properties": {
+        status: 200,
+        data: [{ id: 9, kind: "material", name: "Origin", type: "text", options: null }],
+      },
+      "GET /api/v1/layouts/material": {
+        status: 200,
+        data: {
+          layouts: [
+            {
+              kind: "table",
+              is_default: true,
+              hidden: false,
+              definition: {},
+              updated_at: null,
+            },
+            { kind: "material", type_id: 30, definition: {}, updated_at: null },
+            {
+              kind: "material",
+              type_id: 33,
+              definition: {
+                main: [{ type: "field", props: { field: "property:9", required: true } }],
+              },
+              updated_at: "2026-11-15T10:00:00Z",
+            },
+          ],
+        },
+      },
+    };
+
+    it("is drawn as its type's shape, which shows or hides what it records", async () => {
+      await openSignedIn("/stock/materials/5", signedIn(), typed);
+
+      // An ingredient shows the allergens it records, and declares them.
+      await screen.findByText("Allergens and ingredients");
+      expect(await screen.findAllByText("Milk")).toHaveLength(2);
+      screen.getByText("Ingredient name");
+      // Neither its ingredient name nor its fragrance allergens are recorded.
+      expect(screen.getAllByText("Not recorded")).toHaveLength(2);
+    });
+
+    it("hides what packaging has no use for, which it still records", async () => {
+      await openSignedIn("/stock/materials/5", signedIn(), {
+        ...typed,
+        "GET /api/v1/materials/5": {
+          status: 200,
+          data: { ...OOLONG, type_id: 33 },
+        },
+        "GET /api/v1/layouts/material": { status: 200, data: { layouts: [] } },
+      });
+
+      await screen.findByRole("heading", { name: "Oolong" });
+      await screen.findByText("Tins");
+      expect(screen.queryByText("Allergens and ingredients")).toBeNull();
+      expect(screen.queryByText("Ingredient name")).toBeNull();
+    });
+
+    it("asks for what its new type's page requires as it moves", async () => {
+      const asked = await openSignedIn("/stock/materials/5", signedIn(), {
+        ...typed,
+        "PUT /api/v1/materials/5": { status: 200, data: { ...OOLONG, type_id: 33 } },
+        "PUT /api/v1/properties/values/material/5": {
+          status: 200,
+          data: [{ ...ORIGIN, value: "Anxi" }],
+        },
+      });
+      fireEvent.click(await screen.findByRole("button", { name: "Edit" }));
+      const dialog = await screen.findByRole("dialog", { name: "Edit material" });
+      fireEvent.click(within(dialog).getByRole("combobox", { name: "Type" }));
+      fireEvent.click(await screen.findByRole("option", { name: "Tins" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+
+      const asking = await screen.findByRole("dialog", { name: "What the Tins page asks for" });
+      expect(asked.some((request) => request.method === "put")).toBe(false);
+      const origin = await within(asking).findByRole("textbox");
+      fireEvent.change(origin, { target: { value: "Anxi" } });
+      fireEvent.click(within(asking).getByRole("button", { name: "Continue" }));
+
+      await waitFor(() =>
+        expect(
+          asked.find((request) => request.url === "/api/v1/properties/values/material/5")?.data
+        ).toBe(JSON.stringify({ values: [{ property_id: 9, value: "Anxi" }] }))
+      );
+      const moved = asked.find(
+        (request) => request.method === "put" && request.url === "/api/v1/materials/5"
+      );
+      expect(JSON.parse(String(moved?.data)).type_id).toBe(33);
+    });
   });
 });
