@@ -7,7 +7,7 @@
     { "key": "oil_blend", "kind": "base", "shape": "base" },
     { "key": "fragrance_blend", "kind": "base", "shape": "base" },
     { "key": "accessory", "kind": "product", "shape": "bought" },
-    { "key": "gift_set", "kind": "product", "shape": "bundle" }
+    { "key": "gift_set", "kind": "product", "shape": "made" }
   ],
   "categories": [
     { "key": "oil_butter", "kinds": ["material"], "picking": "earliest_expiry" },

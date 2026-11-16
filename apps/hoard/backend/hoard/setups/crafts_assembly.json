@@ -9,7 +9,7 @@
     { "key": "pins", "kind": "product", "shape": "made" },
     { "key": "games", "kind": "product", "shape": "made" },
     { "key": "merch", "kind": "product", "shape": "bought" },
-    { "key": "gift_set", "kind": "product", "shape": "bundle" }
+    { "key": "gift_set", "kind": "product", "shape": "made" }
   ],
   "categories": [
     { "key": "findings", "kinds": ["material"], "picking": "first_in", "type": "component" },

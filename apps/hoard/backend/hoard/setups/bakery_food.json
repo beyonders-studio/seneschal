@@ -7,7 +7,7 @@
     { "key": "dough_batter", "kind": "base", "shape": "base" },
     { "key": "filling_frosting", "kind": "base", "shape": "base" },
     { "key": "bought", "kind": "product", "shape": "bought" },
-    { "key": "gift_box", "kind": "product", "shape": "bundle" }
+    { "key": "gift_box", "kind": "product", "shape": "made" }
   ],
   "categories": [
     { "key": "flour_grain", "kinds": ["material"], "picking": "earliest_expiry" },

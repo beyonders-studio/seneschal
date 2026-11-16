@@ -119,15 +119,13 @@ async def test_adding_an_industrys_setup_twice_changes_nothing_the_second_time(
     # Packaging and the like, which never expires, go first in, first out.
     first_in = await db.exec(select(Category.name).where(Category.picking == Picking.FIRST_IN))
     assert first_in.all()
-    # Its types: packaging, bought products and bundles among them.
+    # Its types: packaging and bought products among them.
     types = {
         name: (kind, shape)
         for name, kind, shape in await db.exec(select(ItemType.name, ItemType.kind, ItemType.shape))
     }
     assert types == {f"<types.{each.key}>": (each.kind, each.shape) for each in setup.types}
-    assert {TypeShape.PACKAGING, TypeShape.BOUGHT, TypeShape.BUNDLE} <= {
-        shape for _kind, shape in types.values()
-    }
+    assert {TypeShape.PACKAGING, TypeShape.BOUGHT} <= {shape for _kind, shape in types.values()}
     # Each category of its kind takes the type it names; one naming none takes
     # its kind's default.
     defaults = await db.exec(
