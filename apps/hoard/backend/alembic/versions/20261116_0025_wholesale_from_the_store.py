@@ -5,8 +5,8 @@ are in. Price points, each variation's price at them and each contact's go.
 Every store reads its orders again on its next reconcile, which marks those a
 company bought.
 
-Revision ID: 0024
-Revises: 0023
+Revision ID: 0025
+Revises: 0024
 """
 
 from collections.abc import Sequence
@@ -17,8 +17,8 @@ from sqlalchemy.dialects import postgresql
 
 from seneschal_core.migrations import isolate, referable, reference, stamp
 
-revision: str = "0024"
-down_revision: str | None = "0023"
+revision: str = "0025"
+down_revision: str | None = "0024"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
