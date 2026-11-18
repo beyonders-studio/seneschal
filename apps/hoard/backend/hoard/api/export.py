@@ -186,10 +186,11 @@ async def export(job: JobContext) -> JobResult:
 async def _catalogue(job: JobContext, kind: ExportKind) -> JobResult:
     """One of the catalogue's spreadsheets, with its suppliers by name."""
     await job.progress("reading")
-    async with job.plugin.database.organization_session(job.organization_id) as db:
+    async with job.plugin.database.session() as db:
         organization = await organizations.get(db, job.organization_id)
-        if organization is None:
-            raise JobError(HoardError.NOT_FOUND, retry=False)
+    if organization is None:
+        raise JobError(HoardError.NOT_FOUND, retry=False)
+    async with job.plugin.database.organization_session(job.organization_id) as db:
         try:
             content = await spreadsheets.export(
                 db, job.plugin, organization.community_ref, kind.value, job.args["sees_costs"]
