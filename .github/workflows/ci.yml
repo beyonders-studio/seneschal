@@ -1,11 +1,11 @@
 name: CI
 
-# On pull requests into dev and main, and on every push to dev. The fast checks
+# On pull requests into dev, and on every push to dev. The fast checks
 # are scripts/ci/check, which the pre-push hook also runs; the tests and the
 # image build are here alone.
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev]
   push:
     branches: [dev]
 

@@ -23,7 +23,7 @@ name: Phone apps
 # the signing jobs stay in this file and run on push alone.
 on:
   pull_request:
-    branches: [dev, main]
+    branches: [dev]
     paths:
       - "apps/*/native.json"
       - "apps/*/VERSION"

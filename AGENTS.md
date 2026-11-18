@@ -144,6 +144,7 @@ check access.
 - This repository is public: comments explain what code does, never how a
   protection could be defeated.
 - Commits: an imperative first line of 50 characters or fewer. Pull requests
-  target `dev`.
+  target `dev`, the trunk and the only long-lived branch: each app releases
+  from a tag on it (`<app>-v<version>`), so there is no `main`.
 - Python: 3.12, 4-space indentation, full type hints, ruff and ty clean.
   TypeScript: Biome clean, strict.
