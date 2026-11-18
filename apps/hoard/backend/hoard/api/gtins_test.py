@@ -110,3 +110,26 @@ async def test_a_base_and_a_variation_keep_and_show_their_gtins(
     assert found["items"] == []
     found = (await client.get("/api/v1/search/suggest", params={"q": GTIN})).json()
     assert [hit["title"] for hit in found["items"]] == ["Tea tin"]
+
+
+async def test_an_items_gtin_is_set_alone_as_a_receipt_learns_it(
+    client, sign_in, db: WriteSession, material, product
+):
+    sencha = await material("Sencha")
+    variation = await product(
+        "Tea tin",
+    )
+    await db.commit()
+    await sign_in(client)
+
+    learned = await client.put(f"/api/v1/items/{sencha.id}/gtin", json={"gtin": UPC})
+    taken = await client.put(f"/api/v1/items/{variation.id}/gtin", json={"gtin": GTIN})
+    wrong = await client.put(f"/api/v1/items/{variation.id}/gtin", json={"gtin": "12345"})
+    nothing = await client.put("/api/v1/items/999999/gtin", json={"gtin": OTHER})
+
+    assert (learned.status_code, learned.json()) == (200, {"gtin": GTIN})
+    assert (taken.status_code, taken.json()) == (409, {"detail": "GTIN_TAKEN"})
+    assert (wrong.status_code, wrong.json()) == (422, {"detail": "GTIN_INVALID"})
+    assert nothing.status_code == 404
+    page = (await client.get(f"/api/v1/materials/{sencha.id}")).json()
+    assert page["gtin"] == GTIN

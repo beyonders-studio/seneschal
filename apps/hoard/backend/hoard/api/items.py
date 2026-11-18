@@ -96,6 +96,16 @@ async def gtin_written(
     return {"gtin": gtin}
 
 
+class ItemGtin(BaseModel):
+    """An item's GTIN: 8, 12, 13 or 14 digits, kept as 14; null clears it."""
+
+    gtin: str | None = Field(default=None, max_length=14)
+
+
+class ItemGtinRead(BaseModel):
+    gtin: str | None
+
+
 class ImageError(StrEnum):
     """Why a picture was refused."""
 
@@ -592,3 +602,27 @@ async def delete_item_picture(item_id: int, db: WriteSessionDep) -> None:
     await _pictured(db, item_id)
     await db.execute(delete(Image).where(col(Image.item_id) == item_id))
     await db.commit()
+
+
+@router.put(
+    "/{item_id}/gtin",
+    responses={
+        404: {"description": "NOT_FOUND"},
+        409: {"description": "GTIN_TAKEN"},
+        422: {"description": "GTIN_INVALID"},
+    },
+)
+async def set_item_gtin(item_id: int, body: ItemGtin, db: WriteSessionDep) -> ItemGtinRead:
+    """Set a material's, a base's or a variation's GTIN alone, as a receipt
+    does that learns the GTIN on what came in."""
+    record: Material | Base | Variation | None = None
+    for model in _GTIN_HOLDERS:
+        record = await db.get(model, item_id)
+        if record is not None:
+            break
+    if record is None:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    record.sqlmodel_update(await gtin_written(db, body, record))
+    db.add(record)
+    await db.commit()
+    return ItemGtinRead(gtin=record.gtin)

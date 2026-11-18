@@ -20,7 +20,13 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HTTPValidationError, ItemBin, ItemPictureRead } from "../hoard.schemas";
+import type {
+  HTTPValidationError,
+  ItemBin,
+  ItemGtin,
+  ItemGtinRead,
+  ItemPictureRead,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType, BodyType } from "../../mutator";
@@ -455,3 +461,94 @@ export function useReadItemPicture<
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Set a material's, a base's or a variation's GTIN alone, as a receipt
+ * does that learns the GTIN on what came in.
+ * @summary Set Item Gtin
+ */
+export const setItemGtin = (
+  itemId: number,
+  itemGtin: BodyType<ItemGtin>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ItemGtinRead>(
+    {
+      url: `/api/v1/items/${itemId}/gtin`,
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      data: itemGtin,
+      signal,
+    },
+    options
+  );
+};
+
+export const getSetItemGtinMutationKey = () => ["setItemGtin"] as const;
+
+export const getSetItemGtinMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof setItemGtin>>,
+    TError,
+    SetItemGtinMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof setItemGtin>>,
+  TError,
+  SetItemGtinMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSetItemGtinMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof setItemGtin>>,
+    SetItemGtinMutationVariables
+  > = (props) => {
+    const { itemId, data } = props ?? {};
+
+    return setItemGtin(itemId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SetItemGtinMutationResult = NonNullable<Awaited<ReturnType<typeof setItemGtin>>>;
+export type SetItemGtinMutationBody = BodyType<ItemGtin>;
+export type SetItemGtinMutationError = ErrorType<void>;
+export type SetItemGtinMutationVariables = { itemId: number; data: BodyType<ItemGtin> };
+
+/**
+ * Set a material's, a base's or a variation's GTIN alone, as a receipt
+ * does that learns the GTIN on what came in.
+ * @summary Set Item Gtin
+ */
+export const useSetItemGtin = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof setItemGtin>>,
+      TError,
+      SetItemGtinMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof setItemGtin>>,
+  TError,
+  SetItemGtinMutationVariables,
+  TContext
+> => {
+  return useMutation(getSetItemGtinMutationOptions(options), queryClient);
+};

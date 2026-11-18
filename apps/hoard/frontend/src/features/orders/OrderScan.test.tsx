@@ -1,5 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   orderLine,
@@ -8,7 +8,7 @@ import {
   orderShipment,
   shipmentLine,
 } from "@/features/orders/testing";
-import { openSignedIn, signedIn } from "@/testing";
+import { cameraReads, openSignedIn, signedIn } from "@/testing";
 
 // The list scrolls the option it marks into view, which jsdom can't.
 Element.prototype.scrollIntoView ??= () => {};
@@ -20,21 +20,6 @@ const ANSWERS = {
 };
 
 const LABEL = "(01)09506000134352(10)C-1";
-
-/** A browser whose camera reads `label`, so the Scan buttons are drawn. */
-function cameraReads(label: string) {
-  vi.stubGlobal(
-    "BarcodeDetector",
-    class {
-      detect = async () => [{ rawValue: label }];
-    }
-  );
-  vi.stubGlobal("navigator", {
-    ...navigator,
-    mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
-  });
-  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
-}
 
 const lotCell = () => screen.getByRole("combobox", { name: "Lot" });
 

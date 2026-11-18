@@ -91,7 +91,14 @@
       "makes": "Makes {{quantity}} ({{batches}} batches).",
       "most": "Make the most there's enough for: {{quantity}}",
       "failed": "Hoard couldn't plan this run yet."
-    }
+    },
+    "scanLot": "Scan an input lot",
+    "scanned": "Scanned {{lot}} for {{item}}.",
+    "scanFailed": "That scan couldn't be read. Try again.",
+    "scanAmbiguous": "That label didn't read cleanly. Scan it again.",
+    "scanOnHold": "{{lot}} is on hold, so the run can't use it.",
+    "scanNotInRun": "This run doesn't use that item.",
+    "scanNoLot": "That barcode names no lot at this run's location. Scan the lot's label."
   },
   "errors": {
     "RUN_NO_RECIPE": "That has no {{recipe}} to make it from. Add one first.",

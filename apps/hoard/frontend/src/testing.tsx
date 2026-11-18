@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen } from "@testing-library/react";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
+import { vi } from "vitest";
 
 import type { JobRead, Me } from "@/api/generated/hoard.schemas";
 import { apiClient } from "@/api/mutator";
@@ -77,6 +78,22 @@ export function openPageAt(path: string) {
 export async function openPage(path: string) {
   openPageAt(path);
   await screen.findByText("Connecting to Initiative…");
+}
+
+/** A browser whose camera reads `label`, so the Scan buttons are drawn
+ *  (`@seneschal/app/scan`) and a scan reads it. */
+export function cameraReads(label: string) {
+  vi.stubGlobal(
+    "BarcodeDetector",
+    class {
+      detect = async () => [{ rawValue: label }];
+    }
+  );
+  vi.stubGlobal("navigator", {
+    ...navigator,
+    mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [] })) },
+  });
+  vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue(undefined);
 }
 
 /** Sends Initiative's handoff, as its plug-in page does. */

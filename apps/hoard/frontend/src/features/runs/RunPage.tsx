@@ -1,4 +1,5 @@
 import { FileImage } from "@seneschal/app/files";
+import { ScanButton } from "@seneschal/app/scan";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleCheck, Pencil, Play, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
@@ -17,6 +18,7 @@ import {
   useStartRun,
   useUpdateRunLine,
 } from "@/api/generated/runs/runs";
+import { scanCode } from "@/api/generated/scans/scans";
 import { toast } from "@/components/Toaster";
 import { today, useMovementLabels } from "@/features/adjustments/labels";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
@@ -99,6 +101,36 @@ function Run({ run }: { run: RunRead }) {
     void queries.invalidateQueries({ queryKey: getListRunsQueryKey() });
     void queries.invalidateQueries({ queryKey: getListAdjustmentsQueryKey() });
   };
+  /** Set the lot a scanned label names on the input line of its item. */
+  const scanInput = async (text: string) => {
+    let read: Awaited<ReturnType<typeof scanCode>>;
+    try {
+      read = await scanCode({ text, location_id: run.location_id });
+    } catch (error) {
+      toast.error(errorMessage(error, t, "runs.scanFailed"));
+      return;
+    }
+    if (read.problems.includes("ambiguous")) {
+      toast.error(t("runs.scanAmbiguous"));
+      return;
+    }
+    for (const lot of read.lots) {
+      const lines = run.lines.filter((line) => line.item.id === lot.item_id);
+      const line = lines.find((each) => each.lot?.id !== lot.id) ?? lines[0];
+      if (!line) continue;
+      if (lot.on_hold) {
+        toast.error(t("runs.scanOnHold", { lot: lot.number }));
+        return;
+      }
+      const done = await change(
+        updateLine.mutateAsync({ runId: run.id, lineId: line.id, data: { lot_id: lot.id } })
+      );
+      if (done) toast.success(t("runs.scanned", { lot: lot.number, item: item(line.item) }));
+      return;
+    }
+    toast.error(t(read.lots.length ? "runs.scanNotInRun" : "runs.scanNoLot"));
+  };
+
   const change = async (making: Promise<RunRead>) => {
     try {
       saved(await making);
@@ -235,6 +267,11 @@ function Run({ run }: { run: RunRead }) {
         ]}
       />
 
+      {!completed && !read_only && run.lines.length > 0 && (
+        <div className="flex justify-end">
+          <ScanButton size="sm" label={t("runs.scanLot")} onScan={(text) => void scanInput(text)} />
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
