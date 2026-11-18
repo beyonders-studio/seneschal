@@ -51,7 +51,19 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import plugin_manifest, recipes, stock, summary, units
 from hoard.api import bases, contacts, items, materials, products
 from hoard.api.deps import HoardError
-from hoard.imports.rows import COLUMN_MISSING, FILE_UNREADABLE, Row, read, stepper
+from hoard.imports.rows import (
+    COLUMN_MISSING,
+    FILE_UNREADABLE,
+    Row,
+    category,
+    category_id,
+    community_contacts,
+    counted,
+    named,
+    read,
+    stepper,
+    supplier,
+)
 from hoard.imports.rows import key as _key
 from hoard.records import (
     PLACES,
@@ -631,7 +643,15 @@ async def check(request: ImportCheck) -> Checked:
             plan.steps.append({"step": "suppliers", "file": MATERIALS, "row": row, "name": name})
     for name, row in categories:
         plan.count("categories", _key(name) in plan.held.categories)
-        plan.steps.append({"step": "categories", "file": MATERIALS, "row": row, "name": name})
+        plan.steps.append(
+            {
+                "step": "categories",
+                "file": MATERIALS,
+                "row": row,
+                "kind": CategoryKind.MATERIAL,
+                "name": name,
+            }
+        )
     plan.steps.extend(material_plan)
     manufactured: dict[str, list[tuple[str, str]]] = {}
     # What Stocksmith made by itself, for a run that needed it.
@@ -658,19 +678,6 @@ async def check(request: ImportCheck) -> Checked:
 # The steps of a plan, each matching before it makes.
 
 
-async def _named(
-    db: AsyncSession, model: type[Material] | type[Base] | type[Product], name: str
-) -> int | None:
-    """The id of the material, base or product named ``name``, ignoring case."""
-    found = await db.exec(
-        select(model.id)
-        .where(func.lower(col(model.name)) == _key(name))
-        .order_by(col(model.id))
-        .limit(1)
-    )
-    return found.first()
-
-
 async def _unit_of(db: AsyncSession, ref: Mapping[str, str]) -> int:
     """The id of a unit a step names: standard by its key, or the organization's own by name."""
     query = (
@@ -684,18 +691,6 @@ async def _unit_of(db: AsyncSession, ref: Mapping[str, str]) -> int:
     return unit_id
 
 
-async def _contacts(run: ImportStep) -> dict[str, int]:
-    """The community's contacts by name, read once a run."""
-    if "contacts" not in run.memo:
-        run.memo["contacts"] = {
-            _key(contact.name): contact.id
-            for contact in await contacts.community_contacts(
-                run.job.plugin, run.organization.community_ref
-            )
-        }
-    return run.memo["contacts"]
-
-
 async def _prepare(run: ImportStep, _step: dict[str, Any]) -> ImportResult:
     """What the steps after it find: the standard units, the main location
     and each kind's default type."""
@@ -705,51 +700,25 @@ async def _prepare(run: ImportStep, _step: dict[str, Any]) -> ImportResult:
     return ImportResult()
 
 
-async def _supplier(run: ImportStep, step: dict[str, Any]) -> ImportResult:
-    held = await _contacts(run)
-    if _key(step["name"]) in held:
-        return ImportResult(matched={"suppliers": 1})
-    contact = await contacts.add_contact(
-        run.job.plugin, run.organization.community_ref, contacts.ContactCreate(name=step["name"])
-    )
-    held[_key(contact.name)] = contact.id
-    return ImportResult(created={"suppliers": 1})
-
-
-async def _category_id(db: WriteSession, name: str) -> int | None:
-    found = await db.exec(
-        select(Category.id).where(
-            Category.kind == CategoryKind.MATERIAL, func.lower(col(Category.name)) == _key(name)
-        )
-    )
-    return found.first()
-
-
-async def _category(run: ImportStep, step: dict[str, Any]) -> ImportResult:
-    if await _category_id(run.db, step["name"]) is not None:
-        return ImportResult(matched={"categories": 1})
-    run.db.add(
-        Category(
-            organization_id=run.db.organization_id, kind=CategoryKind.MATERIAL, name=step["name"]
-        )
-    )
-    await run.db.flush()
-    return ImportResult(created={"categories": 1})
-
-
 async def _material(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A material, made unless one of its name exists, and its starting stock
     where it holds none at the main location."""
     db, made = run.db, ImportResult(matched={"materials": 1})
-    material_id = await _named(db, Material, step["name"])
+    material_id = await named(db, Material, step["name"])
     if material_id is None:
         tracking = await _unit_of(db, step["tracking_unit"])
         bought = (
             None if step["purchase_unit"] is None else await _unit_of(db, step["purchase_unit"])
         )
-        category = None if step["category"] is None else await _category_id(db, step["category"])
+        category = (
+            None
+            if step["category"] is None
+            else await category_id(db, CategoryKind.MATERIAL, step["category"])
+        )
         supplier = (
-            None if step["supplier"] is None else (await _contacts(run)).get(_key(step["supplier"]))
+            None
+            if step["supplier"] is None
+            else (await community_contacts(run)).get(_key(step["supplier"]))
         )
         material = await materials.add_material(
             db,
@@ -793,7 +762,7 @@ async def _material(run: ImportStep, step: dict[str, Any]) -> ImportResult:
 
 
 async def _base(run: ImportStep, step: dict[str, Any]) -> ImportResult:
-    if await _named(run.db, Base, step["name"]) is not None:
+    if await named(run.db, Base, step["name"]) is not None:
         return ImportResult(matched={"bases": 1})
     await bases.add_base(
         run.db,
@@ -827,7 +796,7 @@ async def _variation(db: AsyncSession, product: str, variation: Mapping[str, Any
             .order_by(col(Variation.id))
         )
         return found.first()
-    product_id = await _named(db, Product, product)
+    product_id = await named(db, Product, product)
     held = await db.exec(
         select(Variation.id, Variation.attributes)
         .where(Variation.product_id == (product_id or 0))
@@ -841,17 +810,17 @@ async def _variation(db: AsyncSession, product: str, variation: Mapping[str, Any
 async def _product(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A Made product with its variations, each made unless it exists."""
     db, made = run.db, ImportResult()
-    product_id = await _named(db, Product, step["name"])
+    product_id = await named(db, Product, step["name"])
     spare: Variation | None = None
     if product_id is None:
         product, spare = await products.add_product(
             db, products.ProductWrite(name=step["name"], type_id=await _made_type(db)), False
         )
         product_id = product.id
-    _counted(made, "products", spare is not None)
+    counted(made, "products", spare is not None)
     for variation in step["variations"]:
         if await _variation(db, step["name"], variation) is not None:
-            _counted(made, "variations", False)
+            counted(made, "variations", False)
             continue
         await products.write_variation(
             db,
@@ -860,23 +829,17 @@ async def _product(run: ImportStep, step: dict[str, Any]) -> ImportResult:
             False,
         )
         spare = None
-        _counted(made, "variations", True)
+        counted(made, "variations", True)
     return made
-
-
-def _counted(result: ImportResult, kind: str, created: bool) -> None:
-    """Count one record of ``kind`` as made, or as matched."""
-    counted = result.created if created else result.matched
-    counted[kind] = counted.get(kind, 0) + 1
 
 
 async def _line_item(db: AsyncSession, name: str) -> int:
     """The item a recipe line names: a material, a base, or a product's default variation."""
     for model in (Material, Base):
-        item_id = await _named(db, model, name)
+        item_id = await named(db, model, name)
         if item_id is not None:
             return item_id
-    product_id = await _named(db, Product, name)
+    product_id = await named(db, Product, name)
     variation_id = (
         await db.exec(
             select(Variation.id)
@@ -913,7 +876,7 @@ async def _recipe(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A base's or a variation's recipe, unless it has one."""
     db, output = run.db, step["output"]
     if "base" in output:
-        output_id = await _named(db, Base, output["base"])
+        output_id = await named(db, Base, output["base"])
         recipe = Recipe(base_id=output_id)
         held = select(Recipe.id).where(Recipe.base_id == output_id)
     else:
@@ -949,8 +912,8 @@ IMPORTER = Importer(
     step=stepper(
         {
             "prepare": _prepare,
-            "suppliers": _supplier,
-            "categories": _category,
+            "suppliers": supplier,
+            "categories": category,
             "materials": _material,
             "bases": _base,
             "products": _product,

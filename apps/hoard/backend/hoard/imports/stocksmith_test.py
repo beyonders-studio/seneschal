@@ -10,8 +10,6 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-import httpx2
-import pytest
 from sqlmodel import col, select
 
 from hoard import plugin_manifest
@@ -34,7 +32,6 @@ from hoard.records import (
 )
 from seneschal_core import jobs
 from seneschal_core.db import WriteSession
-from seneschal_core.testing import InitiativeStandIn
 
 MATERIALS_HEADER = (
     "id,sku,name,category,description,zone,section,position,inventoriable,stock_on_hand,"
@@ -116,25 +113,6 @@ MANUFACTURES = "\n".join(
         ",,0,4.0,1.0,4.0,item,0.0,2.0,USD,,completed,,",
     ]
 )
-
-
-@pytest.fixture
-def suppliers(initiative_stand_in: InitiativeStandIn) -> dict[str, int]:
-    """The community's contacts, which Initiative's stand-in lists and adds to."""
-    held = {"Box Works": 7}
-
-    def listed(request: httpx2.Request) -> httpx2.Response:
-        items = [{"id": id_, "name": name, "is_organization": True} for name, id_ in held.items()]
-        return httpx2.Response(200, json={"items": items, "has_next": False})
-
-    def added(request: httpx2.Request) -> httpx2.Response:
-        name = json.loads(request.content)["name"]
-        held[name] = 100 + len(held)
-        return httpx2.Response(201, json={"id": held[name], "name": name})
-
-    initiative_stand_in.routes[("GET", "/contacts/")] = listed
-    initiative_stand_in.routes[("POST", "/contacts/")] = added
-    return held
 
 
 def _upload(stock_dated: str | None = None, **files: str) -> dict[str, Any]:

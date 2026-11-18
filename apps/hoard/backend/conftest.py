@@ -3,6 +3,7 @@ serving login, with Initiative stood in for."""
 
 from __future__ import annotations
 
+import json
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import date
@@ -10,6 +11,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
+import httpx2
 import pytest
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient, Response
@@ -67,6 +69,25 @@ database = database_fixture(
 @pytest.fixture
 def initiative_stand_in() -> InitiativeStandIn:
     return InitiativeStandIn(public_id=plugin_manifest.PUBLIC_ID, listing_uid=plugin_manifest.UID)
+
+
+@pytest.fixture
+def suppliers(initiative_stand_in: InitiativeStandIn) -> dict[str, int]:
+    """The community's contacts, which Initiative's stand-in lists and adds to."""
+    held = {"Box Works": 7}
+
+    def listed(request: httpx2.Request) -> httpx2.Response:
+        items = [{"id": id_, "name": name, "is_organization": True} for name, id_ in held.items()]
+        return httpx2.Response(200, json={"items": items, "has_next": False})
+
+    def added(request: httpx2.Request) -> httpx2.Response:
+        name = json.loads(request.content)["name"]
+        held[name] = 100 + len(held)
+        return httpx2.Response(201, json={"id": held[name], "name": name})
+
+    initiative_stand_in.routes[("GET", "/contacts/")] = listed
+    initiative_stand_in.routes[("POST", "/contacts/")] = added
+    return held
 
 
 @pytest.fixture
