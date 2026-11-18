@@ -145,3 +145,22 @@ async def test_a_change_carrying_hoards_cookie_from_another_site_is_refused(clie
     )
 
     assert (refused.status_code, refused.json()) == (403, {"detail": "CROSS_SITE_REQUEST"})
+
+
+async def test_hoards_phone_app_may_call_its_api_from_its_own_origin(client):
+    asked = await client.options(
+        "/api/v1/auth/me",
+        headers={
+            "Origin": "https://studio.beyonders.hoard",
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    elsewhere = await client.options(
+        "/api/v1/auth/me",
+        headers={"Origin": "https://elsewhere.example", "Access-Control-Request-Method": "GET"},
+    )
+
+    assert asked.headers["access-control-allow-origin"] == "https://studio.beyonders.hoard"
+    assert "access-control-allow-credentials" not in asked.headers
+    assert "access-control-allow-origin" not in elsewhere.headers

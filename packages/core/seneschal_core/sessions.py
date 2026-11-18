@@ -29,6 +29,12 @@ SESSION_LIFETIME = timedelta(minutes=15)
 
 Theme = Literal["light", "dark"]
 
+#: How a session was made, which says how it may be presented: ``frame`` (a
+#: handoff in Initiative's frame) and ``browser`` (a sign-in at the app's own
+#: address) travel in the cookie; ``device`` (a sign-in in the app's phone
+#: app) travels as a Bearer token, and never in the cookie.
+Via = Literal["frame", "browser", "device"]
+
 
 @dataclass(frozen=True)
 class SessionClaims:
@@ -41,6 +47,7 @@ class SessionClaims:
     permissions: tuple[str, ...]
     theme: Theme | None
     locale: str | None
+    via: Via = "frame"
 
 
 class SessionRefused(Exception):
@@ -75,6 +82,7 @@ class Sessions:
         theme: Theme | None,
         locale: str | None,
         not_after: datetime | None = None,
+        via: Via = "frame",
     ) -> str:
         """A session for what ``handoff`` says, for :data:`SESSION_LIFETIME`
         or until ``not_after``, whichever comes first: a session made from a
@@ -97,6 +105,7 @@ class Sessions:
             "permissions": list(handoff.permissions),
             "theme": theme,
             "locale": locale,
+            "via": via,
         }
         return jwt.encode(payload, self._private_key, algorithm=ALGORITHM)
 
@@ -143,4 +152,6 @@ class Sessions:
             permissions=tuple(payload["permissions"]),
             theme=payload["theme"],
             locale=payload["locale"],
+            # A session from before ``via`` was a frame's.
+            via=payload.get("via", "frame"),
         )

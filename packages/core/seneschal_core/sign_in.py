@@ -32,6 +32,18 @@ not used for :data:`BROWSER_IDLE` ends on its own.
 ``POST /auth/sign-out`` ends the chain and clears the cookies. It signs the
 person out of the app, not out of Initiative.
 
+**A phone app signs in the same way, through the system browser.** It starts
+the sign-in with ``client=device``, its own PKCE challenge, its own ``state``
+and its install's id. Once the person is admitted, the app opens a device
+sign-in for that install (ending the install's earlier one), and sends the
+browser back to the app (``<scheme>://sign-in/callback``) with a code: sealed,
+good for :data:`DEVICE_CODE_LIFETIME`, spent at the first attempt. The app
+spends it at ``POST /auth/device/token`` with its verifier and install, and
+gets a session it sends as a Bearer token and a renewal it keeps itself, which
+``POST /auth/device/refresh`` spends as the browser's is spent. A device's
+renewal is bound to its install: presented from another, or at the browser's
+route, it ends the sign-in.
+
 The renewal travels in an HttpOnly cookie sent only to ``/api/v1/auth``, so no
 other call carries it. Every answer here is ``no-store``. A renewal that is
 refused clears both cookies and says only ``SIGN_IN_ENDED``.
@@ -44,6 +56,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import secrets
 import time
 import uuid
@@ -54,6 +67,7 @@ from functools import cache
 from typing import Annotated, Any
 from urllib.parse import urlencode
 
+import jwt
 import sqlalchemy as sa
 from alembic import op
 from cryptography.exceptions import InvalidTag
@@ -62,11 +76,13 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from fastapi import APIRouter, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse, RedirectResponse
+from pydantic import BaseModel
+from pydantic import Field as BodyField
 from sqlalchemy import CheckConstraint, Column, DateTime, LargeBinary, text
 from sqlmodel import Field, col
 
 from seneschal_core.api import ErrorCode, Plugin, PluginDep, refuse
-from seneschal_core.auth import Me, admit, me_for
+from seneschal_core.auth import Me, admit, me_for, spend_jti
 from seneschal_core.db import OrganizationSession
 from seneschal_core.initiative import HandoffClaims, TokenRefused
 from seneschal_core.initiative_api import GrantRefused, InitiativeUnavailable
@@ -89,6 +105,16 @@ PENDING_LIFETIME = timedelta(minutes=10)
 BROWSER_IDLE = timedelta(days=30)
 #: How long a renewal from a phone app stays good unused.
 DEVICE_IDLE = timedelta(days=90)
+#: How long a phone app has to spend the code the browser brings it back with.
+DEVICE_CODE_LIFETIME = timedelta(minutes=2)
+#: Where the system browser hands a phone app its code, under its own scheme.
+DEVICE_CALLBACK = "sign-in/callback"
+#: A PKCE challenge (S256, base64url) and the verifier that answers it.
+_CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+_VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
+#: An install's id and a phone app's own state.
+_INSTALL = re.compile(r"^[A-Za-z0-9-]{8,64}$")
+_STATE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 #: How long an ended chain's rows are kept before they are deleted.
 KEEP_ENDED = timedelta(days=30)
 #: The longest user agent kept beside a sign-in.
@@ -243,6 +269,19 @@ _CLAIM = text("""
 """)
 
 
+#: Ends an install's live sign-ins in the community, when the install signs in
+#: anew: one live sign-in per member and install.
+_END_INSTALL = text("""
+    UPDATE sign_ins SET revoked_at = now(), revoked_reason = 'replaced'
+    WHERE member_ref = :member AND install_id = :install AND revoked_at IS NULL
+""")
+
+
+def _s256(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
 def _hash(secret: str) -> bytes:
     return hashlib.sha256(secret.encode()).digest()
 
@@ -286,6 +325,7 @@ class SignIn:
         app_origin: str,
         sealing_key: str,
         cookie_secure: bool,
+        device_scheme: str | None = None,
     ) -> None:
         #: The deployment's own address, which issues the ID tokens.
         self.issuer = issuer.rstrip("/")
@@ -295,9 +335,14 @@ class SignIn:
         self.cookie_secure = cookie_secure
         self.pending_cookie = f"{app}_sign_in"
         self.renewal_cookie = f"{app}_renew"
+        #: The phone app's URL scheme (``hoard``), where the system browser
+        #: hands it its code; None when the app has no phone app.
+        self.device_scheme = device_scheme
+
+    def device_callback(self, params: Mapping[str, str]) -> str:
+        return f"{self.device_scheme}://{DEVICE_CALLBACK}?{urlencode(params)}"
 
     def authorize_url(self, *, client_id: str, state: str, nonce: str, verifier: str) -> str:
-        challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest())
         query = urlencode(
             {
                 "response_type": "code",
@@ -306,7 +351,7 @@ class SignIn:
                 "scope": "openid",
                 "state": state,
                 "nonce": nonce,
-                "code_challenge": challenge.rstrip(b"=").decode(),
+                "code_challenge": _s256(verifier),
                 "code_challenge_method": "S256",
             }
         )
@@ -401,6 +446,8 @@ async def open_chain(
     now = datetime.now(UTC)
     idle = DEVICE_IDLE if client == "device" else BROWSER_IDLE
     async with plugin.database.organization_session(organization.id) as db:
+        if install_id is not None:
+            await db.execute(_END_INSTALL, {"member": claims.member_ref, "install": install_id})
         db.add(
             SignInRow(
                 organization_id=organization.id,
@@ -421,10 +468,19 @@ async def open_chain(
     return sign_in.sealer.seal("renewal", {"o": organization.id, "t": secret})
 
 
-async def renew(plugin: Plugin, renewal: str, *, user_agent: str | None) -> Renewed:
-    """Spend ``renewal``: ask Initiative again, and answer the claims as they
-    stand now and the renewal that replaces it. Raises :class:`SignInEnded`
-    when the person must sign in again, and
+async def renew(
+    plugin: Plugin,
+    renewal: str,
+    *,
+    user_agent: str | None,
+    client: str = "browser",
+    install_id: str | None = None,
+) -> Renewed:
+    """Spend ``renewal``, made for ``client`` (and a device's for its
+    ``install_id``): ask Initiative again, and answer the claims as they stand
+    now and the renewal that replaces it. A renewal presented by another kind
+    of client, or from another install, ends its sign-in. Raises
+    :class:`SignInEnded` when the person must sign in again, and
     :class:`~seneschal_core.initiative_api.InitiativeUnavailable` when
     Initiative did not answer, leaving the renewal as it was."""
     sign_in = _offered(plugin)
@@ -440,6 +496,20 @@ async def renew(plugin: Plugin, renewal: str, *, user_agent: str | None) -> Rene
             await db.commit()
             raise SignInEnded
         row_id: uuid.UUID = claimed["id"]
+        if claimed["client"] != client or claimed["install_id"] != install_id:
+            logger.warning(
+                "a renewal was presented by another client or install; its sign-in is ended "
+                "(organization %s, chain row %s)",
+                organization_id,
+                row_id,
+            )
+            await db.execute(
+                text("UPDATE sign_ins SET revoked_reason = 'misused' WHERE id = :id"),
+                {"id": row_id},
+            )
+            await _end_chain(db, row_id, "misused")
+            await db.commit()
+            raise SignInEnded
         try:
             initiative_refresh = sign_in.sealer.unseal(
                 "initiative-refresh", claimed["initiative_refresh"]
@@ -564,20 +634,50 @@ def _back(sign_in: SignIn, path: str, error: str | None = None) -> RedirectRespo
     return response
 
 
+def _back_to_device(sign_in: SignIn, params: Mapping[str, str]) -> RedirectResponse:
+    """Send the system browser back to the phone app with ``params``: its
+    code and state, or why it could not sign in."""
+    response = RedirectResponse(
+        sign_in.device_callback(params), status_code=status.HTTP_303_SEE_OTHER, headers=_NO_STORE
+    )
+    sign_in.clear_pending(response)
+    return response
+
+
 @router.get(
     "/sign-in/start",
     include_in_schema=False,
     responses={404: {"description": "SIGN_IN_NOT_OFFERED"}},
 )
 async def start_sign_in(
-    plugin: PluginDep, next: Annotated[str | None, Query(max_length=2048)] = None
+    plugin: PluginDep,
+    next: Annotated[str | None, Query(max_length=2048)] = None,
+    client: Annotated[str, Query(pattern="^(browser|device)$")] = "browser",
+    challenge: Annotated[str | None, Query(max_length=43)] = None,
+    state: Annotated[str | None, Query(max_length=128)] = None,
+    install: Annotated[str | None, Query(max_length=64)] = None,
 ) -> RedirectResponse:
-    """Send the person to Initiative to sign in, and back to ``next`` after."""
+    """Send the person to Initiative to sign in, and back to ``next`` after;
+    or, for the phone app (``client=device``), back to the app with a code
+    its ``challenge`` binds, for its ``install``, carrying its ``state``."""
     sign_in = _offered(plugin)
-    state, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(3))
+    pending: dict[str, Any] = {"next": _local(next), "client": client}
+    if client == "device":
+        if (
+            sign_in.device_scheme is None
+            or not _CHALLENGE.fullmatch(challenge or "")
+            or not _STATE.fullmatch(state or "")
+            or not _INSTALL.fullmatch(install or "")
+        ):
+            raise refuse(status.HTTP_400_BAD_REQUEST, ErrorCode.REQUEST_INVALID)
+        pending |= {"challenge": challenge, "device_state": state, "install": install}
+    oidc_state, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(3))
     response = RedirectResponse(
         sign_in.authorize_url(
-            client_id=plugin.initiative.public_id, state=state, nonce=nonce, verifier=verifier
+            client_id=plugin.initiative.public_id,
+            state=oidc_state,
+            nonce=nonce,
+            verifier=verifier,
         ),
         status_code=status.HTTP_303_SEE_OTHER,
         headers=_NO_STORE,
@@ -585,7 +685,7 @@ async def start_sign_in(
     sign_in.set_pending(
         response,
         sign_in.sealer.seal(
-            "pending", {"state": state, "nonce": nonce, "verifier": verifier, "next": _local(next)}
+            "pending", {**pending, "state": oidc_state, "nonce": nonce, "verifier": verifier}
         ),
     )
     return response
@@ -594,7 +694,8 @@ async def start_sign_in(
 @router.get("/sign-in/return", include_in_schema=False)
 async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectResponse:
     """Where Initiative sends the person back: spend the code, admit them,
-    and give them a session and a renewal."""
+    and give them a session and a renewal; or, for the phone app, send the
+    browser back to it with a code for them."""
     sign_in = _offered(plugin)
     params = request.query_params
     try:
@@ -604,22 +705,27 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
     except Unsealable:
         return _back(sign_in, "/", ErrorCode.SIGN_IN_EXPIRED)
     next_path = _local(pending.get("next"))
+    device = pending.get("client") == "device" and sign_in.device_scheme is not None
+
+    def fail(code: str) -> RedirectResponse:
+        if device:
+            return _back_to_device(
+                sign_in, {"error": code, "state": str(pending.get("device_state", ""))}
+            )
+        return _back(sign_in, next_path, code)
+
     # RFC 9207: the answer names who gave it.
     issuer = params.get("iss")
     if (issuer is not None and issuer != sign_in.issuer) or not secrets.compare_digest(
         params.get("state", ""), str(pending.get("state", ""))
     ):
-        return _back(sign_in, next_path, ErrorCode.SIGN_IN_FAILED)
+        return fail(ErrorCode.SIGN_IN_FAILED)
     if params.get("error") is not None:
         cancelled = params.get("error") == "access_denied"
-        return _back(
-            sign_in,
-            next_path,
-            ErrorCode.SIGN_IN_CANCELLED if cancelled else ErrorCode.SIGN_IN_FAILED,
-        )
+        return fail(ErrorCode.SIGN_IN_CANCELLED if cancelled else ErrorCode.SIGN_IN_FAILED)
     code = params.get("code")
     if not code:
-        return _back(sign_in, next_path, ErrorCode.SIGN_IN_FAILED)
+        return fail(ErrorCode.SIGN_IN_FAILED)
     try:
         answer = await plugin.api.grant(
             {
@@ -632,19 +738,34 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
         claims = await _verified(plugin, answer, nonce=str(pending.get("nonce", "")))
         organization = await admit(plugin, claims, spend=False)
     except InitiativeUnavailable:
-        return _back(sign_in, next_path, ErrorCode.INITIATIVE_UNAVAILABLE)
+        return fail(ErrorCode.INITIATIVE_UNAVAILABLE)
     except (GrantRefused, TokenRefused):
-        return _back(sign_in, next_path, ErrorCode.SIGN_IN_FAILED)
+        return fail(ErrorCode.SIGN_IN_FAILED)
     except HTTPException as exc:
-        return _back(sign_in, next_path, str(exc.detail))
+        return fail(str(exc.detail))
     renewal = await open_chain(
         plugin,
         organization,
         claims,
         str(answer["refresh_token"]),
-        client="browser",
+        client="device" if device else "browser",
         user_agent=_user_agent(request),
+        install_id=str(pending["install"]) if device else None,
     )
+    if device:
+        device_code = sign_in.sealer.seal(
+            "device-code",
+            {
+                "o": organization.id,
+                "jti": secrets.token_urlsafe(16),
+                "renewal": renewal,
+                "challenge": pending["challenge"],
+                "install": pending["install"],
+            },
+        )
+        return _back_to_device(
+            sign_in, {"code": device_code, "state": str(pending["device_state"])}
+        )
     response = _back(sign_in, next_path)
     plugin.sessions.set_cookie(
         response,
@@ -654,6 +775,7 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
             theme=None,
             locale=None,
             not_after=claims.expires_at,
+            via="browser",
         ),
         framed=False,
     )
@@ -703,6 +825,7 @@ async def refresh_session(
         theme=None,
         locale=None,
         not_after=renewed.claims.expires_at,
+        via="browser",
     )
     plugin.sessions.set_cookie(response, token, framed=False)
     sign_in.set_renewal(response, renewed.renewal)
@@ -721,3 +844,147 @@ async def sign_out(request: Request, plugin: PluginDep) -> Response:
     plugin.sessions.clear_cookie(response)
     sign_in.clear_renewal(response)
     return response
+
+
+# --- the phone app -----------------------------------------------------------
+
+
+class DeviceCode(BaseModel):
+    """What the phone app sends for the code the browser brought it back with."""
+
+    code: str = BodyField(min_length=1, max_length=4096)
+    verifier: str = BodyField(min_length=43, max_length=128)
+    install: str = BodyField(min_length=8, max_length=64)
+
+
+class DeviceRenewal(BaseModel):
+    """A phone app's renewal, from its install."""
+
+    renewal: str = BodyField(min_length=1, max_length=1024)
+    install: str = BodyField(min_length=8, max_length=64)
+
+
+class DeviceSession(BaseModel):
+    """A phone app's session, sent as a Bearer token until it expires, and
+    the renewal that renews it, which the app keeps and spends once."""
+
+    session: str
+    session_expires_at: datetime
+    renewal: str
+    me: Me
+
+
+def _device_session(plugin: Plugin, renewed: Renewed) -> DeviceSession:
+    token = plugin.sessions.mint(
+        renewed.claims,
+        organization_id=renewed.organization.id,
+        theme=None,
+        locale=None,
+        not_after=renewed.claims.expires_at,
+        via="device",
+    )
+    session = plugin.sessions.verify(token)
+    expires = jwt.decode(token, options={"verify_signature": False})["exp"]
+    return DeviceSession(
+        session=token,
+        session_expires_at=datetime.fromtimestamp(expires, tz=UTC),
+        renewal=renewed.renewal,
+        me=me_for(session, renewed.organization),
+    )
+
+
+async def _renew_device(
+    plugin: Plugin, renewal: str, install: str, request: Request
+) -> DeviceSession:
+    try:
+        renewed = await renew(
+            plugin, renewal, user_agent=_user_agent(request), client="device", install_id=install
+        )
+    except SignInEnded as ended:
+        raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode(ended.code)) from None
+    except InitiativeUnavailable:
+        raise refuse(
+            status.HTTP_503_SERVICE_UNAVAILABLE, ErrorCode.INITIATIVE_UNAVAILABLE
+        ) from None
+    return _device_session(plugin, renewed)
+
+
+@router.post(
+    "/device/token",
+    responses={
+        400: {"description": "REQUEST_INVALID"},
+        401: {"description": "SIGN_IN_FAILED, SIGN_IN_ENDED"},
+        404: {"description": "SIGN_IN_NOT_OFFERED"},
+        503: {"description": "INITIATIVE_UNAVAILABLE"},
+    },
+)
+async def exchange_device_code(
+    body: DeviceCode, request: Request, response: Response, plugin: PluginDep
+) -> DeviceSession:
+    """Spend the code the system browser brought the phone app back with, and
+    answer its session and renewal. Any attempt spends the code: one that does
+    not answer its challenge, or comes from another install, also ends the
+    sign-in it was for."""
+    sign_in = _offered(plugin)
+    response.headers.update(_NO_STORE)
+    failed = refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.SIGN_IN_FAILED)
+    if not _VERIFIER.fullmatch(body.verifier) or not _INSTALL.fullmatch(body.install):
+        raise refuse(status.HTTP_400_BAD_REQUEST, ErrorCode.REQUEST_INVALID)
+    try:
+        sealed = sign_in.sealer.unseal("device-code", body.code, max_age=DEVICE_CODE_LIFETIME)
+        organization_id = int(sealed["o"])
+        jti, renewal = str(sealed["jti"]), str(sealed["renewal"])
+        challenge, install = str(sealed["challenge"]), str(sealed["install"])
+    except (Unsealable, KeyError, TypeError, ValueError):
+        raise failed from None
+    async with plugin.database.organization_session(organization_id) as db:
+        first = await spend_jti(
+            db,
+            f"device-code:{jti}",
+            organization_id=organization_id,
+            expires_at=datetime.now(UTC) + DEVICE_CODE_LIFETIME,
+        )
+        await db.commit()
+    if not first:
+        raise failed
+    if not secrets.compare_digest(_s256(body.verifier), challenge) or not secrets.compare_digest(
+        body.install, install
+    ):
+        await end(plugin, renewal)
+        raise failed
+    return await _renew_device(plugin, renewal, install, request)
+
+
+@router.post(
+    "/device/refresh",
+    responses={
+        401: {"description": "SIGN_IN_ENDED, or why it ended"},
+        404: {"description": "SIGN_IN_NOT_OFFERED"},
+        503: {"description": "INITIATIVE_UNAVAILABLE"},
+    },
+)
+async def refresh_device_session(
+    body: DeviceRenewal, request: Request, response: Response, plugin: PluginDep
+) -> DeviceSession:
+    """Renew a phone app's session: spend its renewal, from its install."""
+    _offered(plugin)
+    response.headers.update(_NO_STORE)
+    return await _renew_device(plugin, body.renewal, body.install, request)
+
+
+@router.post("/device/sign-out", status_code=status.HTTP_204_NO_CONTENT)
+async def sign_out_device(body: DeviceRenewal, plugin: PluginDep) -> Response:
+    """End a phone app's sign-in. The person stays signed in to Initiative."""
+    _offered(plugin)
+    await end(plugin, body.renewal)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=_NO_STORE)
+
+
+def phone_app_origins(app_id: str) -> list[str]:
+    """The origins a phone app's pages run at, for its release and its dev
+    build (``<app_id>.dev``): where its calls to the app's API come from."""
+    return [
+        f"{scheme}://{app}"
+        for app in (app_id, f"{app_id}.dev")
+        for scheme in ("https", "capacitor")
+    ]

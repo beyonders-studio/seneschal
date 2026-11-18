@@ -105,13 +105,25 @@ PluginDep = Annotated[Plugin, Depends(_plugin)]
 
 
 def _session(request: Request, plugin: PluginDep) -> SessionClaims:
-    token = request.cookies.get(plugin.sessions.cookie_name)
-    if not token:
-        raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED)
+    """The request's session: a phone app's as a Bearer token, a page's in the
+    cookie. Each is taken only the way it was made to travel."""
+    unauthenticated = refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED)
+    authorization = request.headers.get("authorization")
+    if authorization is not None:
+        scheme, _, token = authorization.partition(" ")
+        device = True
+    else:
+        scheme, token = "bearer", request.cookies.get(plugin.sessions.cookie_name, "")
+        device = False
+    if scheme.lower() != "bearer" or not token:
+        raise unauthenticated
     try:
-        return plugin.sessions.verify(token)
+        session = plugin.sessions.verify(token.strip())
     except SessionRefused:
-        raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED) from None
+        raise unauthenticated from None
+    if (session.via == "device") != device:
+        raise unauthenticated
+    return session
 
 
 SessionDep = Annotated[SessionClaims, Depends(_session)]
