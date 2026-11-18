@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import AsyncExitStack, asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,7 +19,8 @@ from hoard.channels import hooks as store_hooks
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
 from hoard.endpoints import ENDPOINTS
 from hoard.imports import IMPORTERS
-from seneschal_core import imports, jobs
+from hoard.mcp import build_mcp_server
+from seneschal_core import imports, jobs, mcp
 from seneschal_core.api import Plugin, install
 from seneschal_core.csrf import SameOriginOnly
 from seneschal_core.db import Database
@@ -128,7 +129,11 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
             asyncio.create_task(jobs.work_forever(plugin, JOB_HANDLERS)),
         ]
         try:
-            yield
+            async with AsyncExitStack() as stack:
+                # The MCP server, when Hoard serves one, runs while Hoard does.
+                if served_mcp is not None:
+                    await stack.enter_async_context(served_mcp.lifespan(served_mcp))
+                yield
         finally:
             for worker in workers:
                 worker.cancel()
@@ -195,6 +200,13 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
             public=plugin_manifest.PUBLIC_ENDPOINTS,
         )
     )
+
+    # An assistant signed in as a person reaches Hoard's MCP server, where
+    # people may sign in at Hoard's own address.
+    served_mcp = (
+        mcp.mount(app, plugin, build_mcp_server(app)) if plugin.sign_in is not None else None
+    )
+    app.state.mcp = served_mcp
 
     static = settings.static_dir.resolve()
 

@@ -25,13 +25,14 @@ whatever a test adds to :attr:`routes`.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import json
 import os
 import secrets
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -47,6 +48,7 @@ from jwt.algorithms import OKPAlgorithm
 from psycopg import sql
 from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
+from starlette.applications import Starlette
 
 from seneschal_core.db import Database
 from seneschal_core.initiative import (
@@ -664,3 +666,131 @@ class InitiativeStandIn:
             algorithm=ALGORITHM,
             headers={"typ": STATEMENT_TYPE},
         )
+
+
+@dataclass
+class McpClientStandIn:
+    """An MCP client on the person's computer, as far as an app's tests need
+    one: it registers, signs the person in through the browser, and calls the
+    app's MCP server with the session it gets (``seneschal_core.oauth``)."""
+
+    #: Where the browser brings it back to: a port it listens on, on loopback.
+    redirect_uri: str = "http://127.0.0.1:53682/callback"
+    client_id: str = ""
+    verifier: str = ""
+    state: str = ""
+
+    def __post_init__(self) -> None:
+        self.verifier = self.verifier or secrets.token_urlsafe(48)
+        self.state = self.state or secrets.token_urlsafe(24)
+
+    @property
+    def challenge(self) -> str:
+        return _s256(self.verifier)
+
+    async def register(self, client: httpx2.AsyncClient) -> None:
+        answer = await client.post(
+            "/api/v1/auth/oauth/register",
+            json={"redirect_uris": [self.redirect_uri], "client_name": "Test assistant"},
+        )
+        assert answer.status_code == 201, answer.text
+        self.client_id = answer.json()["client_id"]
+
+    async def authorize(
+        self,
+        client: httpx2.AsyncClient,
+        initiative: InitiativeStandIn,
+        *,
+        community_ref: str,
+        **place: Any,
+    ) -> httpx2.URL:
+        """The browser: authorize, sign in at Initiative, come back; answers
+        the address it brings the client back to."""
+        started = await client.get(
+            "/api/v1/auth/oauth/authorize",
+            params={
+                "response_type": "code",
+                "client_id": self.client_id,
+                "redirect_uri": self.redirect_uri,
+                "code_challenge": self.challenge,
+                "code_challenge_method": "S256",
+                "state": self.state,
+            },
+        )
+        assert started.status_code == 303, started.text
+        back = initiative.authorize(
+            started.headers["location"], community_ref=community_ref, **place
+        )
+        # Back on the app, wherever its origin says it is.
+        returned = await client.get(httpx2.URL(back).raw_path.decode())
+        assert returned.status_code == 303, returned.text
+        url = httpx2.URL(returned.headers["location"])
+        assert str(url.copy_with(query=None)) == self.redirect_uri, url
+        assert url.params["state"] == self.state
+        return url
+
+    async def token(self, client: httpx2.AsyncClient, **form: str) -> httpx2.Response:
+        return await client.post(
+            "/api/v1/auth/oauth/token", data={"client_id": self.client_id, **form}
+        )
+
+    async def sign_in(
+        self,
+        client: httpx2.AsyncClient,
+        initiative: InitiativeStandIn,
+        *,
+        community_ref: str,
+        **place: Any,
+    ) -> dict[str, Any]:
+        """Register, sign in, and spend the code: answers the token answer."""
+        if not self.client_id:
+            await self.register(client)
+        url = await self.authorize(client, initiative, community_ref=community_ref, **place)
+        answer = await self.token(
+            client,
+            grant_type="authorization_code",
+            code=url.params["code"],
+            code_verifier=self.verifier,
+            redirect_uri=self.redirect_uri,
+        )
+        assert answer.status_code == 200, answer.text
+        return answer.json()
+
+
+async def call_mcp(
+    client: httpx2.AsyncClient, access_token: str, method: str, **params: Any
+) -> httpx2.Response:
+    """One JSON-RPC call to the app's MCP server, as an MCP client makes it."""
+    return await client.post(
+        "/api/v1/mcp/",
+        json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+
+
+@asynccontextmanager
+async def running(served: Starlette) -> AsyncIterator[None]:
+    """While the body runs, the lifespan of ``served`` (an MCP server's app)
+    runs in a task of its own, which enters and leaves it, as a fixture's
+    setup and teardown may not."""
+    started, stop = asyncio.Event(), asyncio.Event()
+
+    async def run() -> None:
+        async with served.router.lifespan_context(served):
+            started.set()
+            await stop.wait()
+
+    task = asyncio.create_task(run())
+    waiting = asyncio.create_task(started.wait())
+    await asyncio.wait({task, waiting}, return_when=asyncio.FIRST_COMPLETED)
+    if task.done():
+        waiting.cancel()
+        task.result()
+    try:
+        yield
+    finally:
+        stop.set()
+        await task

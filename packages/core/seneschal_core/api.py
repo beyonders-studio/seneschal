@@ -30,7 +30,7 @@ from seneschal_core.db import Database, OrganizationSession, WriteSession, verif
 from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.organizations import Organization
-from seneschal_core.sessions import SessionClaims, SessionRefused, Sessions
+from seneschal_core.sessions import BEARER_VIAS, SessionClaims, SessionRefused, Sessions
 
 if TYPE_CHECKING:
     from seneschal_core.sign_in import SignIn
@@ -105,23 +105,24 @@ PluginDep = Annotated[Plugin, Depends(_plugin)]
 
 
 def _session(request: Request, plugin: PluginDep) -> SessionClaims:
-    """The request's session: a phone app's as a Bearer token, a page's in the
-    cookie. Each is taken only the way it was made to travel."""
+    """The request's session: a phone app's or an MCP client's as a Bearer
+    token, a page's in the cookie. Each is taken only the way it was made to
+    travel."""
     unauthenticated = refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED)
     authorization = request.headers.get("authorization")
     if authorization is not None:
         scheme, _, token = authorization.partition(" ")
-        device = True
+        bearer = True
     else:
         scheme, token = "bearer", request.cookies.get(plugin.sessions.cookie_name, "")
-        device = False
+        bearer = False
     if scheme.lower() != "bearer" or not token:
         raise unauthenticated
     try:
         session = plugin.sessions.verify(token.strip())
     except SessionRefused:
         raise unauthenticated from None
-    if (session.via == "device") != device:
+    if (session.via in BEARER_VIAS) != bearer:
         raise unauthenticated
     return session
 
