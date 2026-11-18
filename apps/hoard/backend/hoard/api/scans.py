@@ -186,6 +186,12 @@ async def _paths(db: AsyncSession, item_ids: Sequence[int]) -> dict[int, str]:
 @router.post("")
 async def scan_code(body: ScanAsk, db: OrganizationSessionDep) -> ScanRead:
     """What a scan says, and the items and lots of Hoard's it names."""
+    return await resolve(db, body)
+
+
+async def resolve(db: AsyncSession, body: ScanAsk) -> ScanRead:
+    """What a scan says, and the items and lots of Hoard's it names: the
+    route's answer, for the pages' own scans (a shipment's) to start from."""
     scan = read_scan(body.text, gs1=body.gs1)
     problems: list[str] = []
     item_ids: list[int] = []

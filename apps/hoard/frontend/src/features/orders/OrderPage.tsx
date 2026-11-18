@@ -1,3 +1,4 @@
+import { ScanButton } from "@seneschal/app/scan";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Ban, ExternalLink, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
@@ -24,6 +25,7 @@ import {
   useDeleteShipment,
   useDeleteShipmentLine,
   useDeleteShipmentReturn,
+  useScanOntoShipment,
   useUnshipShipment,
   useUpdateShipmentLine,
 } from "@/api/generated/shipments/shipments";
@@ -420,9 +422,25 @@ function ShipmentCard({
   onAction: (action: ShipmentAction) => void;
 }) {
   const { t } = useTranslation("orders");
-  const { read_only } = useSession();
+  const { read_only, admin } = useSession();
   const { date, location, item, quantity } = useMovementLabels();
   const contactName = useContactNames();
+  const scanOnto = useScanOntoShipment();
+  /** Place the lot a scanned label names on its item's line, and say how it went. */
+  const scanLot = (text: string) =>
+    change(
+      scanOnto.mutateAsync({ shipmentId: shipment.id, data: { text } }).then((scanned) => {
+        const line = scanned.order.shipments
+          .flatMap((each) => each.lines)
+          .find((each) => each.id === scanned.line_id);
+        const words = { lot: line?.lot?.number ?? "", item: line ? item(line.item) : "" };
+        toast.success(
+          t(scanned.not_first ? "shipments.scannedNotFirst" : "shipments.scanned", words)
+        );
+        if (scanned.split) toast.success(t("shipments.scanSplit", words));
+        return scanned.order;
+      })
+    );
   const carrier = contactName(shipment.carrier_contact_id);
   const change = useChange();
   const unship = useUnshipShipment();
@@ -465,8 +483,22 @@ function ShipmentCard({
               .join(" · ")}
           </p>
         </div>
+        {!read_only && pending && !cancelled && managed && (
+          <ScanButton
+            size="sm"
+            label={t("shipments.scanLot")}
+            onScan={(text) => void scanLot(text)}
+          />
+        )}
         {!read_only && !managed && (
           <div className="flex flex-wrap gap-2">
+            {pending && !cancelled && (
+              <ScanButton
+                size="sm"
+                label={t("shipments.scanLot")}
+                onScan={(text) => void scanLot(text)}
+              />
+            )}
             {pending && !cancelled && (
               <Button size="sm" onClick={() => onAction({ kind: "ship", shipment })}>
                 <Truck aria-hidden />
@@ -515,35 +547,56 @@ function ShipmentCard({
                 <TableCell className="text-right">{quantity(line.quantity)}</TableCell>
                 <TableCell>
                   {pending && !read_only ? (
-                    <Select
-                      value={line.lot ? String(line.lot.id) : ASSUMED}
-                      onValueChange={(next) =>
-                        void change(
-                          updateLine.mutateAsync({
-                            shipmentId: shipment.id,
-                            lineId: line.id,
-                            data: { lot_id: next === ASSUMED ? null : Number(next) },
-                          })
-                        )
-                      }
-                    >
-                      <SelectTrigger aria-label={t("shipments.lot")} className="min-w-48">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={ASSUMED}>{t("shipments.assumeLot")}</SelectItem>
-                        {[
-                          ...line.lots,
-                          ...(line.lot && !line.lots.some((lot) => lot.id === line.lot?.id)
-                            ? [line.lot]
-                            : []),
-                        ].map((lot) => (
-                          <SelectItem key={lot.id} value={String(lot.id)}>
-                            {lotName(lot)}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <div className="flex flex-col gap-1">
+                      <span className="inline-flex flex-wrap items-center gap-2">
+                        <Select
+                          // Where a scan is required, only an admin chooses by hand.
+                          disabled={line.lot_scan === "required" && !admin}
+                          value={line.lot ? String(line.lot.id) : ASSUMED}
+                          onValueChange={(next) =>
+                            void change(
+                              updateLine.mutateAsync({
+                                shipmentId: shipment.id,
+                                lineId: line.id,
+                                data: { lot_id: next === ASSUMED ? null : Number(next) },
+                              })
+                            )
+                          }
+                        >
+                          <SelectTrigger aria-label={t("shipments.lot")} className="min-w-48">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={ASSUMED}>{t("shipments.assumeLot")}</SelectItem>
+                            {[
+                              ...line.lots,
+                              ...(line.lot && !line.lots.some((lot) => lot.id === line.lot?.id)
+                                ? [line.lot]
+                                : []),
+                            ].map((lot) => (
+                              <SelectItem key={lot.id} value={String(lot.id)}>
+                                {lotName(lot)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {line.lot_source === "scanned" && (
+                          <Badge variant="secondary">{t("shipments.scannedBadge")}</Badge>
+                        )}
+                      </span>
+                      {line.lot_scan === "required" &&
+                        line.lot_source !== "scanned" &&
+                        line.lot_source !== "admin" && (
+                          <p className="text-xs text-muted-foreground">
+                            {t("shipments.scanToChoose")}
+                          </p>
+                        )}
+                      {line.lot_scan === "warn" && line.lot_source === "chosen" && (
+                        <p className="text-xs text-warning-foreground">
+                          {t("shipments.chosenByHand")}
+                        </p>
+                      )}
+                    </div>
                   ) : line.lot ? (
                     <span className="inline-flex flex-wrap items-center gap-2">
                       {line.lot.number}

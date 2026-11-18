@@ -129,7 +129,15 @@
     "saveFailed": "The shipment couldn't be saved.",
     "shipFailed": "The shipment couldn't be shipped.",
     "returnFailed": "The return couldn't be recorded.",
-    "lotOnHold": "{{lot}} (on hold)"
+    "lotOnHold": "{{lot}} (on hold)",
+    "scanLot": "Scan a lot",
+    "scanned": "Scanned {{lot}} for {{item}}.",
+    "scannedNotFirst": "Scanned {{lot}} for {{item}}. It isn't the lot Hoard would ship first.",
+    "scanSplit": "{{lot}} holds less than the line: scan another lot for the rest.",
+    "scanFailed": "That scan couldn't be placed on this shipment.",
+    "scanToChoose": "Scan its label to choose its lot.",
+    "scannedBadge": "Scanned",
+    "chosenByHand": "Chosen by hand, not scanned."
   },
   "errors": {
     "ORDER_CODE_TAKEN": "Another order has that code.",
@@ -149,7 +157,14 @@
     "SHIPMENT_OVER_ORDER": "That is more than the order has left to ship.",
     "SHIPMENT_LOT_MISMATCH": "That lot isn't this item's, at this shipment's location.",
     "RETURN_OVER_SHIPPED": "That is more than the shipment sent of it.",
-    "SHIPMENT_FROM_HISTORY": "This shipment was copied from the store's history and took no stock, so nothing comes back of it here. Record what came back as an adjustment."
+    "SHIPMENT_FROM_HISTORY": "This shipment was copied from the store's history and took no stock, so nothing comes back of it here. Record what came back as an adjustment.",
+    "SCAN_AMBIGUOUS": "That label didn't read cleanly. Scan it again.",
+    "SCAN_NAMES_NO_LOT": "That barcode names the item but not its lot. Scan the lot's label.",
+    "SCAN_LOT_NOT_FOUND": "That lot isn't at this shipment's location.",
+    "SCAN_NOT_ON_SHIPMENT": "This shipment doesn't send that item.",
+    "SCAN_LOT_SHORT": "That lot has nothing more for this shipment.",
+    "SCAN_ITEM_DONE": "Every line of that item already has a scanned lot.",
+    "LOT_SCAN_REQUIRED": "Scan each line's lot before shipping: its category requires it."
   },
   "locations": {
     "choose": "Choose a contact",

@@ -233,6 +233,28 @@ class Picking(StrEnum):
     RECORDED = "recorded"
 
 
+class LotScan(StrEnum):
+    """How a category's items' shipment lines choose their lots, which an
+    admin sets: by hand, as Hoard has always let them; with a warning for a
+    lot chosen by hand; or only by scanning its label, an admin alone
+    choosing one by hand."""
+
+    BY_HAND = "by_hand"
+    WARN = "warn"
+    REQUIRED = "required"
+
+
+class LotSource(StrEnum):
+    """How a shipment line's lot was chosen; none where Hoard assumes it."""
+
+    #: Its label was scanned (``POST /shipments/{id}/scans``).
+    SCANNED = "scanned"
+    #: A member chose it by hand.
+    CHOSEN = "chosen"
+    #: An admin chose it by hand, as they may where a scan is required.
+    ADMIN = "admin"
+
+
 class HoldEnd(StrEnum):
     """How a hold ended."""
 
@@ -467,6 +489,11 @@ class Category(OrganizationRow, Stamped, table=True):
     picking: Picking = Field(
         default=Picking.EARLIEST_EXPIRY,
         sa_column=enum_column(Picking, "picking", server_default="earliest_expiry"),
+    )
+    #: How its items' shipment lines choose their lots.
+    lot_scan: LotScan = Field(
+        default=LotScan.BY_HAND,
+        sa_column=enum_column(LotScan, "lot_scan", server_default="by_hand"),
     )
     #: The type a record of its kind takes when it is made in it, unless
     #: another is chosen; cleared when the type is removed.
@@ -2024,6 +2051,10 @@ class ShipmentLine(OrganizationRow, Stamped, table=True):
     lot_id: int | None = Field(default=None, sa_type=BigInteger)
     quantity: Decimal = amount()
     assumed: bool = False
+    #: How its lot was chosen; none while it names none, or Hoard assumed it.
+    lot_source: LotSource | None = Field(
+        default=None, sa_column=enum_column(LotSource, "lot_source", nullable=True)
+    )
 
 
 class ReturnLine(OrganizationRow, Stamped, table=True):

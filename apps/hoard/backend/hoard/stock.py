@@ -51,6 +51,7 @@ from hoard.records import (
     Listing,
     Location,
     Lot,
+    LotScan,
     Material,
     Picking,
     Product,
@@ -236,10 +237,8 @@ async def on_hand(db: AsyncSession, item_id: int, location_id: int | None = None
     return Decimal((await db.exec(query)).one())
 
 
-async def picking(db: AsyncSession, item_id: int) -> Picking:
-    """Which lot of an item goes first: its category's rule, or, for an item
-    with no category, the earliest expiry first. A variation's category is
-    its product's."""
+async def category_of(db: AsyncSession, item_id: int) -> Category | None:
+    """An item's category, if it has one. A variation's is its product's."""
     category_id = (
         await db.exec(
             select(func.coalesce(Material.category_id, Base.category_id, Product.category_id))
@@ -251,8 +250,21 @@ async def picking(db: AsyncSession, item_id: int) -> Picking:
             .where(Item.id == item_id)
         )
     ).first()
-    category = await db.get(Category, category_id) if category_id is not None else None
+    return await db.get(Category, category_id) if category_id is not None else None
+
+
+async def picking(db: AsyncSession, item_id: int) -> Picking:
+    """Which lot of an item goes first: its category's rule, or, for an item
+    with no category, the earliest expiry first."""
+    category = await category_of(db, item_id)
     return category.picking if category is not None else Picking.EARLIEST_EXPIRY
+
+
+async def lot_scan(db: AsyncSession, item_id: int) -> LotScan:
+    """How an item's shipment lines choose their lots: its category's rule,
+    or by hand for an item with no category."""
+    category = await category_of(db, item_id)
+    return category.lot_scan if category is not None else LotScan.BY_HAND
 
 
 #: The order each picking rule takes an item's lots in.

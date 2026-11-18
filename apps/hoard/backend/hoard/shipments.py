@@ -43,6 +43,8 @@ from hoard.records import (
     AdjustmentReason,
     DefaultReason,
     Lot,
+    LotScan,
+    LotSource,
     Order,
     OrderLine,
     OrderStatus,
@@ -51,7 +53,7 @@ from hoard.records import (
     ShipmentLine,
     ShipmentStatus,
 )
-from hoard.stock import draw_lots
+from hoard.stock import draw_lots, lot_scan
 from seneschal_core.db import WriteSession
 
 
@@ -79,6 +81,15 @@ class ShipmentError(StrEnum):
     #: It was copied from the store's history and moved no stock, so nothing
     #: comes back of it either.
     SHIPMENT_FROM_HISTORY = "SHIPMENT_FROM_HISTORY"
+    #: A line's item's category ships only lots scanned, or chosen by an
+    #: admin, and the line's lot was neither.
+    LOT_SCAN_REQUIRED = "LOT_SCAN_REQUIRED"
+    #: The scanned lot is of no item the shipment sends.
+    SCAN_NOT_ON_SHIPMENT = "SCAN_NOT_ON_SHIPMENT"
+    #: The scanned lot holds nothing more for the shipment to take.
+    SCAN_LOT_SHORT = "SCAN_LOT_SHORT"
+    #: Every line of the scanned lot's item already has a scanned lot.
+    SCAN_ITEM_DONE = "SCAN_ITEM_DONE"
 
 
 class ShipmentRefused(Exception):
@@ -201,11 +212,12 @@ async def unpost(db: WriteSession, shipment: Shipment) -> None:
 @dataclass(frozen=True)
 class Pick:
     """An order line to ship: so much of it, or all it has left, from a lot,
-    or from the one assumed when it ships."""
+    or from the one assumed when it ships; a lot chosen as ``source`` says."""
 
     order_line_id: int
     quantity: Decimal | None = None
     lot_id: int | None = None
+    source: LotSource = LotSource.CHOSEN
 
 
 def _pending(shipment: Shipment) -> None:
@@ -248,7 +260,7 @@ async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[
     shipment = Shipment(
         organization_id=db.organization_id, order_id=order.id, location_id=location_id
     )
-    planned: list[tuple[OrderLine, Decimal, int | None]] = []
+    planned: list[tuple[OrderLine, Decimal, int | None, LotSource | None]] = []
     for pick in picks:
         line = to_ship.get(pick.order_line_id)
         if line is None:
@@ -259,7 +271,7 @@ async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[
             raise ShipmentRefused(ShipmentError.SHIPMENT_OVER_ORDER)
         await _check_lot(db, shipment, line.item_id, pick.lot_id)
         holding[line.id] += quantity
-        planned.append((line, quantity, pick.lot_id))
+        planned.append((line, quantity, pick.lot_id, pick.source if pick.lot_id else None))
     db.add(shipment)
     await db.flush()
     db.add_all(
@@ -270,8 +282,9 @@ async def add(db: WriteSession, order: Order, location_id: int, picks: Sequence[
             item_id=line.item_id,
             lot_id=lot_id,
             quantity=quantity,
+            lot_source=source,
         )
-        for line, quantity, lot_id in planned
+        for line, quantity, lot_id, source in planned
     )
     await db.flush()
     return shipment
@@ -285,7 +298,7 @@ async def move(db: WriteSession, shipment: Shipment, location_id: int) -> None:
         return
     shipment.location_id = location_id
     for line in await lines(db, shipment.id):
-        line.lot_id, line.assumed = None, False
+        line.lot_id, line.assumed, line.lot_source = None, False, None
     await db.flush()
 
 
@@ -302,14 +315,93 @@ async def set_quantity(
 
 
 async def set_lot(
-    db: WriteSession, shipment: Shipment, line: ShipmentLine, lot_id: int | None
+    db: WriteSession,
+    shipment: Shipment,
+    line: ShipmentLine,
+    lot_id: int | None,
+    source: LotSource = LotSource.CHOSEN,
 ) -> None:
-    """Record the lot a pending shipment's line draws, or none, to assume one
-    when it ships."""
+    """Record the lot a pending shipment's line draws, chosen as ``source``
+    says, or none, to assume one when it ships."""
     _pending(shipment)
     await _check_lot(db, shipment, line.item_id, lot_id)
     line.lot_id, line.assumed = lot_id, False
+    line.lot_source = source if lot_id is not None else None
     await db.flush()
+
+
+@dataclass(frozen=True)
+class Scanned:
+    """A scanned lot, placed on a shipment's line."""
+
+    line: ShipmentLine
+    #: The line sent more than the lot holds, so the rest went to a new line
+    #: that names no lot yet.
+    split: bool
+    #: Another lot is the one the item's picking rule takes first.
+    not_first: bool
+
+
+async def scan_lot(db: WriteSession, shipment: Shipment, lots: Sequence[Lot]) -> Scanned:
+    """Place the first of ``lots``, those a scan named at the shipment's
+    location, whose item the shipment sends, on that item's line: one whose
+    lot wasn't scanned, or the one that already scanned it. The line takes
+    no more than the lot holds besides what the shipment's other lines take
+    from it; the rest goes to a new line that names no lot. Refused for a
+    lot on hold, for one that holds nothing more, and once every line of its
+    item has a scanned lot. A lot scanned again is the line that has it."""
+    _pending(shipment)
+    sending = await lines(db, shipment.id)
+    items = {line.item_id for line in sending}
+    lot = next((each for each in lots if each.item_id in items), None)
+    if lot is None:
+        raise ShipmentRefused(ShipmentError.SCAN_NOT_ON_SHIPMENT)
+    await _check_lot(db, shipment, lot.item_id, lot.id)
+    mine = [line for line in sending if line.item_id == lot.item_id]
+    again = next(
+        (line for line in mine if line.lot_id == lot.id and line.lot_source is LotSource.SCANNED),
+        None,
+    )
+    if again is not None:
+        return Scanned(line=again, split=False, not_first=False)
+    line = next((each for each in mine if each.lot_source is not LotSource.SCANNED), None)
+    if line is None:
+        raise ShipmentRefused(ShipmentError.SCAN_ITEM_DONE)
+    taken = sum(
+        (each.quantity for each in sending if each.lot_id == lot.id and each is not line),
+        Decimal(0),
+    )
+    holds_more = lot.balance - taken
+    if holds_more <= 0:
+        raise ShipmentRefused(ShipmentError.SCAN_LOT_SHORT)
+    drawn: dict[int, Decimal] = defaultdict(Decimal)
+    for each in sending:
+        if each.lot_id is not None and each is not line and each.lot_source is not None:
+            drawn[each.lot_id] += each.quantity
+    first = next(
+        (
+            lot_id
+            for lot_id, _ in await draw_lots(
+                db, lot.item_id, shipment.location_id, line.quantity, drawn
+            )
+        ),
+        None,
+    )
+    split = holds_more < line.quantity
+    if split:
+        db.add(
+            ShipmentLine(
+                organization_id=db.organization_id,
+                shipment_id=shipment.id,
+                order_line_id=line.order_line_id,
+                item_id=line.item_id,
+                quantity=line.quantity - holds_more,
+            )
+        )
+        line.quantity = holds_more
+    line.lot_id, line.assumed, line.lot_source = lot.id, False, LotSource.SCANNED
+    await db.flush()
+    return Scanned(line=line, split=split, not_first=first is not None and first != lot.id)
 
 
 async def remove_line(db: WriteSession, shipment: Shipment, line: ShipmentLine) -> None:
@@ -341,6 +433,15 @@ async def ship(db: WriteSession, shipment: Shipment, shipped_on: date) -> None:
     refused = await holds.refusal(db, [(line.item_id, line.lot_id) for line in sending])
     if refused is not None:
         raise ShipmentRefused(refused)
+    for item_id in sorted({line.item_id for line in sending}):
+        if await lot_scan(db, item_id) is not LotScan.REQUIRED:
+            continue
+        if any(
+            line.lot_source not in (LotSource.SCANNED, LotSource.ADMIN)
+            for line in sending
+            if line.item_id == item_id
+        ):
+            raise ShipmentRefused(ShipmentError.LOT_SCAN_REQUIRED)
     await post(db, shipment, shipped_on)
     await orders.settle(db, order)
 

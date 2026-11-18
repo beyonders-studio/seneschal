@@ -45,6 +45,8 @@ from hoard.records import (
     Channel,
     Hold,
     Lot,
+    LotScan,
+    LotSource,
     Order,
     OrderLine,
     OrderStatus,
@@ -114,6 +116,12 @@ class OrderShipmentLineRead(BaseModel):
     #: The lot it draws: recorded, or assumed when it shipped.
     lot: OrderLot | None
     assumed: bool
+    #: How its lot was chosen: scanned, or by hand by a member or an admin;
+    #: null while it names none, or Hoard assumed it.
+    lot_source: LotSource | None
+    #: How its item's category has its lots chosen: by hand, with a warning
+    #: for one chosen by hand, or only by a scan (an admin may choose one).
+    lot_scan: LotScan
     #: While the shipment is pending, the lots of its item at the shipment's
     #: location that hold stock and are not on hold, in the order its
     #: category's picking rule takes them.
@@ -339,6 +347,9 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
     short = await orders.short(db, order)
     back = await _returns(db, held)
     choices = await _choices(db, sent, held)
+    scanning = {
+        item_id: await stock.lot_scan(db, item_id) for item_id in {line.item_id for line in held}
+    }
     value = sum((line.quantity * line.price for line in order_lines), Decimal(0))
     others: list[Order] = []
     if order.store_customer is not None:
@@ -403,6 +414,8 @@ async def describe_order(db: OrganizationSession, order: Order) -> OrderRead:
                         quantity=line.quantity,
                         lot=_lot(lots[line.lot_id], on_hold) if line.lot_id in lots else None,
                         assumed=line.assumed,
+                        lot_source=line.lot_source,
+                        lot_scan=scanning[line.item_id],
                         lots=choices.get((line.item_id, shipment.location_id), [])
                         if shipment.status is ShipmentStatus.PENDING
                         else [],
