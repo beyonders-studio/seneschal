@@ -29,22 +29,21 @@ contact name. A matched record is left as it is, and a matched output that
 has a recipe keeps it.
 
 Everything is made through Hoard's own write paths, which check it as they
-check what a page sends.
+check what a page sends. A row they refuse is rolled back alone and listed
+with its file and row, and the import carries on.
 """
 
 from __future__ import annotations
 
-import csv
-import io
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from typing import Any
 
-from fastapi import HTTPException, status
-from pydantic import BaseModel, ValidationError
+from fastapi import status
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -52,7 +51,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from hoard import plugin_manifest, recipes, stock, summary, units
 from hoard.api import bases, contacts, items, materials, products
 from hoard.api.deps import HoardError
-from hoard.recipes import RecipeRefused
+from hoard.imports.rows import COLUMN_MISSING, FILE_UNREADABLE, Row, read, stepper
+from hoard.imports.rows import key as _key
 from hoard.records import (
     PLACES,
     AutoManufacture,
@@ -68,7 +68,7 @@ from hoard.records import (
     Unit,
     Variation,
 )
-from seneschal_core.api import ErrorCode, refuse
+from seneschal_core.api import refuse
 from seneschal_core.db import WriteSession
 from seneschal_core.imports import (
     Checked,
@@ -77,9 +77,9 @@ from seneschal_core.imports import (
     Importer,
     ImportFile,
     ImportProblem,
+    ImportResult,
     ImportStep,
 )
-from seneschal_core.jobs import JobError
 
 #: The files the importer takes, by their fields' names.
 MATERIALS, RECIPES, MANUFACTURES = "materials", "recipes", "manufactures"
@@ -127,9 +127,9 @@ class StocksmithProblem(StrEnum):
     """What a check found that stops the import: codes pages translate."""
 
     #: The file isn't the export it was given as: it lacks a column.
-    COLUMN_MISSING = "COLUMN_MISSING"
+    COLUMN_MISSING = COLUMN_MISSING
     #: The file can't be read as a CSV export.
-    FILE_UNREADABLE = "FILE_UNREADABLE"
+    FILE_UNREADABLE = FILE_UNREADABLE
     #: A unit Hoard doesn't know, which an admin adds in Settings › Units.
     UNIT_UNKNOWN = "UNIT_UNKNOWN"
     #: A recipe line names no material, base or product, in either file or in Hoard.
@@ -159,13 +159,6 @@ KINDS = (
     "recipes",
 )
 
-Row = dict[str, str]
-
-
-def _key(name: str) -> str:
-    """A name as names are matched: ignoring case, as the database's ``lower`` does."""
-    return name.strip().lower()
-
 
 def _decimal(text: str) -> Decimal | None:
     try:
@@ -185,34 +178,11 @@ def _positive(text: str) -> Decimal | None:
 
 
 def _rows(
-    name: str, content: bytes | None, columns: Sequence[str], problems: list[ImportProblem]
+    name: str, content: bytes | None, columns: tuple[str, ...], problems: list[ImportProblem]
 ) -> list[tuple[int, Row]] | None:
-    """A file's rows, each with its row number as a spreadsheet counts it,
-    or None when it is absent or isn't the export it was given as."""
-    if content is None:
-        return None
-    try:
-        reader = csv.DictReader(io.StringIO(content.decode("utf-8-sig"), newline=""))
-        header = [column.strip() for column in reader.fieldnames or []]
-        read = [
-            (
-                number,
-                {
-                    column: value.strip() if isinstance(value, str) else ""
-                    for column, value in zip(header, record.values(), strict=False)
-                },
-            )
-            for number, record in enumerate(reader, start=2)
-        ]
-    except (UnicodeDecodeError, csv.Error):
-        problems.append(ImportProblem(code=StocksmithProblem.FILE_UNREADABLE, file=name))
-        return None
-    missing = [column for column in columns if column not in header]
-    problems.extend(
-        ImportProblem(code=StocksmithProblem.COLUMN_MISSING, file=name, row=1, name=column)
-        for column in missing
-    )
-    return None if missing else read
+    """A file's rows, or None when it is absent or isn't the export it was given as."""
+    found = read(name, content, columns, problems)
+    return None if found is None else found[1]
 
 
 def _options(variation: str) -> dict[str, str]:
@@ -348,10 +318,11 @@ def _unit(plan: _Plan, name: str, row: int) -> dict[str, str] | None:
 
 def _plan_materials(
     plan: _Plan, rows: list[tuple[int, Row]], stock_dated: date | None, sees_costs: bool
-) -> tuple[list[str], list[str]]:
-    """A step per material, and the suppliers and categories they name."""
-    suppliers: dict[str, str] = {}
-    categories: dict[str, str] = {}
+) -> tuple[list[tuple[str, int]], list[tuple[str, int]]]:
+    """A step per material, and the suppliers and categories they name, each
+    with the first row naming it."""
+    suppliers: dict[str, tuple[str, int]] = {}
+    categories: dict[str, tuple[str, int]] = {}
     for row, record in rows:
         name = record["name"]
         if not name or _key(name) in plan.measures:
@@ -368,9 +339,11 @@ def _plan_materials(
             else None
         )
         if record["preferred_vendor"]:
-            suppliers.setdefault(_key(record["preferred_vendor"]), record["preferred_vendor"])
+            suppliers.setdefault(
+                _key(record["preferred_vendor"]), (record["preferred_vendor"], row)
+            )
         if record["category"]:
-            categories.setdefault(_key(record["category"]), record["category"])
+            categories.setdefault(_key(record["category"]), (record["category"], row))
         held = plan.held.materials.get(_key(name))
         plan.count("materials", held is not None)
         inventoriable = record["inventoriable"].lower() not in {"no", "false", "0"}
@@ -389,7 +362,9 @@ def _plan_materials(
         limit = _positive(record["low_stock_limit"])
         plan.steps.append(
             {
-                "step": "material",
+                "step": "materials",
+                "file": MATERIALS,
+                "row": row,
                 "name": name,
                 "category": record["category"] or None,
                 "notes": record["description"] or None,
@@ -561,7 +536,9 @@ def _plan_recipes(plan: _Plan, found: list[_Recipe], auto_made: set[str]) -> Non
             plan.count("recipes", base is not None and base[0] in held.made)
             plan.steps.append(
                 {
-                    "step": "base",
+                    "step": "bases",
+                    "file": RECIPES,
+                    "row": recipe.row,
                     "name": recipe.name,
                     "unit": "gram" if by_weight(recipe.name) else "each",
                     "auto_manufacture": AutoManufacture.OUT_OF_STOCK
@@ -574,7 +551,9 @@ def _plan_recipes(plan: _Plan, found: list[_Recipe], auto_made: set[str]) -> Non
             product = products_planned.get(_key(recipe.name))
             if product is None:
                 product = products_planned[_key(recipe.name)] = {
-                    "step": "product",
+                    "step": "products",
+                    "file": RECIPES,
+                    "row": recipe.row,
                     "name": recipe.name,
                     "variations": variations_planned.setdefault(_key(recipe.name), []),
                 }
@@ -587,7 +566,9 @@ def _plan_recipes(plan: _Plan, found: list[_Recipe], auto_made: set[str]) -> Non
             output = {"product": recipe.name, **variation}
         recipe_steps.append(
             {
-                "step": "recipe",
+                "step": "recipes",
+                "file": RECIPES,
+                "row": recipe.row,
                 "output": output,
                 "by_ratio": recipe.base,
                 "batch_quantity": str(recipe.batch_quantity),
@@ -645,12 +626,12 @@ async def check(request: ImportCheck) -> Checked:
                 request.plugin, request.organization.community_ref
             )
         }
-        for name in suppliers:
+        for name, row in suppliers:
             plan.count("suppliers", _key(name) in held_contacts)
-            plan.steps.append({"step": "supplier", "name": name})
-    for name in categories:
+            plan.steps.append({"step": "suppliers", "file": MATERIALS, "row": row, "name": name})
+    for name, row in categories:
         plan.count("categories", _key(name) in plan.held.categories)
-        plan.steps.append({"step": "category", "name": name})
+        plan.steps.append({"step": "categories", "file": MATERIALS, "row": row, "name": name})
     plan.steps.extend(material_plan)
     manufactured: dict[str, list[tuple[str, str]]] = {}
     # What Stocksmith made by itself, for a run that needed it.
@@ -666,7 +647,7 @@ async def check(request: ImportCheck) -> Checked:
     return Checked(
         plan=plan.steps,
         counts=[
-            ImportCount(kind=kind, new=plan.counts[kind][0], existing=plan.counts[kind][1])
+            ImportCount(kind=kind, new=plan.counts[kind][0], unchanged=plan.counts[kind][1])
             for kind in KINDS
             if kind in plan.counts
         ],
@@ -715,24 +696,24 @@ async def _contacts(run: ImportStep) -> dict[str, int]:
     return run.memo["contacts"]
 
 
-async def _prepare(run: ImportStep, _step: dict[str, Any]) -> Mapping[str, int]:
+async def _prepare(run: ImportStep, _step: dict[str, Any]) -> ImportResult:
     """What the steps after it find: the standard units, the main location
     and each kind's default type."""
     await units.add_standard(run.db)
     await stock.main_location(run.db)
     await stock.add_default_types(run.db)
-    return {}
+    return ImportResult()
 
 
-async def _supplier(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _supplier(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     held = await _contacts(run)
     if _key(step["name"]) in held:
-        return {}
+        return ImportResult(matched={"suppliers": 1})
     contact = await contacts.add_contact(
         run.job.plugin, run.organization.community_ref, contacts.ContactCreate(name=step["name"])
     )
     held[_key(contact.name)] = contact.id
-    return {"suppliers": 1}
+    return ImportResult(created={"suppliers": 1})
 
 
 async def _category_id(db: WriteSession, name: str) -> int | None:
@@ -744,22 +725,22 @@ async def _category_id(db: WriteSession, name: str) -> int | None:
     return found.first()
 
 
-async def _category(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _category(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     if await _category_id(run.db, step["name"]) is not None:
-        return {}
+        return ImportResult(matched={"categories": 1})
     run.db.add(
         Category(
             organization_id=run.db.organization_id, kind=CategoryKind.MATERIAL, name=step["name"]
         )
     )
     await run.db.flush()
-    return {"categories": 1}
+    return ImportResult(created={"categories": 1})
 
 
-async def _material(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _material(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A material, made unless one of its name exists, and its starting stock
     where it holds none at the main location."""
-    db, made = run.db, {}
+    db, made = run.db, ImportResult(matched={"materials": 1})
     material_id = await _named(db, Material, step["name"])
     if material_id is None:
         tracking = await _unit_of(db, step["tracking_unit"])
@@ -788,7 +769,7 @@ async def _material(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
             ),
             sees_costs=False,
         )
-        material_id, made = material.id, {"materials": 1}
+        material_id, made = material.id, ImportResult(created={"materials": 1})
     starting = step["stock"]
     if starting is None:
         return made
@@ -807,12 +788,13 @@ async def _material(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
         starting["sees_costs"],
         dated_on=date.fromisoformat(starting["dated_on"]),
     )
-    return {**made, "stock": 1}
+    made.created["stock"] = 1
+    return made
 
 
-async def _base(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _base(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     if await _named(run.db, Base, step["name"]) is not None:
-        return {}
+        return ImportResult(matched={"bases": 1})
     await bases.add_base(
         run.db,
         bases.BaseCreate(
@@ -822,7 +804,7 @@ async def _base(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
         ),
         sees_costs=False,
     )
-    return {"bases": 1}
+    return ImportResult(created={"bases": 1})
 
 
 async def _made_type(db: WriteSession) -> int:
@@ -856,18 +838,20 @@ async def _variation(db: AsyncSession, product: str, variation: Mapping[str, Any
     )
 
 
-async def _product(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _product(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A Made product with its variations, each made unless it exists."""
-    db, made = run.db, {"products": 0, "variations": 0}
+    db, made = run.db, ImportResult()
     product_id = await _named(db, Product, step["name"])
     spare: Variation | None = None
     if product_id is None:
         product, spare = await products.add_product(
             db, products.ProductWrite(name=step["name"], type_id=await _made_type(db)), False
         )
-        product_id, made["products"] = product.id, 1
+        product_id = product.id
+    _counted(made, "products", spare is not None)
     for variation in step["variations"]:
         if await _variation(db, step["name"], variation) is not None:
+            _counted(made, "variations", False)
             continue
         await products.write_variation(
             db,
@@ -876,8 +860,14 @@ async def _product(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
             False,
         )
         spare = None
-        made["variations"] += 1
-    return {kind: count for kind, count in made.items() if count}
+        _counted(made, "variations", True)
+    return made
+
+
+def _counted(result: ImportResult, kind: str, created: bool) -> None:
+    """Count one record of ``kind`` as made, or as matched."""
+    counted = result.created if created else result.matched
+    counted[kind] = counted.get(kind, 0) + 1
 
 
 async def _line_item(db: AsyncSession, name: str) -> int:
@@ -919,7 +909,7 @@ async def _ratio(db: AsyncSession, recipe: Recipe, lines: list[recipes.Line]) ->
             return
 
 
-async def _recipe(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
+async def _recipe(run: ImportStep, step: dict[str, Any]) -> ImportResult:
     """A base's or a variation's recipe, unless it has one."""
     db, output = run.db, step["output"]
     if "base" in output:
@@ -933,7 +923,7 @@ async def _recipe(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
     if output_id is None:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
     if (await db.exec(held)).first() is not None:
-        return {}
+        return ImportResult(matched={"recipes": 1})
     lines = [
         recipes.Line(await _line_item(db, line["name"]), Decimal(line["written"]))
         for line in step["lines"]
@@ -944,33 +934,7 @@ async def _recipe(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
     if step["by_ratio"]:
         await _ratio(db, recipe, lines)
     await recipes.save(db, recipe, lines)
-    return {"recipes": 1}
-
-
-STEPS = {
-    "prepare": _prepare,
-    "supplier": _supplier,
-    "category": _category,
-    "material": _material,
-    "base": _base,
-    "product": _product,
-    "recipe": _recipe,
-}
-
-
-async def step(run: ImportStep, planned: dict[str, Any]) -> Mapping[str, int]:
-    """Carry out one step, a refusal failing the job with its code: tried
-    again only when Initiative didn't answer."""
-    try:
-        return await STEPS[planned["step"]](run, planned)
-    except HTTPException as refused:
-        raise JobError(
-            str(refused.detail), retry=refused.status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR
-        ) from None
-    except RecipeRefused as refused:
-        raise JobError(refused.code, retry=False) from None
-    except ValidationError:
-        raise JobError(ErrorCode.REQUEST_INVALID, retry=False) from None
+    return ImportResult(created={"recipes": 1})
 
 
 IMPORTER = Importer(
@@ -982,5 +946,15 @@ IMPORTER = Importer(
     ),
     options=StocksmithOptions,
     check=check,
-    step=step,
+    step=stepper(
+        {
+            "prepare": _prepare,
+            "suppliers": _supplier,
+            "categories": _category,
+            "materials": _material,
+            "bases": _base,
+            "products": _product,
+            "recipes": _recipe,
+        }
+    ),
 )

@@ -1,6 +1,7 @@
 """Stocksmith's exports become Hoard's catalogue: a check counts what they
 make and names their problems, an import makes it through Hoard's own write
-paths, and running it again makes only what is missing, stock included."""
+paths, listing a row they refuse and carrying on, and running it again makes
+only what is missing, stock included."""
 
 from __future__ import annotations
 
@@ -66,9 +67,10 @@ def _material(
     vendor: str,
     zone: str = "",
     description: str = "",
+    inventoriable: str = "yes",
 ) -> str:
     return (
-        f'1,"",{name},{category},"{description}","{zone}","","",yes,{on_hand},0.0,0.0,'
+        f'1,"",{name},{category},"{description}","{zone}","","",{inventoriable},{on_hand},0.0,0.0,'
         f"{tracking},{bought},{conversion},In Stock,active,0.1,{cost},{limit},USD,0.0,0.0,"
         f'"{vendor}","",2026-01-01 10:00:00 -0600,2026-01-02 10:00:00 -0600'
     )
@@ -151,11 +153,11 @@ async def _import(client, app, organization_id, **upload: Any) -> dict[str, Any]
     await jobs.work(app.state.plugin, organization_id, JOB_HANDLERS)
     done = (await client.get(f"/api/v1/jobs/{queued.json()['id']}")).json()
     assert done["state"] == "done", done
-    return done["result"]["made"]
+    return done["result"]
 
 
 def _counts(checked: dict[str, Any]) -> dict[str, tuple[int, int]]:
-    return {count["kind"]: (count["new"], count["existing"]) for count in checked["counts"]}
+    return {count["kind"]: (count["new"], count["unchanged"]) for count in checked["counts"]}
 
 
 async def test_a_check_counts_what_the_exports_make_and_writes_nothing(
@@ -188,16 +190,22 @@ async def test_an_import_makes_the_catalogue_through_hoards_own_paths(
 ):
     await sign_in(client, (plugin_manifest.SEE_COSTS,), admin=True)
 
-    made = await _import(client, app, organization_id, **_upload(**EVERYTHING))
+    result = await _import(client, app, organization_id, **_upload(**EVERYTHING))
 
-    assert made == {
-        "suppliers": 1,
-        "categories": 3,
-        "materials": 4,
-        "bases": 2,
-        "products": 2,
-        "variations": 3,
-        "recipes": 5,
+    assert result == {
+        "created": {
+            "suppliers": 1,
+            "categories": 3,
+            "materials": 4,
+            "bases": 2,
+            "products": 2,
+            "variations": 3,
+            "recipes": 5,
+        },
+        "matched": {"suppliers": 1},
+        "changed": {},
+        "failed": {},
+        "failed_rows": [],
     }
     units = {unit.id: unit.standard for unit in await db.exec(select(Unit))}
     oolong = (await db.exec(select(Material).where(Material.name == "Oolong Leaf"))).one()
@@ -305,8 +313,21 @@ async def test_running_it_again_makes_only_what_is_missing_and_stock_once(
     stocked = await _import(
         client, app, organization_id, **_upload("2026-12-31", materials=MATERIALS)
     )
-    assert stocked == {"stock": 3}
-    assert await _import(client, app, organization_id, **_upload("2026-12-31", **EVERYTHING)) == {}
+    assert (stocked["created"], stocked["matched"]) == (
+        {"stock": 3},
+        {"suppliers": 2, "categories": 3, "materials": 4},
+    )
+    again = await _import(client, app, organization_id, **_upload("2026-12-31", **EVERYTHING))
+    assert (again["created"], again["failed"]) == ({}, {})
+    assert again["matched"] == {
+        "suppliers": 2,
+        "categories": 3,
+        "materials": 4,
+        "bases": 2,
+        "products": 2,
+        "variations": 3,
+        "recipes": 5,
+    }
 
     started = {
         (row.kind, row.dated_on, row.change, row.unit_cost)
@@ -364,3 +385,39 @@ async def test_the_check_names_each_problem_with_its_row(client, sign_in, suppli
         "/api/v1/imports/stocksmith", **_upload(materials=materials, recipes=recipes)
     )
     assert (refused.status_code, refused.json()["detail"]) == (409, "IMPORT_PROBLEMS")
+
+
+async def test_a_row_its_write_path_refuses_is_listed_and_the_import_carries_on(
+    client, sign_in, suppliers, app, organization_id, db: WriteSession
+):
+    await sign_in(client, admin=True)
+    materials = "\n".join(
+        [
+            MATERIALS_HEADER,
+            _material("Mint Leaf", "Herbs", "gram", "gram", "1.0", "0", "0", "0", ""),
+            _material(
+                "Spoon", "Tools", "item", "item", "1.0", "0", "0", "0", "", inventoriable="no"
+            ),
+        ]
+    )
+    recipes = "\n".join(
+        [
+            RECIPES_HEADER,
+            '1,Mint Mix,,Mint Mix,,10.0,0,,"",Mint Leaf,5.0,,',
+            '2,Stirred,,Stirred Mix,,10.0,0,,"",Mint Leaf,5.0,,',
+            '2,,,,,,,,"",Spoon,1.0,,',
+        ]
+    )
+
+    result = await _import(
+        client, app, organization_id, **_upload(materials=materials, recipes=recipes)
+    )
+
+    # A tool carries no stock, so no recipe holds it: that recipe alone is left out.
+    assert (result["failed"], result["failed_rows"]) == (
+        {"recipes": 1},
+        [{"file": "recipes", "row": 3, "field": None, "code": "RECIPE_LINE_KIND"}],
+    )
+    assert result["created"]["recipes"] == 1
+    assert {base.name for base in await db.exec(select(Base))} == {"Mint Mix", "Stirred Mix"}
+    assert len((await db.exec(select(Recipe))).all()) == 1

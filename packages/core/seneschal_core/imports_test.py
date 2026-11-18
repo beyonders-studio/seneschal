@@ -1,11 +1,11 @@
 """Imports are for the community's admins: a check reads the files and keeps
 nothing, an import with problems is refused, and one without is a job that
-carries out its plan step by step, resuming after the last step it finished."""
+carries out its plan step by step, resuming after the last step it finished
+and listing the rows its steps refused."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any
 
@@ -18,7 +18,16 @@ from sqlmodel import col
 from seneschal_core import imports, jobs, organizations
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
-from seneschal_core.imports import Checked, ImportCheck, ImportCount, ImportProblem, ImportStep
+from seneschal_core.imports import (
+    Checked,
+    ImportCheck,
+    ImportCount,
+    ImportProblem,
+    ImportResult,
+    ImportRowFailure,
+    ImportStep,
+    RowRefused,
+)
 from seneschal_core.jobs import Job, JobState
 
 
@@ -45,7 +54,7 @@ async def _check(check: ImportCheck) -> Checked:
             ImportCount(
                 kind="widgets",
                 new=sum(step["name"] not in held for step in plan),
-                existing=sum(step["name"] in held for step in plan),
+                unchanged=sum(step["name"] in held for step in plan),
             )
         ],
         problems=[
@@ -61,19 +70,24 @@ handed: list[str] = []
 fail_once: set[str] = set()
 
 
-async def _step(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
-    """A widget, matched by name before it is made."""
+async def _step(run: ImportStep, step: dict[str, Any]) -> ImportResult:
+    """A widget, matched by name before it is made. One named ``cog`` is
+    refused once it is written."""
     handed.append(step["name"])
     if step["name"] in fail_once:
         fail_once.discard(step["name"])
         raise RuntimeError("lost")
     if step["name"] in await _names(run.db):
-        return {}
+        return ImportResult(matched={"widgets": 1})
     await run.db.execute(
         text("INSERT INTO widgets (organization_id, name) VALUES (:org, :name)"),
         {"org": run.db.organization_id, "name": step["name"]},
     )
-    return {"widgets": 1}
+    if step["name"] == "cog":
+        raise RowRefused(
+            "widgets", ImportRowFailure(file="widgets", row=3, field="name", code="COG_REFUSED")
+        )
+    return ImportResult(created={"widgets": 1})
 
 
 WIDGETS = imports.Importer(
@@ -165,8 +179,11 @@ async def test_a_check_answers_counts_and_problems_and_keeps_nothing(
 
     assert checked.status_code == 200, checked.text
     assert checked.json() == {
-        "counts": [{"kind": "widgets", "new": 3, "existing": 0}],
-        "problems": [{"code": "WIDGET_UNNAMED", "file": "widgets", "row": 2, "name": None}],
+        "counts": [{"kind": "widgets", "new": 3, "changed": 0, "unchanged": 0}],
+        "changes": [],
+        "problems": [
+            {"code": "WIDGET_UNNAMED", "file": "widgets", "row": 2, "field": None, "name": None}
+        ],
     }
     assert await _widgets(plugin, organization_id) == set()
     refused = await client.post("/api/v1/imports/widgets", **_upload(widgets="bolt\n\nnut"))
@@ -183,6 +200,7 @@ async def test_an_upload_the_importer_cannot_read_is_refused(
         ("/imports/gadgets/check", _upload(widgets="bolt"), (404, "IMPORTER_UNKNOWN")),
         ("/imports/widgets/check", _upload(more="bolt"), (422, "IMPORT_FILE_MISSING")),
         ("/imports/widgets/check", _upload(widgets=""), (422, "IMPORT_FILE_MISSING")),
+        ("/imports/widgets/check", _upload(), (422, "IMPORT_FILE_MISSING")),
         (
             "/imports/widgets/check",
             _upload({"shout": "loudly"}, widgets="bolt"),
@@ -195,7 +213,7 @@ async def test_an_upload_the_importer_cannot_read_is_refused(
         assert (answer.status_code, answer.json()["detail"]) == refusal, path
 
 
-async def test_an_import_is_a_job_that_resumes_after_its_last_step(
+async def test_an_import_is_a_job_that_resumes_after_its_last_step_and_lists_refused_rows(
     client, sign_in, plugin: Plugin, organization_id
 ):
     async with plugin.database.write_session(organization_id, actor=None) as db:
@@ -209,19 +227,19 @@ async def test_an_import_is_a_job_that_resumes_after_its_last_step(
     fail_once.add("washer")
 
     queued = await client.post(
-        "/api/v1/imports/widgets", **_upload(widgets="bolt\nnut", more="washer")
+        "/api/v1/imports/widgets", **_upload(widgets="bolt\nnut\ncog", more="washer")
     )
     assert queued.status_code == 202, queued.text
     job = queued.json()
     assert (job["kind"], job["state"], job["started_by"]) == ("import", "queued", "admin-ref")
     assert job["args"] == {
         "importer": "widgets",
-        "plan": [{"name": "bolt"}, {"name": "nut"}, {"name": "washer"}],
+        "plan": [{"name": "bolt"}, {"name": "nut"}, {"name": "cog"}, {"name": "washer"}],
     }
 
     await jobs.work(plugin, organization_id, HANDLERS)
     waiting = (await client.get(f"/api/v1/jobs/{job['id']}")).json()
-    assert (waiting["state"], waiting["done"], waiting["total"]) == ("queued", 2, 3)
+    assert (waiting["state"], waiting["done"], waiting["total"]) == ("queued", 3, 4)
     async with plugin.database.write_session(organization_id, actor=None) as db:
         await db.execute(
             update(Job).where(col(Job.id) == job["id"]).values(next_attempt_at=datetime.now(UTC))
@@ -230,8 +248,17 @@ async def test_an_import_is_a_job_that_resumes_after_its_last_step(
     await jobs.work(plugin, organization_id, HANDLERS)
 
     done = (await client.get(f"/api/v1/jobs/{job['id']}")).json()
-    assert (done["state"], done["result"]) == ("done", {"made": {"widgets": 2}})
-    assert handed == ["bolt", "nut", "washer", "washer"]
+    assert (done["state"], done["result"]) == (
+        "done",
+        {
+            "created": {"widgets": 2},
+            "matched": {"widgets": 1},
+            "changed": {},
+            "failed": {"widgets": 1},
+            "failed_rows": [{"file": "widgets", "row": 3, "field": "name", "code": "COG_REFUSED"}],
+        },
+    )
+    assert handed == ["bolt", "nut", "cog", "washer", "washer"]
     assert await _widgets(plugin, organization_id) == {"bolt", "nut", "washer"}
 
 
