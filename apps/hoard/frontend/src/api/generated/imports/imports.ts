@@ -169,8 +169,8 @@ export function useListImporters<
 }
 
 /**
- * What importing the files would make, what exists already, and the
- * problems that stop it. Nothing is kept.
+ * What importing the files would make, change and leave as it is,
+ * each change, and the problems that stop it. Nothing is kept.
  * @summary Check Import
  */
 export const checkImport = (
@@ -188,6 +188,12 @@ export const checkImport = (
   }
   if (checkImportBody.manufactures !== undefined) {
     formData.append(`manufactures`, checkImportBody.manufactures);
+  }
+  if (checkImportBody.bases !== undefined) {
+    formData.append(`bases`, checkImportBody.bases);
+  }
+  if (checkImportBody.products !== undefined) {
+    formData.append(`products`, checkImportBody.products);
   }
   if (checkImportBody.options !== undefined) {
     formData.append(`options`, checkImportBody.options);
@@ -249,8 +255,8 @@ export type CheckImportMutationError = ErrorType<void>;
 export type CheckImportMutationVariables = { importerId: string; data: BodyType<CheckImportBody> };
 
 /**
- * What importing the files would make, what exists already, and the
- * problems that stop it. Nothing is kept.
+ * What importing the files would make, change and leave as it is,
+ * each change, and the problems that stop it. Nothing is kept.
  * @summary Check Import
  */
 export const useCheckImport = <TError = ErrorType<void>, TContext = unknown>(
@@ -292,6 +298,12 @@ export const startImport = (
   }
   if (startImportBody.manufactures !== undefined) {
     formData.append(`manufactures`, startImportBody.manufactures);
+  }
+  if (startImportBody.bases !== undefined) {
+    formData.append(`bases`, startImportBody.bases);
+  }
+  if (startImportBody.products !== undefined) {
+    formData.append(`products`, startImportBody.products);
   }
   if (startImportBody.options !== undefined) {
     formData.append(`options`, startImportBody.options);

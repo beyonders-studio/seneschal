@@ -21,7 +21,7 @@
   },
   "export": {
     "title": "Export",
-    "description": "Export every record of a kind: CSV for a spreadsheet, JSON for another program. Hoard makes the file in the background, and you download it when it's ready. Costs and prices are included only if you can see them.",
+    "description": "Export every record of a kind: CSV for a spreadsheet, JSON for another program. Materials, {{bases}}, products and {{recipes}} export as spreadsheets you can edit and import back in Settings › Import. Hoard makes the file in the background, and you download it when it's ready. Costs and prices are included only if you can see them.",
     "start": "Export {{kind}} as {{format}}",
     "download": "Download {{kind}} as {{format}}",
     "downloadReady": "Download",
@@ -29,16 +29,14 @@
     "kinds": {
       "materials": "Materials",
       "bases": "{{Bases}}",
-      "products": "Products",
-      "variations": "Variations",
+      "products": "Products and variations",
       "purchases": "Purchases",
       "purchase_lines": "Purchase lines",
       "lots": "Lots",
       "adjustments": "Adjustments",
       "stocktakes": "Stocktakes",
       "stocktake_rows": "Stocktake counts",
-      "recipes": "{{Recipes}}",
-      "recipe_lines": "{{Recipe}} lines"
+      "recipes": "{{Recipes}} and their lines"
     },
     "formats": {
       "csv": "CSV",

@@ -12,12 +12,7 @@ import type {
   UseMutationResult,
 } from "@tanstack/react-query";
 
-import type {
-  ExportKind,
-  ExportRecordsParams,
-  HTTPValidationError,
-  JobRead,
-} from "../hoard.schemas";
+import type { ExportKind, ExportRecordsParams, JobRead } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType } from "../../mutator";
@@ -43,7 +38,7 @@ export const exportRecords = (
 export const getExportRecordsMutationKey = () => ["exportRecords"] as const;
 
 export const getExportRecordsMutationOptions = <
-  TError = ErrorType<void | HTTPValidationError>,
+  TError = ErrorType<void>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
@@ -80,17 +75,14 @@ export const getExportRecordsMutationOptions = <
 
 export type ExportRecordsMutationResult = NonNullable<Awaited<ReturnType<typeof exportRecords>>>;
 
-export type ExportRecordsMutationError = ErrorType<void | HTTPValidationError>;
+export type ExportRecordsMutationError = ErrorType<void>;
 export type ExportRecordsMutationVariables = { kind: ExportKind; params?: ExportRecordsParams };
 
 /**
  * Queue an export of every record of ``kind``; its job's file is the export.
  * @summary Export Records
  */
-export const useExportRecords = <
-  TError = ErrorType<void | HTTPValidationError>,
-  TContext = unknown,
->(
+export const useExportRecords = <TError = ErrorType<void>, TContext = unknown>(
   options?: {
     mutation?: UseMutationOptions<
       Awaited<ReturnType<typeof exportRecords>>,

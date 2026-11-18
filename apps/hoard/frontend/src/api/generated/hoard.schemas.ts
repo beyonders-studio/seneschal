@@ -801,15 +801,13 @@ export const ExportKind = {
   materials: "materials",
   bases: "bases",
   products: "products",
-  variations: "variations",
+  recipes: "recipes",
   purchases: "purchases",
   purchase_lines: "purchase_lines",
   lots: "lots",
   adjustments: "adjustments",
   stocktakes: "stocktakes",
   stocktake_rows: "stocktake_rows",
-  recipes: "recipes",
-  recipe_lines: "recipe_lines",
 } as const;
 
 /**
@@ -1339,33 +1337,51 @@ export interface HoldRelease {
 }
 
 /**
- * What a plan holds of one kind of record: how many it makes, and how
- * many already exist and are left as they are.
+ * One field a plan changes on a record that exists: the row naming it,
+ * the record's name, the column, and the cell as Hoard holds it and as the
+ * file has it.
+ */
+export interface ImportChange {
+  file: string;
+  row: number;
+  name: string;
+  field: string;
+  was: string;
+  now: string;
+}
+
+/**
+ * What a plan holds of one kind of record: how many it makes, how many
+ * exist and change, and how many exist and are left as they are.
  */
 export interface ImportCount {
   kind: string;
   new: number;
-  existing: number;
+  changed?: number;
+  unchanged: number;
 }
 
 /**
  * Something a check found that stops the import: a code pages translate,
  * the file and row it is on (a row counted as a spreadsheet shows it, its
- * header the first), and what the row names, when that is the problem.
+ * header the first), the column, and what the row names, when that is the
+ * problem.
  */
 export interface ImportProblem {
   code: string;
   file?: string | null;
   row?: number | null;
+  field?: string | null;
   name?: string | null;
 }
 
 /**
- * What a check found: what the import makes and what exists already, by
- * kind, and the problems that stop it.
+ * What a check found: what the import makes, changes and leaves as it
+ * is, by kind; each change, field by field; and the problems that stop it.
  */
 export interface ImportCheckRead {
   counts: ImportCount[];
+  changes: ImportChange[];
   problems: ImportProblem[];
 }
 
@@ -3615,6 +3631,8 @@ export type CheckImportBody = {
   materials?: Blob | File;
   recipes?: Blob | File;
   manufactures?: Blob | File;
+  bases?: Blob | File;
+  products?: Blob | File;
   options?: string;
 };
 
@@ -3622,5 +3640,7 @@ export type StartImportBody = {
   materials?: Blob | File;
   recipes?: Blob | File;
   manufactures?: Blob | File;
+  bases?: Blob | File;
+  products?: Blob | File;
   options?: string;
 };

@@ -66,6 +66,9 @@ describe("ReportsPage", () => {
     expect(download.getAttribute("download")).toBe("purchase_lines.json");
     const exported = asked.find((request) => request.url === "/api/v1/export/purchase_lines");
     expect(exported?.params).toEqual({ format: "json" });
+    // The catalogue exports as spreadsheets that import back: CSV only.
+    expect(screen.getByRole("button", { name: "Export Materials as CSV" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Export Materials as JSON" })).toBeNull();
   });
 
   it("shows no stock value to a member who doesn't see costs, and never asks for it", async () => {
