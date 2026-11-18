@@ -133,7 +133,29 @@
     "matched": "Matched",
     "confirm": "Confirm",
     "recount": "Recount",
-    "confirmFailed": "The count couldn't be confirmed."
+    "confirmFailed": "The count couldn't be confirmed.",
+    "scan": "Scan to count",
+    "scanFailed": "That scan couldn't be read. Try again.",
+    "scanNotCounted": "This stocktake doesn't count that.",
+    "lotOf": "{{item}} · {{lot}}",
+    "noLotOf": "{{item}} · not in a lot",
+    "finish": "Finish the count",
+    "finishTitle": "Finish this full count?",
+    "finishBody": "Every lot of a counted item that wasn't counted is set to nothing. Items nobody counted stay as they are.",
+    "finishFailed": "The count couldn't be finished.",
+    "lots": {
+      "label": "Lots",
+      "choices": {
+        "by_item": "Count each item, not its lots",
+        "full": "Count every lot (full count)",
+        "spot": "Count some lots (spot check)"
+      },
+      "hints": {
+        "by_item": "Each item is counted as one.",
+        "full": "Each lot is counted. Finishing sets the lots of a counted item that weren't counted to nothing.",
+        "spot": "Each lot is counted. Only the lots counted change."
+      }
+    }
   },
   "errors": {
     "COSTS_HIDDEN": "Only members who see costs can set them.",
@@ -149,6 +171,8 @@
     "ADJUSTMENT_COST_DERIVED": "Only starting stock takes a cost; Hoard works out the rest.",
     "ADJUSTMENT_CHANGE_ZERO": "A change can't be nothing.",
     "STOCKTAKE_CATEGORY_KIND": "That category sorts the other kind of record.",
-    "ADJUSTMENT_FROM_TRANSFER": "A move stays as it is. To undo it, move the stock back."
+    "ADJUSTMENT_FROM_TRANSFER": "A move stays as it is. To undo it, move the stock back.",
+    "STOCKTAKE_NOT_BY_LOT": "This stocktake counts items, not lots.",
+    "STOCKTAKE_LOT_MISMATCH": "That lot isn't at this stocktake's location."
   }
 }

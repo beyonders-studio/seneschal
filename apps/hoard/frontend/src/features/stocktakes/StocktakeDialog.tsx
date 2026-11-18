@@ -2,7 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { CategoryKind, type StocktakeRead } from "@/api/generated/hoard.schemas";
+import { CategoryKind, LotCount, type StocktakeRead } from "@/api/generated/hoard.schemas";
 import {
   getListStocktakesQueryKey,
   getReadStocktakeQueryKey,
@@ -26,6 +26,9 @@ import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/ui/select";
 import { Textarea } from "@/ui/textarea";
+
+/** A stocktake that counts each item as one, without lots. */
+const BY_ITEM = "by_item";
 
 /** The category select's value for every category. */
 const ALL_CATEGORIES = "all";
@@ -70,6 +73,7 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
   const [location, setLocation] = useState<number | null>(null);
   const [category, setCategory] = useState<number | null>(null);
   const [sampleSize, setSampleSize] = useState("");
+  const [lots, setLots] = useState<LotCount | typeof BY_ITEM>(BY_ITEM);
   const [datedOn, setDatedOn] = useState(today());
   const [notes, setNotes] = useState("");
   const start = useCreateStocktake();
@@ -83,6 +87,7 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
           ...(location === null ? {} : { location_id: location }),
           category_id: category,
           sample_size: sampleSize ? Number(sampleSize) : null,
+          lot_count: lots === BY_ITEM ? null : lots,
           dated_on: datedOn,
           notes: notes.trim() || null,
         },
@@ -139,6 +144,20 @@ function StocktakeForm({ onStarted }: { onStarted: (started: StocktakeRead) => v
           </Field>
         </div>
         <LocationField value={location} onChange={setLocation} />
+        <Field label={t("stocktakes.lots.label")} hint={t(`stocktakes.lots.hints.${lots}`)}>
+          <Select value={lots} onValueChange={(next) => setLots(next as LotCount | typeof BY_ITEM)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[BY_ITEM, ...Object.values(LotCount)].map((each) => (
+                <SelectItem key={each} value={each}>
+                  {t(`stocktakes.lots.choices.${each}`)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
         <div className="grid grid-cols-pair gap-4">
           <Field label={t("stocktakes.sampleSize")} hint={t("stocktakes.sampleSizeHint")}>
             <Input

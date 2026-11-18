@@ -25,6 +25,7 @@ import type {
   ListStocktakesParams,
   PageStocktakeListed,
   StocktakeCreate,
+  StocktakeLotAdd,
   StocktakeRead,
   StocktakeRowConfirm,
 } from "../hoard.schemas";
@@ -507,4 +508,187 @@ export const useConfirmStocktakeRow = <
   TContext
 > => {
   return useMutation(getConfirmStocktakeRowMutationOptions(options), queryClient);
+};
+/**
+ * Count a lot the stocktake doesn't list, found while counting; one it
+ * lists already is left as it is.
+ * @summary Add Stocktake Lot
+ */
+export const addStocktakeLot = (
+  stocktakeId: number,
+  stocktakeLotAdd: BodyType<StocktakeLotAdd>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StocktakeRead>(
+    {
+      url: `/api/v1/stocktakes/${stocktakeId}/rows`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: stocktakeLotAdd,
+      signal,
+    },
+    options
+  );
+};
+
+export const getAddStocktakeLotMutationKey = () => ["addStocktakeLot"] as const;
+
+export const getAddStocktakeLotMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof addStocktakeLot>>,
+    TError,
+    AddStocktakeLotMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof addStocktakeLot>>,
+  TError,
+  AddStocktakeLotMutationVariables,
+  TContext
+> => {
+  const mutationKey = getAddStocktakeLotMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof addStocktakeLot>>,
+    AddStocktakeLotMutationVariables
+  > = (props) => {
+    const { stocktakeId, data } = props ?? {};
+
+    return addStocktakeLot(stocktakeId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AddStocktakeLotMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addStocktakeLot>>
+>;
+export type AddStocktakeLotMutationBody = BodyType<StocktakeLotAdd>;
+export type AddStocktakeLotMutationError = ErrorType<void>;
+export type AddStocktakeLotMutationVariables = {
+  stocktakeId: number;
+  data: BodyType<StocktakeLotAdd>;
+};
+
+/**
+ * Count a lot the stocktake doesn't list, found while counting; one it
+ * lists already is left as it is.
+ * @summary Add Stocktake Lot
+ */
+export const useAddStocktakeLot = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof addStocktakeLot>>,
+      TError,
+      AddStocktakeLotMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof addStocktakeLot>>,
+  TError,
+  AddStocktakeLotMutationVariables,
+  TContext
+> => {
+  return useMutation(getAddStocktakeLotMutationOptions(options), queryClient);
+};
+/**
+ * Finish a stocktake: in a full count, each lot of an item counted that
+ * wasn't counted is confirmed as nothing. A spot check changes nothing.
+ * @summary Finish Stocktake
+ */
+export const finishStocktake = (
+  stocktakeId: number,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<StocktakeRead>(
+    { url: `/api/v1/stocktakes/${stocktakeId}/finish`, method: "POST", signal },
+    options
+  );
+};
+
+export const getFinishStocktakeMutationKey = () => ["finishStocktake"] as const;
+
+export const getFinishStocktakeMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof finishStocktake>>,
+    TError,
+    FinishStocktakeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof finishStocktake>>,
+  TError,
+  FinishStocktakeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getFinishStocktakeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof finishStocktake>>,
+    FinishStocktakeMutationVariables
+  > = (props) => {
+    const { stocktakeId } = props ?? {};
+
+    return finishStocktake(stocktakeId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FinishStocktakeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof finishStocktake>>
+>;
+
+export type FinishStocktakeMutationError = ErrorType<void | HTTPValidationError>;
+export type FinishStocktakeMutationVariables = { stocktakeId: number };
+
+/**
+ * Finish a stocktake: in a full count, each lot of an item counted that
+ * wasn't counted is confirmed as nothing. A spot check changes nothing.
+ * @summary Finish Stocktake
+ */
+export const useFinishStocktake = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof finishStocktake>>,
+      TError,
+      FinishStocktakeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof finishStocktake>>,
+  TError,
+  FinishStocktakeMutationVariables,
+  TContext
+> => {
+  return useMutation(getFinishStocktakeMutationOptions(options), queryClient);
 };
