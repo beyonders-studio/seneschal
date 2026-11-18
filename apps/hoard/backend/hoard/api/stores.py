@@ -746,6 +746,17 @@ async def _copy(db: AsyncSession, store: Store, product_id: str) -> StoreProduct
     return copy
 
 
+async def current_product(connector: Connector, product_id: str) -> StoreProduct:
+    """The store's product as the store holds it now."""
+    try:
+        product = await connector.product(product_id)
+    except ConnectRefused as refused:
+        raise store_refused(refused) from None
+    if product is None:
+        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    return product
+
+
 async def started_from(
     db: WriteSession,
     store: Store,
@@ -757,12 +768,7 @@ async def started_from(
     an edit started from, by the store's ``updated_at``. Otherwise the store's
     version is kept as Hoard's copy and the edit is refused with
     ``STORE_PRODUCT_CHANGED``; nothing is sent to the store."""
-    try:
-        product = await connector.product(product_id)
-    except ConnectRefused as refused:
-        raise store_refused(refused) from None
-    if product is None:
-        raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
+    product = await current_product(connector, product_id)
     if product.updated_at != updated_at:
         await listings.match(db, store, [product])
         await db.commit()

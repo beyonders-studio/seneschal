@@ -148,7 +148,8 @@ async def _detail(db: AsyncSession, material_id: int, sees_costs: bool) -> Mater
     )
 
 
-async def _write(db: AsyncSession, material: Material, body: MaterialWrite) -> None:
+async def write_material(db: AsyncSession, material: Material, body: MaterialWrite) -> None:
+    """Write ``material`` as ``body`` leaves it, as an edit does."""
     await require_references(
         db, kind=CategoryKind.MATERIAL, units=(body.tracking_unit_id, body.purchase_unit_id)
     )
@@ -252,7 +253,7 @@ async def add_material(db: WriteSession, body: MaterialCreate, sees_costs: bool)
     """Add a material as ``body`` writes it, with its bin and starting stock
     where it starts."""
     material = Material(name=body.name, tracking_unit_id=body.tracking_unit_id)
-    await _write(db, material, body)
+    await write_material(db, material, body)
     await stock.add_material(db, material)
     if body.start is not None:
         await items.start(db, material.id, body.start, sees_costs)
@@ -264,7 +265,7 @@ async def update_material(
     material_id: int, body: MaterialWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> MaterialDetail:
     material = await found(db, Material, material_id)
-    await _write(db, material, body)
+    await write_material(db, material, body)
     db.add(material)
     await db.commit()
     return await _detail(db, material_id, sees_costs)

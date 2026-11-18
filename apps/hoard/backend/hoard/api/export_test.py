@@ -1,5 +1,6 @@
-"""Each kind of record exports as CSV or JSON, through a job whose file only
-its starter downloads, with what things cost only for those who see costs."""
+"""Each kind of record exports, through a job whose file only its starter
+downloads, with what things cost only for those who see costs: the
+catalogue's kinds as spreadsheets, the others as CSV or JSON."""
 
 from __future__ import annotations
 
@@ -7,7 +8,7 @@ import csv
 import io
 
 from hoard import plugin_manifest
-from hoard.api.export import KINDS, ExportKind
+from hoard.api.export import CATALOGUE, KINDS, ExportKind
 from seneschal_core.db import WriteSession
 
 
@@ -15,20 +16,25 @@ def _header(text: str) -> list[str]:
     return next(csv.reader(io.StringIO(text)))
 
 
-async def test_cost_columns_export_only_to_a_member_who_sees_costs(client, sign_in, export):
+async def test_cost_columns_export_only_to_a_member_who_sees_costs(
+    client, sign_in, export, suppliers
+):
     await sign_in(client)
-    hidden = {kind: _header((await export(kind)).text) for kind in KINDS}
+    hidden = {kind: _header((await export(kind)).text) for kind in ExportKind}
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
-    seen = {kind: _header((await export(kind)).text) for kind in KINDS}
+    seen = {kind: _header((await export(kind)).text) for kind in ExportKind}
 
-    for kind, (_, costs) in KINDS.items():
-        assert set(seen[kind]) - set(hidden[kind]) == costs, kind
+    costs = {kind: costs for kind, (_, costs) in KINDS.items()} | {
+        ExportKind.PRODUCTS: {"default_price", "price"}
+    }
+    for kind in ExportKind:
+        assert set(seen[kind]) - set(hidden[kind]) == costs.get(kind, set()), kind
         assert "organization_id" not in seen[kind], kind
     assert {"code", "dated_on", "paid"} <= set(hidden[ExportKind.PURCHASES])
 
 
 async def test_records_export_as_csv_and_json(
-    client, sign_in, export, db: WriteSession, material, buy
+    client, sign_in, export, suppliers, db: WriteSession, material, buy
 ):
     flour = await material("=Flour", sku="F-1")
     purchase = await buy((flour, "4", "2.5"))
@@ -40,10 +46,11 @@ async def test_records_export_as_csv_and_json(
 
     assert materials.headers["content-disposition"] == 'attachment; filename="materials.csv"'
     assert materials.headers["content-type"] == "text/csv; charset=utf-8"
+    # The catalogue reads as a spreadsheet: references by name, the default type empty.
     assert [
-        (row["id"], row["name"], row["sku"], row["inventoriable"], row["category_id"])
+        (row["id"], row["name"], row["sku"], row["tracking_unit"], row["category"], row["type"])
         for row in csv.DictReader(io.StringIO(materials.text))
-    ] == [(str(flour.id), "'=Flour", "F-1", "true", "")]
+    ] == [(str(flour.id), "'=Flour", "F-1", "g", "", "")]
     assert lines.headers["content-disposition"] == 'attachment; filename="purchase_lines.json"'
     [line] = lines.json()
     assert (line["purchase_id"], line["item_id"], line["tracking_quantity"]) == (
@@ -52,9 +59,14 @@ async def test_records_export_as_csv_and_json(
         "4.000000",
     )
     assert "unit_cost" not in line
+    for kind in CATALOGUE:
+        refused = await client.post(f"/api/v1/export/{kind}", params={"format": "json"})
+        assert (refused.status_code, refused.json()["detail"]) == (422, "CSV_ONLY"), kind
 
 
-async def test_an_export_downloads_only_for_the_member_who_asked(client, sign_in, export):
+async def test_an_export_downloads_only_for_the_member_who_asked(
+    client, sign_in, export, suppliers
+):
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
     exported = await export("products")
     assert exported.status_code == 200

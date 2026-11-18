@@ -3,6 +3,8 @@ stock is moved, counted and reported, which hold bases beside materials."""
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date
 from decimal import Decimal
 
@@ -178,7 +180,7 @@ async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
     )
     reorder = (await client.get("/api/v1/reports/reorder")).json()
     valuation = (await client.get("/api/v1/reports/valuation")).json()
-    exported = await export("bases", format="json")
+    exported = await export("bases")
 
     assert moved["item"] == {
         "id": spice.id,
@@ -196,7 +198,7 @@ async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
     assert [(row["kind"], row["name"], row["value"]) for row in valuation["items"]] == [
         ("base", "Chai spice", "80.000000")
     ]
-    assert [row["name"] for row in exported.json()] == ["Chai spice"]
+    assert [row["name"] for row in csv.DictReader(io.StringIO(exported.text))] == ["Chai spice"]
 
 
 async def test_an_archived_base_leaves_lists_and_pickers_and_keeps_its_history(

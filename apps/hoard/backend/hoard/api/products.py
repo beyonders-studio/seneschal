@@ -516,20 +516,27 @@ async def _write_through(
     plugin: Plugin,
     community_ref: str,
     listed: Sequence[tuple[Store, Listing, StoreProductCopy | None]],
-    versions: Sequence[StoreVersion],
+    versions: Sequence[StoreVersion] | None,
     edit: Callable[[StoreProduct], StoreProduct],
 ) -> None:
     """Write ``edit`` to each store product ``listed`` names. Each is read from
     its store first, and the edit is refused, with nothing sent, unless every
-    one is the version it started from (``versions``). Each store's answer is
-    kept as Hoard's copy."""
-    started = {(version.store_id, version.product_id): version.updated_at for version in versions}
+    one is the version it started from (``versions``); with no versions, it
+    is made to the version each store holds now. Each store's answer is kept
+    as Hoard's copy."""
+    started = {
+        (version.store_id, version.product_id): version.updated_at for version in versions or ()
+    }
     stores_of = {(store.id, listing.product_id): store for store, listing, _ in listed}
     current = []
     for (store_id, product_id), store in stores_of.items():
         connector = await stores.store_connector(plugin, community_ref, store)
-        product = await stores.started_from(
-            db, store, connector, product_id, started.get((store_id, product_id))
+        product = (
+            await stores.current_product(connector, product_id)
+            if versions is None
+            else await stores.started_from(
+                db, store, connector, product_id, started.get((store_id, product_id))
+            )
         )
         current.append((store, connector, product))
     for store, connector, product in current:
@@ -645,6 +652,25 @@ async def update_product(
     """Change a product. A new name or status reaches the synced stores
     listing it first: the name as their title, archiving as archiving."""
     product = await found(db, Product, product_id)
+    await change_product(
+        db, plugin, session.community_ref, product, body, sees_costs, body.store_versions
+    )
+    await db.commit()
+    return await _detail(db, product_id, sees_costs)
+
+
+async def change_product(
+    db: WriteSession,
+    plugin: Plugin,
+    community_ref: str,
+    product: Product,
+    body: ProductWrite,
+    sees_costs: bool,
+    versions: Sequence[StoreVersion] | None,
+) -> None:
+    """Write ``product`` as ``body`` leaves it, a new name or status written
+    first to the synced stores listing it, from ``versions`` of their
+    products, or the versions they hold now when none are given."""
     type_id = await type_of(
         db, CategoryKind.PRODUCT, body.type_id, body.category_id, product.type_id
     )
@@ -658,12 +684,10 @@ async def update_product(
                 status=body.status.value if restated else held.status,
             )
 
-        listed = await _listed(db, product_id)
-        await _write_through(db, plugin, session.community_ref, listed, body.store_versions, edit)
+        listed = await _listed(db, product.id)
+        await _write_through(db, plugin, community_ref, listed, versions, edit)
     product.sqlmodel_update(_written(body, sees_costs, "default_price") | {"type_id": type_id})
     db.add(product)
-    await db.commit()
-    return await _detail(db, product_id, sees_costs)
 
 
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_CHANGE)
@@ -701,9 +725,28 @@ async def update_product_variation(
     """Change a variation. A new SKU or new options reach the synced stores
     listing it first, as its variants' SKU and option values."""
     variation = await _product_variation(db, product_id, variation_id)
+    await change_variation(
+        db, plugin, session.community_ref, variation, body, sees_costs, body.store_versions
+    )
+    await db.commit()
+    return await _detail(db, product_id, sees_costs)
+
+
+async def change_variation(
+    db: WriteSession,
+    plugin: Plugin,
+    community_ref: str,
+    variation: Variation,
+    body: ProductVariationWrite,
+    sees_costs: bool,
+    versions: Sequence[StoreVersion] | None,
+) -> None:
+    """Write ``variation`` as ``body`` leaves it, a new SKU or new options
+    written first to the synced stores listing it, from ``versions`` of their
+    products, or the versions they hold now when none are given."""
     new_sku, new_options = body.sku != variation.sku, body.attributes != variation.attributes
     if new_sku or new_options:
-        listed = await _listed(db, product_id, variation_id)
+        listed = await _listed(db, variation.product_id, variation.id)
         variants = {listing.variant_id for _, listing, _ in listed}
 
         def edited(held: StoreProduct, variant: StoreVariant) -> StoreVariant:
@@ -721,10 +764,8 @@ async def update_product_variation(
         def edit(held: StoreProduct) -> StoreProduct:
             return replace(held, variants=[edited(held, variant) for variant in held.variants])
 
-        await _write_through(db, plugin, session.community_ref, listed, body.store_versions, edit)
+        await _write_through(db, plugin, community_ref, listed, versions, edit)
     await write_variation(db, variation, body, sees_costs)
-    await db.commit()
-    return await _detail(db, product_id, sees_costs)
 
 
 @router.delete(

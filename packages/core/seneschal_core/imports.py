@@ -6,19 +6,23 @@ exported, checked first and then made by a job.
   options (a model the upload's ``options`` field is read as), a ``check`` and
   a ``step``.
 * **Checking**: ``check`` reads the files and answers a :class:`Checked`: the
-  plan, a list of steps as JSON; what the plan will make and what already
-  exists, counted by kind; and the problems it found, each with its file and
-  row. It writes nothing.
+  plan, a list of steps as JSON; what the plan makes new, changes and leaves
+  as it is, counted by kind; each change, field by field; and the problems it
+  found, each with its file and row. It writes nothing.
 * **Importing**: a plan with no problems is carried out by a job of kind
   :data:`IMPORT_JOB`, whose arguments are the importer's id and its plan; the
   files themselves are not kept. The job hands each step to the importer's
-  ``step``, in a transaction of its own, and saves a checkpoint after it. A
-  step matches before it makes, so a job resumed after its worker was lost
-  makes nothing twice. Its result is what it made, by kind.
+  ``step``, in a transaction of its own and a savepoint within it, and saves
+  a checkpoint after it. A step matches before it makes, so a job resumed
+  after its worker was lost makes nothing twice. A step that refuses its row
+  (:class:`RowRefused`) is rolled back alone and listed, and the job carries
+  on. Its result is an :class:`ImportResult`: what it made, matched and
+  changed, and the rows it refused.
 * **Routes** (:func:`router`, mounted under ``/api/v1`` beside ``/jobs``), for
   the community's admins: ``GET /imports``, the importers and the files each
   takes; ``POST /imports/{importer}/check``, the files and options in one
-  multipart upload, answering the counts and problems and keeping nothing; and
+  multipart upload, answering the counts, changes and problems and keeping
+  nothing; and
   ``POST /imports/{importer}``, the same upload checked again, which queues
   the job when the check found no problems.
 
@@ -28,8 +32,7 @@ The app registers :func:`handler` as the handler of :data:`IMPORT_JOB`.
 from __future__ import annotations
 
 import json
-from collections import Counter
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated, Any
@@ -71,7 +74,7 @@ class ImportRefusal(StrEnum):
     IMPORT_ADMIN_ONLY = "IMPORT_ADMIN_ONLY"
     #: The app has no importer of that id.
     IMPORTER_UNKNOWN = "IMPORTER_UNKNOWN"
-    #: A file the importer requires was not sent.
+    #: A file the importer requires was not sent, or no file was.
     IMPORT_FILE_MISSING = "IMPORT_FILE_MISSING"
     #: A file is larger than an import reads.
     IMPORT_FILE_TOO_LARGE = "IMPORT_FILE_TOO_LARGE"
@@ -92,31 +95,93 @@ class ImportFile:
 class ImportProblem(BaseModel):
     """Something a check found that stops the import: a code pages translate,
     the file and row it is on (a row counted as a spreadsheet shows it, its
-    header the first), and what the row names, when that is the problem."""
+    header the first), the column, and what the row names, when that is the
+    problem."""
 
     code: str
     file: str | None = None
     row: int | None = None
+    field: str | None = None
     name: str | None = None
 
 
 class ImportCount(BaseModel):
-    """What a plan holds of one kind of record: how many it makes, and how
-    many already exist and are left as they are."""
+    """What a plan holds of one kind of record: how many it makes, how many
+    exist and change, and how many exist and are left as they are."""
 
     kind: str
     new: int
-    existing: int
+    changed: int = 0
+    unchanged: int
+
+
+class ImportChange(BaseModel):
+    """One field a plan changes on a record that exists: the row naming it,
+    the record's name, the column, and the cell as Hoard holds it and as the
+    file has it."""
+
+    file: str
+    row: int
+    name: str
+    field: str
+    was: str
+    now: str
 
 
 @dataclass(frozen=True)
 class Checked:
     """What a check answers: the plan's steps, as JSON a job keeps, its
-    counts by kind, and the problems found."""
+    counts by kind, the changes it makes, and the problems found."""
 
     plan: list[dict[str, Any]]
     counts: list[ImportCount]
     problems: list[ImportProblem]
+    changes: list[ImportChange] = field(default_factory=list)
+
+
+class ImportRowFailure(BaseModel):
+    """A row the job left out: its file, its row as a spreadsheet shows it
+    (the header is 1), the field that stopped it, when that is known, and the
+    code it was refused with."""
+
+    file: str | None = None
+    row: int | None = None
+    field: str | None = None
+    code: str
+
+
+class ImportResult(BaseModel):
+    """What an import's job did, by kind: the records it made, those a row
+    named and left as they were, those it changed, and the rows it refused,
+    each listed."""
+
+    created: dict[str, int] = {}
+    matched: dict[str, int] = {}
+    changed: dict[str, int] = {}
+    failed: dict[str, int] = {}
+    failed_rows: list[ImportRowFailure] = []
+
+    def add(self, step: ImportResult) -> None:
+        """Count what one step did in."""
+        for counted, more in (
+            (self.created, step.created),
+            (self.matched, step.matched),
+            (self.changed, step.changed),
+            (self.failed, step.failed),
+        ):
+            for kind, count in more.items():
+                counted[kind] = counted.get(kind, 0) + count
+        self.failed_rows.extend(step.failed_rows)
+
+
+class RowRefused(Exception):
+    """A step's row refused while it was written: the job rolls the step back
+    alone, lists the row under ``kind``, and carries on."""
+
+    def __init__(self, kind: str, failure: ImportRowFailure) -> None:
+        super().__init__(failure.code)
+        self.kind = kind
+        self.failure = failure
 
 
 @dataclass(frozen=True)
@@ -148,9 +213,10 @@ class ImportStep:
 
 #: A check: the plan, counts and problems of what was sent.
 Check = Callable[[ImportCheck], Awaitable[Checked]]
-#: A step of a plan carried out: what it made, by kind. It matches before it
-#: makes, so it makes nothing a run that was lost made already.
-Step = Callable[[ImportStep, dict[str, Any]], Awaitable[Mapping[str, int]]]
+#: A step of a plan carried out: what it made, matched and changed, by kind,
+#: or :class:`RowRefused`. It matches before it makes, so it makes nothing a
+#: run that was lost made already.
+Step = Callable[[ImportStep, dict[str, Any]], Awaitable[ImportResult]]
 
 
 @dataclass(frozen=True)
@@ -172,7 +238,8 @@ class Importer:
 def handler(importers: Sequence[Importer]) -> jobs.Handler:
     """The handler of :data:`IMPORT_JOB` for ``importers``: each step of the
     plan carried out by its importer, in its own transaction, from the step
-    after the last checkpoint."""
+    after the last checkpoint. A step that refuses its row is rolled back to
+    its savepoint and listed."""
     by_id = {importer.id: importer for importer in importers}
 
     async def run(job: JobContext) -> JobResult:
@@ -186,21 +253,26 @@ def handler(importers: Sequence[Importer]) -> jobs.Handler:
         if organization.read_only:
             raise JobError(ErrorCode.READ_ONLY, retry=False)
         steps: list[dict[str, Any]] = job.args["plan"]
-        saved: dict[str, Any] = job.checkpoint or {"next": 0, "made": {}}
-        made: Counter[str] = Counter(saved["made"])
+        saved: dict[str, Any] = job.checkpoint or {"next": 0, "result": {}}
+        result = ImportResult.model_validate(saved["result"])
         memo: dict[str, Any] = {}
         for index in range(saved["next"], len(steps)):
             await job.progress(IMPORT_STEP, index, len(steps))
             async with job.plugin.database.write_session(
                 job.organization_id, actor=job.started_by
             ) as db:
-                made.update(
-                    await importer.step(ImportStep(job, db, organization, memo), steps[index])
-                )
+                try:
+                    async with db.begin_nested():
+                        done = await importer.step(
+                            ImportStep(job, db, organization, memo), steps[index]
+                        )
+                except RowRefused as refused:
+                    done = ImportResult(failed={refused.kind: 1}, failed_rows=[refused.failure])
+                result.add(done)
                 await db.commit()
-            await job.save_checkpoint({"next": index + 1, "made": dict(made)})
+            await job.save_checkpoint({"next": index + 1, "result": result.model_dump()})
         await job.progress(IMPORT_STEP, len(steps), len(steps))
-        return JobResult(data={"made": dict(made)})
+        return JobResult(data=result.model_dump())
 
     return run
 
@@ -221,10 +293,11 @@ class ImporterRead(BaseModel):
 
 
 class ImportCheckRead(BaseModel):
-    """What a check found: what the import makes and what exists already, by
-    kind, and the problems that stop it."""
+    """What a check found: what the import makes, changes and leaves as it
+    is, by kind; each change, field by field; and the problems that stop it."""
 
     counts: list[ImportCount]
+    changes: list[ImportChange]
     problems: list[ImportProblem]
 
 
@@ -305,6 +378,8 @@ def router(importers: Sequence[Importer]) -> APIRouter:
                         status.HTTP_422_UNPROCESSABLE_CONTENT, ImportRefusal.IMPORT_FILE_MISSING
                     )
             sent_options = form.get(OPTIONS_FIELD)
+        if not files:
+            raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ImportRefusal.IMPORT_FILE_MISSING)
         try:
             options = importer.options.model_validate(
                 json.loads(sent_options) if isinstance(sent_options, str) and sent_options else {}
@@ -347,10 +422,10 @@ def router(importers: Sequence[Importer]) -> APIRouter:
         plugin: PluginDep,
         organization: OrganizationDep,
     ) -> ImportCheckRead:
-        """What importing the files would make, what exists already, and the
-        problems that stop it. Nothing is kept."""
+        """What importing the files would make, change and leave as it is,
+        each change, and the problems that stop it. Nothing is kept."""
         found = await checked(importer_of(importer_id), request, db, plugin, organization, session)
-        return ImportCheckRead(counts=found.counts, problems=found.problems)
+        return ImportCheckRead(counts=found.counts, changes=found.changes, problems=found.problems)
 
     @routes.post(
         "/{importer_id}",

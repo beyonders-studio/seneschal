@@ -210,6 +210,15 @@ function ValuationReport() {
   );
 }
 
+/** The catalogue's kinds, which export as spreadsheets that import back:
+ *  CSV only. */
+const CATALOGUE: ExportKind[] = [
+  ExportKind.materials,
+  ExportKind.bases,
+  ExportKind.products,
+  ExportKind.recipes,
+];
+
 function ExportLinks() {
   const { t } = useTranslation("reports");
   return (
@@ -263,18 +272,20 @@ function ExportRow({ kind }: { kind: ExportKind }) {
             </a>
           </Button>
         )}
-        {Object.values(ExportFormat).map((format) => (
-          <Button
-            key={format}
-            variant="outline"
-            size="sm"
-            disabled={working}
-            onClick={() => start.mutate({ kind, params: { format } })}
-            aria-label={t("export.start", { kind: name, format: t(`export.formats.${format}`) })}
-          >
-            {t(`export.formats.${format}`)}
-          </Button>
-        ))}
+        {(CATALOGUE.includes(kind) ? [ExportFormat.csv] : Object.values(ExportFormat)).map(
+          (format) => (
+            <Button
+              key={format}
+              variant="outline"
+              size="sm"
+              disabled={working}
+              onClick={() => start.mutate({ kind, params: { format } })}
+              aria-label={t("export.start", { kind: name, format: t(`export.formats.${format}`) })}
+            >
+              {t(`export.formats.${format}`)}
+            </Button>
+          )
+        )}
       </span>
     </li>
   );

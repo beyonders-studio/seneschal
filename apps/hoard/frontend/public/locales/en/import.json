@@ -1,20 +1,41 @@
 {
-  "title": "Import from Stocksmith",
-  "description": "Bring your catalogue over from Stocksmith's CSV exports: materials, bases, products and their recipes, with suppliers, categories and bins. Hoard checks the files first, and makes only what it doesn't have yet.",
   "back": "Back to Settings",
   "adminOnly": "Only the community's admins can import.",
   "section": {
     "title": "Import",
-    "description": "Bring records over from another program's exports.",
-    "stocksmith": "Import from Stocksmith"
+    "description": "Bring records over from another program's exports, or back from spreadsheets Hoard exported."
+  },
+  "importers": {
+    "stocksmith": {
+      "title": "Import from Stocksmith",
+      "description": "Bring your catalogue over from Stocksmith's CSV exports: materials, bases, products and their recipes, with suppliers, categories and bins. Hoard checks the files first, and makes only what it doesn't have yet.",
+      "countsNote": "What's already in Hoard is left as it is.",
+      "files": {
+        "materials": "Materials export",
+        "materialsHint": "Stocksmith's materials export.",
+        "recipes": "Recipes export",
+        "recipesHint": "Optional. Every item its lines name must be in the materials export or already in Hoard.",
+        "manufactures": "Manufactures export",
+        "manufacturesHint": "Optional. Read to tell products from bases, and which bases Stocksmith made when a run was short: no runs are imported."
+      }
+    },
+    "spreadsheets": {
+      "title": "Import Hoard spreadsheets",
+      "description": "Bring back the catalogue spreadsheets exported from Reports › Export, once you've edited them. A row with an id changes that record, and a row without one is matched by its name, or a variation by its SKU, or else added. An empty cell clears its field, a column you leave out is left as it is, and nothing is deleted: archive a record by setting its status. A {{recipe}} in the file is replaced by its rows. Stock, lots and costs change only through runs, purchases and adjustments.",
+      "countsNote": "Records the files don't hold are left as they are.",
+      "files": {
+        "materials": "Materials",
+        "materialsHint": "Optional. materials.csv, as exported.",
+        "bases": "{{Bases}}",
+        "basesHint": "Optional. bases.csv, as exported.",
+        "products": "Products",
+        "productsHint": "Optional. products.csv: a row per variation.",
+        "recipes": "{{Recipes}}",
+        "recipesHint": "Optional. recipes.csv: a row per line."
+      }
+    }
   },
   "files": {
-    "materials": "Materials export",
-    "materialsHint": "Stocksmith's materials export.",
-    "recipes": "Recipes export",
-    "recipesHint": "Optional. Every item its lines name must be in the materials export or already in Hoard.",
-    "manufactures": "Manufactures export",
-    "manufacturesHint": "Optional. Read to tell products from bases, and which bases Stocksmith made when a run was short: no runs are imported.",
     "prompt": "Drop the CSV file here",
     "chosen": "Chosen: {{name}}"
   },
@@ -27,12 +48,53 @@
   "start": "Import",
   "checkFailed": "Hoard couldn't check those files.",
   "startFailed": "Hoard couldn't start the import.",
+  "where": {
+    "row": "{{file}}, row {{row}}",
+    "column": "{{file}}, row {{row}}, {{column}}"
+  },
+  "columns": {
+    "id": "id",
+    "name": "Name",
+    "status": "Status",
+    "sku": "SKU",
+    "category": "Category",
+    "type": "Type",
+    "tracking_unit": "Tracking unit",
+    "purchase_unit": "Purchase unit",
+    "purchase_conversion": "Purchase conversion",
+    "unit_weight": "Unit weight",
+    "low_stock_limit": "Low-stock limit",
+    "supplier": "Supplier",
+    "supplier_code": "Supplier code",
+    "ingredient_name": "Ingredient name",
+    "allergens": "Allergens",
+    "fragrance_allergens": "Fragrance allergens",
+    "notes": "Notes",
+    "cure_days": "Cure days",
+    "auto_manufacture": "Auto-manufacture",
+    "default_price": "Default price",
+    "variation_id": "Variation id",
+    "options": "Options",
+    "price": "Price",
+    "variation_auto_manufacture": "Variation auto-manufacture",
+    "makes": "Makes",
+    "makes_options": "Makes options",
+    "batch_quantity": "Batch quantity",
+    "by_ratio": "By ratio",
+    "total": "Total",
+    "total_unit": "Total unit",
+    "minutes": "Minutes",
+    "item": "Line",
+    "item_options": "Line options",
+    "amount": "Amount",
+    "unit": "Unit"
+  },
   "counts": {
     "title": "What the import makes",
     "kind": "Kind",
     "new": "New",
-    "existing": "Already in Hoard",
-    "note": "What's already in Hoard is left as it is.",
+    "changed": "Changed",
+    "unchanged": "Unchanged",
     "kinds": {
       "materials": "Materials",
       "categories": "Categories",
@@ -44,30 +106,52 @@
       "recipes": "Recipes"
     }
   },
+  "changes": {
+    "title": "What changes",
+    "change": "{{name}}, {{column}}: {{was}} → {{now}}",
+    "empty": "empty"
+  },
   "problems": {
     "title": "Fix these first, then check again",
     "none": "No problems found: the files are ready to import.",
-    "where": "{{file}}, row {{row}}",
     "codes": {
-      "COLUMN_MISSING": "This isn't the export it was chosen as: it has no “{{name}}” column.",
-      "FILE_UNREADABLE": "This file can't be read as a CSV export.",
+      "COLUMN_MISSING": "This isn't the file it was chosen as: it has no “{{name}}” column.",
+      "COLUMN_UNKNOWN": "Hoard doesn't know the column “{{name}}”. Name it as the export does, or take it out.",
+      "COSTS_HIDDEN": "Only members who can see costs can import the column “{{name}}”. Take it out.",
+      "FILE_UNREADABLE": "This file can't be read as CSV.",
+      "ID_UNKNOWN": "“{{name}}” isn't the id of one of this community's records of this kind.",
+      "ROW_REPEATED": "Another row is for the same record. Keep one of them.",
+      "SKU_REPEATED": "The SKU “{{name}}” would be on two variations.",
+      "NAME_AMBIGUOUS": "More than one record is called “{{name}}”. Give the row its id to say which.",
+      "VALUE_REQUIRED": "This can't be empty.",
+      "VALUE_INVALID": "“{{name}}” isn't a value this column takes.",
+      "NUMBER_INVALID": "“{{name}}” isn't a number. Write it without thousands separators.",
+      "NUMBER_OUT_OF_RANGE": "{{name}} is out of range for this column.",
+      "TYPE_UNKNOWN": "Hoard has no type called “{{name}}”. Add it in Settings › Types.",
       "UNIT_UNKNOWN": "Hoard doesn't know the unit “{{name}}”. Add it in Settings › Units.",
-      "LINE_NAMES_NOTHING": "“{{name}}” isn't a material, base or product in either file or in Hoard.",
+      "OPTION_UNKNOWN": "“{{name}}” isn't one of this property's options.",
+      "OPTIONS_INVALID": "Write options as “Size: Large; Tin: Red”.",
+      "COLUMNS_DISAGREE": "This row differs from the first row of the same record. Make them the same.",
+      "RECIPE_OUTPUT_UNKNOWN": "“{{name}}” isn't a base or a product's variation, in the files or in Hoard.",
+      "RECIPE_OUTPUT_DIFFERS": "This id is for a {{recipe}} that makes something other than “{{name}}”.",
+      "LINE_NAMES_NOTHING": "“{{name}}” isn't a material, base or product in the files or in Hoard.",
       "LINE_REPEATED": "This recipe names “{{name}}” on two lines.",
       "RECIPE_REPEATED": "A second recipe for “{{name}}”. Delete one of them from the file.",
       "RECIPE_CONTAINS_ITSELF": "The recipe for “{{name}}” would contain itself.",
       "unknown": "Hoard can't import this row."
     }
   },
-  "made": {
+  "done": {
     "title": "Imported",
     "nothing": "Everything in the files was in Hoard already.",
-    "count": "{{kind}}: {{count}}"
+    "made": "{{kind}}: {{count}} new",
+    "changed": "{{kind}}: {{count}} changed",
+    "leftOut": "Left out"
   },
   "errors": {
     "IMPORT_ADMIN_ONLY": "Only the community's admins can import.",
     "IMPORTER_UNKNOWN": "Hoard can't import these files.",
-    "IMPORT_FILE_MISSING": "Choose the materials export first.",
+    "IMPORT_FILE_MISSING": "Choose a file first.",
     "IMPORT_FILE_TOO_LARGE": "That file is too large to import.",
     "IMPORT_OPTIONS_INVALID": "Choose the day the stock is dated.",
     "IMPORT_PROBLEMS": "The files have problems. Check them again and fix what's listed.",
