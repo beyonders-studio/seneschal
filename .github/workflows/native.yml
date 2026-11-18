@@ -1,9 +1,26 @@
 name: Phone apps
 
-# Builds each app's Android app (every app with an apps/<app>/native.json), so
-# a change to it, or to what every phone app shares, is proven to build. A
-# debug build, unsigned: signed builds and their release come with the apps'
-# signing environments.
+# Each app's Android app (every app with an apps/<app>/native.json).
+#
+#   pull request        a debug build, unsigned, so a change to an app's phone
+#                       app, or to what every phone app shares, is proven to
+#                       build
+#   push to dev         each app's dev app (<appId>.dev, "<Name> Dev"),
+#                       signed with its dev key, kept as a workflow artifact
+#   tag <app>-v<x.y.z>  that app's release: an APK signed with its release
+#                       key, attached to the tag's GitHub Release, and an AAB,
+#                       kept as a workflow artifact for uploading to Google
+#                       Play by hand
+#
+# The signing keys live in Secret Manager, one secret per app and kind
+# (seneschal-<app>-android-<kind>, a JSON document: the PKCS12 keystore, its
+# password, its alias and its certificate's SHA-256). A signing job reaches its
+# app's secret through workload identity federation, as the service account
+# seneschal-<app>-<kind>, and only from its GitHub environment
+# (<app>-android-<kind>), on a push of this workflow to the ref that kind
+# signs: refs/heads/dev, or refs/tags/<app>-v*. The infra repository grants
+# that (terraform/ci, terraform/github; docs/runbooks/android-signing.md), so
+# the signing jobs stay in this file and run on push alone.
 on:
   pull_request:
     branches: [dev, main]
@@ -18,18 +35,32 @@ on:
       - ".github/workflows/native.yml"
   push:
     branches: [dev]
+    # Path filters don't apply to tags: every release tag builds its app.
     paths:
       - "apps/*/native.json"
+      - "apps/*/VERSION"
       - "apps/*/frontend/**"
       - "packages/app/**"
       - "packages/native/**"
+      - "packages/ui/**"
+      - "pnpm-lock.yaml"
       - ".github/workflows/native.yml"
+    # One pattern per app with a phone app.
+    tags:
+      - "hoard-v*"
 
 permissions: {}
 
+# A newer push to dev replaces a dev build still running. A release is never
+# cancelled.
 concurrency:
   group: native-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.ref == 'refs/heads/dev' || github.event_name == 'pull_request' }}
+
+env:
+  # Where the signing keys live (the infra repository's terraform/ci).
+  GCP_PROJECT: initiative-prod-510320
+  WORKLOAD_IDENTITY_PROVIDER: projects/488930331534/locations/global/workloadIdentityPools/seneschal/providers/github-actions
 
 jobs:
   apps:
@@ -40,30 +71,65 @@ jobs:
       contents: read
     outputs:
       apps: ${{ steps.apps.outputs.apps }}
+      kind: ${{ steps.apps.outputs.kind }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
-      - name: List the apps with a phone app
+      - name: List the apps to build, and how
         id: apps
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          apps=$(for file in apps/*/native.json; do basename "$(dirname "$file")"; done | jq -cnR '[inputs]')
-          echo "apps=$apps" >> "$GITHUB_OUTPUT"
-          echo "Phone apps: $apps"
+          if [[ "$REF" == refs/tags/* ]]; then
+            if [[ ! "$REF_NAME" =~ ^([a-z0-9-]+)-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+              echo "::error::$REF_NAME is not <app>-v<major>.<minor>.<patch>."
+              exit 1
+            fi
+            app="${BASH_REMATCH[1]}"
+            version="${BASH_REMATCH[2]}"
+            if [[ ! -f "apps/$app/native.json" ]]; then
+              echo "::error::$REF_NAME names $app, which has no apps/$app/native.json."
+              exit 1
+            fi
+            if [[ "$(cat "apps/$app/VERSION")" != "$version" ]]; then
+              echo "::error::$REF_NAME says $version; apps/$app/VERSION says $(cat "apps/$app/VERSION")."
+              exit 1
+            fi
+            apps=$(jq -cn --arg app "$app" '[$app]')
+            kind=release
+          else
+            apps=$(for file in apps/*/native.json; do basename "$(dirname "$file")"; done | jq -cnR '[inputs]')
+            if [[ "$EVENT" == "push" ]]; then kind=dev; else kind=debug; fi
+          fi
+          {
+            echo "apps=$apps"
+            echo "kind=$kind"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building $kind: $apps"
 
   android:
-    name: Android (${{ matrix.app }})
+    name: Android ${{ needs.apps.outputs.kind }} (${{ matrix.app }})
     needs: apps
     if: needs.apps.outputs.apps != '[]'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    # A signed build signs only in its app's environment, which only its ref
+    # may use. A debug build uses none.
+    environment: ${{ needs.apps.outputs.kind != 'debug' && format('{0}-android-{1}', matrix.app, needs.apps.outputs.kind) || '' }}
     permissions:
       contents: read
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
         app: ${{ fromJSON(needs.apps.outputs.apps) }}
+    env:
+      APP: ${{ matrix.app }}
+      KIND: ${{ needs.apps.outputs.kind }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,8 +159,6 @@ jobs:
 
       # The project as committed is what `seneschal-native apply` makes of it.
       - name: The shared pieces are applied
-        env:
-          APP: ${{ matrix.app }}
         run: |
           node packages/native/bin/seneschal-native.mjs apply "$APP"
           if [[ -n "$(git status --porcelain -- "apps/$APP/frontend/android")" ]]; then
@@ -108,5 +172,122 @@ jobs:
         run: pnpm native:sync
 
       - name: Build the debug app
+        if: env.KIND == 'debug'
         working-directory: apps/${{ matrix.app }}/frontend/android
         run: ./gradlew --no-daemon assembleDebug
+
+      - name: Sign in to Google Cloud as the app's signer
+        if: env.KIND != 'debug'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: seneschal-${{ matrix.app }}-${{ needs.apps.outputs.kind }}@${{ env.GCP_PROJECT }}.iam.gserviceaccount.com
+
+      # The keystore touches only the runner's temp directory, and only for
+      # this job; the passwords are masked before anything could print them.
+      - name: Read the signing key
+        if: env.KIND != 'debug'
+        run: |
+          umask 077
+          key=$(gcloud secrets versions access latest \
+            --secret="seneschal-$APP-android-$KIND" --project="$GCP_PROJECT")
+          password=$(jq -r .store_password <<<"$key")
+          key_password=$(jq -r .key_password <<<"$key")
+          echo "::add-mask::$password"
+          echo "::add-mask::$key_password"
+          store="$RUNNER_TEMP/$APP-$KIND.p12"
+          jq -r .keystore_base64 <<<"$key" | base64 -d > "$store"
+          {
+            echo "ORG_GRADLE_PROJECT_seneschalSigningStoreFile=$store"
+            echo "ORG_GRADLE_PROJECT_seneschalSigningStorePassword=$password"
+            echo "ORG_GRADLE_PROJECT_seneschalSigningKeyAlias=$(jq -r .key_alias <<<"$key")"
+            echo "ORG_GRADLE_PROJECT_seneschalSigningKeyPassword=$key_password"
+            echo "CERTIFICATE_SHA256=$(jq -r .certificate_sha256 <<<"$key")"
+          } >> "$GITHUB_ENV"
+
+      - name: Build the signed app
+        if: env.KIND != 'debug'
+        working-directory: apps/${{ matrix.app }}/frontend/android
+        run: |
+          if [[ "$KIND" == "release" ]]; then
+            ./gradlew --no-daemon assembleRelease bundleRelease
+          else
+            name=$(jq -r .name "../../native.json")
+            ./gradlew --no-daemon assembleRelease \
+              -PseneschalAppIdSuffix=.dev -PseneschalAppLabel="$name Dev"
+          fi
+
+      # The APK is signed by the key the secret's certificate names.
+      - name: Check the signature
+        if: env.KIND != 'debug'
+        run: |
+          apk="apps/$APP/frontend/android/app/build/outputs/apk/release/app-release.apk"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -mindepth 2 -maxdepth 2 -name apksigner -type f | sort -V | tail -n 1)
+          [[ -n "$apksigner" ]] || { echo "::error::apksigner was not found under the Android SDK."; exit 1; }
+          normalise() { tr -d ':[:space:]' | tr '[:upper:]' '[:lower:]'; }
+          signed=$("$apksigner" verify --print-certs "$apk" | awk '/certificate SHA-256 digest/ { print $NF }' | normalise)
+          expected=$(normalise <<<"$CERTIFICATE_SHA256")
+          if [[ -z "$expected" || "$signed" != "$expected" ]]; then
+            echo "::error::$apk is signed by '$signed', not the $KIND key's certificate '$expected'."
+            exit 1
+          fi
+          echo "$apk is signed by the $KIND key ($expected)."
+
+      - name: Name the files, and forget the keystore
+        if: always() && env.KIND != 'debug'
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          rm -f "$RUNNER_TEMP/$APP-$KIND.p12"
+          outputs="apps/$APP/frontend/android/app/build/outputs"
+          [[ -f "$outputs/apk/release/app-release.apk" ]] || exit 0
+          version=$(cat "apps/$APP/VERSION")
+          mkdir -p "$RUNNER_TEMP/out"
+          if [[ "$KIND" == "release" ]]; then
+            cp "$outputs/apk/release/app-release.apk" "$RUNNER_TEMP/out/$APP-$version.apk"
+            cp "$outputs/bundle/release/app-release.aab" "$RUNNER_TEMP/out/$APP-$version.aab"
+          else
+            cp "$outputs/apk/release/app-release.apk" "$RUNNER_TEMP/out/$APP-dev-$version-${SHA::7}.apk"
+          fi
+
+      - name: Keep the files
+        if: env.KIND != 'debug'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.app }}-android-${{ needs.apps.outputs.kind }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: error
+
+  attach:
+    name: Attach the APK to the release
+    needs: [apps, android]
+    if: needs.apps.outputs.kind == 'release'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - name: Fetch the release's files
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ fromJSON(needs.apps.outputs.apps)[0] }}-android-release
+          path: out
+
+      # publish.yml makes the tag's GitHub Release once the image is built and
+      # scanned: wait for it rather than make a second one.
+      - name: Attach the APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          for _ in $(seq 1 60); do
+            if gh release view "$TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+              gh release upload "$TAG" out/*.apk --repo "$REPOSITORY" --clobber
+              echo "attached $(ls out/*.apk) to $TAG"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::$TAG has no GitHub Release after 30 minutes; attach the APK from this run's artifact by hand."
+          exit 1
