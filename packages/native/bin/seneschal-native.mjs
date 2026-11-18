@@ -17,6 +17,8 @@
  * - backup rules that leave the credentials out of the phone's backups and
  *   device transfers (the SeneschalCredentials Preferences group,
  *   packages/app/src/native/storage.ts), so a restored phone signs in again;
+ * - for an app that scans with the camera, the code scanner module Google
+ *   Play services installs with it;
  * - its icon and splash, from apps/<app>/frontend/assets when they are there.
  */
 
@@ -133,6 +135,19 @@ patch(
                 <data android:scheme="${gradle("appScheme")}" />
             </intent-filter>`
 );
+
+// An app that scans with the camera asks Google Play services for its code
+// scanner module when it is installed (packages/app/src/scan.tsx).
+const dependencies = JSON.parse(readFileSync(path.join(frontend, "package.json"), "utf8"));
+if (dependencies.dependencies?.["@capacitor-mlkit/barcode-scanning"]) {
+  patch(
+    manifest,
+    "com.google.mlkit.vision.DEPENDENCIES",
+    /(\n\s*)<\/application>/,
+    `$1    <!-- Google's code scanner, which scans with the camera (packages/app/src/scan.tsx). -->
+        <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui" />$1</application>`
+  );
+}
 
 const xml = path.join(android, "app/src/main/res/xml");
 mkdirSync(xml, { recursive: true });
