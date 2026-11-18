@@ -1,10 +1,9 @@
-import "@/i18n";
-
 import { isNative } from "@seneschal/app/native/platform";
 import { ScanButton } from "@seneschal/app/scan";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import i18n from "@/i18n";
 import { host } from "@/ui/host";
 
 vi.mock("@seneschal/app/native/platform", () => ({ isNative: vi.fn(() => true) }));
@@ -33,6 +32,9 @@ vi.mock("@capacitor-mlkit/barcode-scanning", () => ({
 const LABEL = "]d20109506000134352\u001d10L24-118";
 
 describe("Scanning with the phone's camera", () => {
+  // The button's words, which a page would have loaded already.
+  beforeAll(() => i18n.loadNamespaces("app"));
+
   beforeEach(() => {
     vi.mocked(isNative).mockReturnValue(true);
     scanner.available = true;
