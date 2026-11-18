@@ -29,6 +29,7 @@ from hoard.api import (
     recipes,
     reports,
     runs,
+    scans,
     settings,
     setups,
     shipments,
@@ -76,5 +77,6 @@ for area in (
     holds,
     documents,
     files,
+    scans,
 ):
     router.include_router(area.router)

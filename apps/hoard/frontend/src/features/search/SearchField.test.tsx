@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import type { Suggestions } from "@/api/generated/hoard.schemas";
+import type { ScanRead, Suggestions } from "@/api/generated/hoard.schemas";
 import { buildHit, buildResults } from "@/features/search/testing";
 import { openSignedIn, signedIn } from "@/testing";
 
@@ -11,6 +11,45 @@ const suggest = (answer: Suggestions) => ({
 });
 
 const field = () => screen.findByRole("combobox", { name: "Search Hoard" });
+
+/** What Hoard holds of a scan: nothing, unless told otherwise. */
+const scanRead = (overrides: Partial<ScanRead> = {}): ScanRead => ({
+  kind: "gs1",
+  text: "",
+  gtin: null,
+  lot: null,
+  serial: null,
+  sscc: null,
+  expires_on: null,
+  best_before: null,
+  produced_on: null,
+  count: null,
+  items: [],
+  lots: [],
+  problems: [],
+  ...overrides,
+});
+
+const lotOf = (id: number) => ({
+  id,
+  item_id: 7,
+  location_id: 1,
+  number: "L24-118",
+  expires_on: null,
+  balance: "5",
+  on_hold: false,
+  loose: false,
+  path: `/stock/lots/${id}`,
+});
+
+const sencha = {
+  id: 7,
+  kind: "material" as const,
+  name: "Sencha",
+  attributes: {},
+  archived: false,
+  path: "/stock/materials/7",
+};
 
 describe("SearchField", () => {
   it("is focused by Ctrl-K and Cmd-K", async () => {
@@ -67,6 +106,62 @@ describe("SearchField", () => {
 
     await waitFor(() => expect(asked.map((config) => config.url)).toContain("/api/v1/lots/4"));
     expect(await field()).toHaveProperty("value", "");
+  });
+
+  it("opens the one lot a scanned label names, though its run and hold share its number", async () => {
+    const asked = await openSignedIn("/reports", signedIn(), {
+      ...suggest({
+        items: [buildHit({ exact: true }), buildHit({ exact: true })],
+        exact_match: false,
+      }),
+      "POST /api/v1/scans": {
+        status: 200,
+        data: scanRead({ lot: "L24-118", items: [sencha], lots: [lotOf(4)] }),
+      },
+    });
+    const search = await field();
+
+    fireEvent.change(search, { target: { value: "(01)09506000134352(10)L24-118" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await waitFor(() => expect(asked.map((config) => config.url)).toContain("/api/v1/lots/4"));
+    const scanned = asked.find((config) => config.url === "/api/v1/scans");
+    expect(JSON.parse(scanned?.data)).toEqual({ text: "(01)09506000134352(10)L24-118" });
+  });
+
+  it("opens the one item a scan names when it names no single lot", async () => {
+    const asked = await openSignedIn("/reports", signedIn(), {
+      ...suggest({ items: [], exact_match: false }),
+      "POST /api/v1/scans": {
+        status: 200,
+        data: scanRead({ items: [sencha], lots: [lotOf(4), lotOf(5)] }),
+      },
+    });
+    const search = await field();
+
+    fireEvent.change(search, { target: { value: "09506000134352" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await waitFor(() => expect(asked.map((config) => config.url)).toContain("/api/v1/materials/7"));
+  });
+
+  it("searches a label Hoard holds nothing of by its GTIN", async () => {
+    const asked = await openSignedIn("/reports", signedIn(), {
+      ...suggest({ items: [], exact_match: false }),
+      "POST /api/v1/scans": {
+        status: 200,
+        data: scanRead({ gtin: "09506000134352", problems: ["unknown_gtin"] }),
+      },
+    });
+    const search = await field();
+
+    fireEvent.change(search, { target: { value: "(01)09506000134352(10)X" } });
+    fireEvent.keyDown(search, { key: "Enter" });
+
+    await screen.findByRole("heading", { name: "Results for “09506000134352”" });
+    expect(asked.filter((config) => config.url === "/api/v1/search")[0]?.params).toMatchObject({
+      q: "09506000134352",
+    });
   });
 
   it("opens every result when the query is no single code", async () => {
