@@ -404,7 +404,7 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
     builtin(
       "auto_manufacture",
       "sync:autoManufacture.title",
-      (product) => product.auto_manufacture,
+      (product) => product.id,
       ({ item }) => <AutoManufactureField product={item} />
     ),
   ],

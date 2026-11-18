@@ -7,7 +7,8 @@ from decimal import Decimal
 
 from sqlmodel import col, select
 
-from hoard import automanufacture
+from hoard import automanufacture, recipes
+from hoard.recipes import Line
 from hoard.records import (
     AutoManufacture,
     Item,
@@ -156,3 +157,25 @@ async def test_a_made_product_held_by_what_is_sold_is_not_made_in_turn(
     assert await _runs(db) == [(gift.id, 2, RunStatus.COMPLETED)]
     assert (await on_hand(db, gift.id), await on_hand(db, infuser.id)) == (2, -2)
     assert await on_hand(db, steel.id) == 0
+
+
+async def test_what_a_store_order_makes_makes_the_bases_it_uses_first(
+    db: WriteSession, material, base, sell
+):
+    leaf, tin = await material("Leaf"), await material("Tin")
+    kit = await base("Packaging kit", auto_manufacture=AutoManufacture.OUT_OF_STOCK)
+    await recipes.save(db, Recipe(base_id=kit.id), [Line(tin.id, Decimal(1))])
+    _, chai = await add_product(db, Product(name="Chai", auto_manufacture=AutoManufacture.ALWAYS))
+    await recipes.save(
+        db, Recipe(variation_id=chai.id), [Line(leaf.id, Decimal(2)), Line(kit.id, Decimal(1))]
+    )
+
+    order = await sell((chai.id, "3", "4"))
+    await automanufacture.on_claimed(db, order)
+
+    # The kits are made as the chai's run completes, so it takes none below zero.
+    assert await _runs(db) == [
+        (chai.id, 3, RunStatus.COMPLETED),
+        (kit.id, 3, RunStatus.COMPLETED),
+    ]
+    assert (await on_hand(db, kit.id), await on_hand(db, tin.id)) == (0, -3)

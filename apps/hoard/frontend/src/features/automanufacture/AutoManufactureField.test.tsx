@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { productDetail, SETTINGS, variation } from "@/features/items/testing";
+import { baseDetail, productDetail, SETTINGS, variation } from "@/features/items/testing";
 import { type Answer, openSignedIn, signedIn } from "@/testing";
 
 // The kit's options scroll themselves into view, which jsdom cannot.
@@ -61,6 +61,43 @@ describe("AutoManufactureField", () => {
     expect(choice).toHaveProperty("disabled", true);
   });
 
+  it("sets whether a run makes a base first", async () => {
+    const kit = baseDetail({ name: "Packaging kit" });
+    const asked = await openSignedIn("/stock/bases/8", signedIn(), {
+      ...SETTINGS,
+      "GET /api/v1/bases/8": { status: 200, data: kit },
+      "GET /api/v1/recipes": { status: 200, data: { items: [], total: 0 } },
+      "PUT /api/v1/bases/8": { status: 200, data: { ...kit, auto_manufacture: "out_of_stock" } },
+    });
+
+    const own = await screen.findByRole("combobox", { name: "Runs that use it" });
+    expect(own.textContent).toBe("Make nothing");
+    await choose("Runs that use it", "Make only what a run is short of");
+    await waitFor(() => expect(sent(asked, "/api/v1/bases/8")).toBeDefined());
+    expect(JSON.parse(sent(asked, "/api/v1/bases/8")?.data ?? "")).toMatchObject({
+      name: "Packaging kit",
+      tracking_unit_id: 1,
+      auto_manufacture: "out_of_stock",
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Runs that use it" }).textContent).toBe(
+        "Make only what a run is short of"
+      )
+    );
+  });
+
+  it("says why a base that cures isn't made by the runs that use it", async () => {
+    await openSignedIn("/stock/bases/8", signedIn(), {
+      ...SETTINGS,
+      "GET /api/v1/bases/8": { status: 200, data: baseDetail({ cure_days: 3 }) },
+      "GET /api/v1/recipes": { status: 200, data: { items: [], total: 0 } },
+      "PUT /api/v1/bases/8": { status: 409, data: { detail: "AUTO_MANUFACTURE_CURES" } },
+    });
+
+    await choose("Runs that use it", "Always make what a run uses");
+    await screen.findByText(/that cures can't be made by the runs that use it/);
+  });
+
   it("sets a product's and each variation's own, or takes what holds above", async () => {
     const asked = await openSignedIn("/stock/products/7", signedIn(), {
       ...OPENED,
@@ -87,5 +124,11 @@ describe("AutoManufactureField", () => {
       name: CHAI.name,
       auto_manufacture: null,
     });
+    // Taking what holds above, it still offers a choice of its own.
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Store orders" }).textContent).toBe(
+        "As your settings say: Make nothing"
+      )
+    );
   });
 });

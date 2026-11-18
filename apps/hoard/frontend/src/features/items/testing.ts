@@ -201,6 +201,7 @@ export const base = (fields: Partial<BaseRead> = {}): BaseRead => ({
   category_id: null,
   type_id: 31,
   cure_days: null,
+  auto_manufacture: null,
   on_hand: "0",
   average_cost: null,
   properties: [],
