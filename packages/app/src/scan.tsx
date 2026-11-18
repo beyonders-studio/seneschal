@@ -250,3 +250,79 @@ export function ScanButton({
     </>
   );
 }
+
+// --- handheld scanners ---------------------------------------------------------
+
+/** The longest pause between a scanner's keystrokes; a person types slower. */
+const SCANNER_GAP_MS = 40;
+/** The fewest characters a scan holds. */
+const SCANNER_MIN_LENGTH = 4;
+
+type ScanTarget = { current: (text: string) => void };
+
+/** The pages' scan targets, the latest shown last: it gets each scan. */
+const targets: ScanTarget[] = [];
+
+/**
+ * Take what a handheld scanner reads while this is shown: the latest shown
+ * target gets each scan, so a dialog takes it from its page, and a page from
+ * the search field every page shows. Null takes none.
+ */
+export function useScanTarget(onScan: ((text: string) => void) | null): void {
+  const latest = useRef(onScan);
+  latest.current = onScan;
+  const taking = onScan !== null;
+  useEffect(() => {
+    if (!taking) return;
+    const target: ScanTarget = { current: (text) => latest.current?.(text) };
+    targets.push(target);
+    return () => {
+      targets.splice(targets.indexOf(target), 1);
+    };
+  }, [taking]);
+}
+
+const editable = (element: EventTarget | null) =>
+  element instanceof HTMLElement &&
+  (element.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(element.tagName));
+
+/**
+ * A handheld scanner in keyboard mode, USB or Bluetooth, a phone's included,
+ * types its scan: faster than a person can, ending in Enter or Tab. Outside a
+ * field, such a burst goes to the latest scan target instead of the page; in
+ * a field it types there, as it always has. Mounted once, by the session.
+ */
+export function HandheldScanner() {
+  useEffect(() => {
+    let typed = "";
+    let last = 0;
+    let slow = false;
+    const key = (event: KeyboardEvent) => {
+      if (editable(event.target) || event.ctrlKey || event.metaKey || event.altKey) {
+        typed = "";
+        return;
+      }
+      const now = Date.now();
+      if (now - last > SCANNER_GAP_MS) {
+        typed = "";
+        slow = false;
+      }
+      last = now;
+      if (event.key === "Enter" || event.key === "Tab") {
+        const scan = typed;
+        typed = "";
+        const target = targets.at(-1);
+        if (!slow && scan.length >= SCANNER_MIN_LENGTH && target) {
+          event.preventDefault();
+          target.current(scan);
+        }
+        return;
+      }
+      if (event.key.length === 1) typed += event.key;
+      else if (event.key !== "Shift") slow = true;
+    };
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
+  }, []);
+  return null;
+}

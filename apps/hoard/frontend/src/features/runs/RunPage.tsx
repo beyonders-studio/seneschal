@@ -1,5 +1,5 @@
 import { FileImage } from "@seneschal/app/files";
-import { ScanButton } from "@seneschal/app/scan";
+import { ScanButton, useScanTarget } from "@seneschal/app/scan";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleCheck, Pencil, Play, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
@@ -130,6 +130,8 @@ function Run({ run }: { run: RunRead }) {
     }
     toast.error(t(read.lots.length ? "runs.scanNotInRun" : "runs.scanNoLot"));
   };
+
+  useScanTarget(!completed && !read_only ? (text) => void scanInput(text) : null);
 
   const change = async (making: Promise<RunRead>) => {
     try {
