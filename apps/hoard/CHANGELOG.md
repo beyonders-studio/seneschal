@@ -8,12 +8,17 @@ All notable changes to Hoard are recorded here. The format follows
 
 ### Added
 
+- **Open Hoard at its own address.** Go to Hoard's address in any browser and sign in with your Initiative account, then choose the initiative to open it in. A bar along the top lists Hoard's pages and lets you switch place or sign out. Signing out of Initiative, or losing access there, signs you out of Hoard too. Deployments set a new secret, `HOARD_SEALING_KEY`; without it, Hoard opens only inside Initiative, as before.
 - **Edit the catalogue in a spreadsheet.** Export materials, bases, products and recipes from Reports › Export, edit them, and bring them back in Settings › Import › Import Hoard spreadsheets. The check lists each change, field by field, and any problems before anything is written. A column you leave out stays as it is, and nothing is deleted.
 
 ### Changed
 
 - **The catalogue exports read as spreadsheets:** categories, types, units and suppliers by name, products with their variations, and recipes with their lines. They export as CSV only.
 - **An import carries on past a row it can't write,** such as one a store refuses, and lists it when it's done.
+
+### Security
+
+- **Hoard refuses a change that carries its cookies but didn't come from its own pages.**
 
 ## [0.4.0] - 2026-11-17
 

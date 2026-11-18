@@ -24,11 +24,18 @@ from sqlmodel import SQLModel, col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from seneschal_core import organizations
-from seneschal_core.api import ErrorCode, OrganizationDep, PluginDep, SessionDep, refuse
+from seneschal_core.api import (
+    ErrorCode,
+    OrganizationDep,
+    Plugin,
+    PluginDep,
+    SessionDep,
+    refuse,
+)
 from seneschal_core.db import REGISTRY_TABLE
 from seneschal_core.initiative import HandoffClaims, TokenRefused
 from seneschal_core.organizations import Organization
-from seneschal_core.sessions import SESSION_LIFETIME, SessionClaims, Theme
+from seneschal_core.sessions import SessionClaims, Theme
 
 #: How long a spent ``jti`` is kept past its token's expiry, for clocks that
 #: disagree a little. Past it, the token's own expiry refuses it.
@@ -93,7 +100,7 @@ class Me(BaseModel):
     plan: str | None
 
 
-def _me(session: SessionClaims, organization: Organization) -> Me:
+def me_for(session: SessionClaims, organization: Organization) -> Me:
     return Me(
         member_ref=session.member_ref,
         community_ref=session.community_ref,
@@ -108,8 +115,11 @@ def _me(session: SessionClaims, organization: Organization) -> Me:
     )
 
 
-async def _spend(db: AsyncSession, claims: HandoffClaims, organization_id: int) -> bool:
-    """Record the handoff's ``jti``: true the first time, false after."""
+async def spend_jti(
+    db: AsyncSession, jti: str, *, organization_id: int, expires_at: datetime
+) -> bool:
+    """Record a one-time token's ``jti``: true the first time, false after. A
+    handoff and a phone app's sign-in code are each spent through it."""
     await db.execute(
         delete(HandoffRedemption).where(
             col(HandoffRedemption.expires_at) < datetime.now(UTC) - JTI_GRACE
@@ -117,11 +127,38 @@ async def _spend(db: AsyncSession, claims: HandoffClaims, organization_id: int) 
     )
     spent = await db.execute(
         insert(HandoffRedemption)
-        .values(jti=claims.jti, organization_id=organization_id, expires_at=claims.expires_at)
+        .values(jti=jti, organization_id=organization_id, expires_at=expires_at)
         .on_conflict_do_nothing(index_elements=["jti"])
         .returning(col(HandoffRedemption.jti))
     )
     return spent.first() is not None
+
+
+async def admit(plugin: Plugin, claims: HandoffClaims, *, spend: bool) -> Organization:
+    """The organization a person may open the app in, for what Initiative
+    signed about them and the place they opened it: a handoff, or a sign-in's
+    ID token. Refuses a community-level page to anyone but its admins, and a
+    community that reaches nothing. ``spend`` records the token's ``jti`` so
+    it is taken once (a handoff, which the page carries)."""
+    # A community-level page reaches every initiative the app is placed in.
+    if claims.initiative_id is None and not claims.admin:
+        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_PAGE_ADMIN_ONLY)
+    async with plugin.database.session() as db:
+        organization_id = await organizations.organization_for(
+            db, community_ref=claims.community_ref, plugin_install_id=claims.plugin_install_id
+        )
+        await db.commit()
+    async with plugin.database.organization_session(organization_id) as db:
+        if spend and not await spend_jti(
+            db, claims.jti, organization_id=organization_id, expires_at=claims.expires_at
+        ):
+            raise refuse(status.HTTP_409_CONFLICT, ErrorCode.HANDOFF_ALREADY_REDEEMED)
+        await organizations.set_status(db, organization_id, claims.community_status)
+        await db.commit()
+        organization = await organizations.get(db, organization_id)
+    if organization is None or not organization.available:
+        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_UNAVAILABLE)
+    return organization
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -141,43 +178,15 @@ async def exchange_handoff(body: HandoffExchange, response: Response, plugin: Pl
         claims = await plugin.initiative.verify_handoff(body.handoff_token)
     except TokenRefused:
         raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.INVALID_HANDOFF_TOKEN) from None
-    # A community-level page reaches every initiative the app is placed in.
-    if claims.initiative_id is None and not claims.admin:
-        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_PAGE_ADMIN_ONLY)
-
-    async with plugin.database.session() as db:
-        organization_id = await organizations.organization_for(
-            db, community_ref=claims.community_ref, plugin_install_id=claims.plugin_install_id
-        )
-        await db.commit()
-    async with plugin.database.organization_session(organization_id) as db:
-        if not await _spend(db, claims, organization_id):
-            raise refuse(status.HTTP_409_CONFLICT, ErrorCode.HANDOFF_ALREADY_REDEEMED)
-        await organizations.set_status(db, organization_id, claims.community_status)
-        await db.commit()
-        organization = await organizations.get(db, organization_id)
-    if organization is None or not organization.available:
-        raise refuse(status.HTTP_403_FORBIDDEN, ErrorCode.COMMUNITY_UNAVAILABLE)
-
+    organization = await admit(plugin, claims, spend=True)
     token = plugin.sessions.mint(
-        claims, organization_id=organization_id, theme=body.theme, locale=body.locale
+        claims, organization_id=organization.id, theme=body.theme, locale=body.locale
     )
-    secure = plugin.sessions.cookie_secure
-    response.set_cookie(
-        plugin.sessions.cookie_name,
-        token,
-        max_age=int(SESSION_LIFETIME.total_seconds()),
-        httponly=True,
-        secure=secure,
-        # The page is framed by Initiative on another site in production, where
-        # only a secure cookie marked None is sent.
-        samesite="none" if secure else "lax",
-        path="/",
-    )
-    return _me(plugin.sessions.verify(token), organization)
+    plugin.sessions.set_cookie(response, token, framed=True)
+    return me_for(plugin.sessions.verify(token), organization)
 
 
 @router.get("/me", responses={401: {"description": "NOT_AUTHENTICATED"}})
 async def read_me(session: SessionDep, organization: OrganizationDep) -> Me:
     """Who is signed in, for a page that already holds a session."""
-    return _me(session, organization)
+    return me_for(session, organization)

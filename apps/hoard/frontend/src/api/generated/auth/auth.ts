@@ -20,7 +20,14 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HTTPValidationError, HandoffExchange, Me } from "../hoard.schemas";
+import type {
+  DeviceCode,
+  DeviceRenewal,
+  DeviceSession,
+  HTTPValidationError,
+  HandoffExchange,
+  Me,
+} from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
 import type { ErrorType, BodyType } from "../../mutator";
@@ -238,3 +245,387 @@ export function useReadMe<TData = Awaited<ReturnType<typeof readMe>>, TError = E
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Renew the session of a person who signed in at the app's own address.
+ * @summary Refresh Session
+ */
+export const refreshSession = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<Me>({ url: `/api/v1/auth/refresh`, method: "POST", signal }, options);
+};
+
+export const getRefreshSessionMutationKey = () => ["refreshSession"] as const;
+
+export const getRefreshSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext>;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext> => {
+  const mutationKey = getRefreshSessionMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshSession>>, void> = () => {
+    return refreshSession(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshSessionMutationResult = NonNullable<Awaited<ReturnType<typeof refreshSession>>>;
+
+export type RefreshSessionMutationError = ErrorType<void>;
+
+/**
+ * Renew the session of a person who signed in at the app's own address.
+ * @summary Refresh Session
+ */
+export const useRefreshSession = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshSession>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext> => {
+  return useMutation(getRefreshSessionMutationOptions(options), queryClient);
+};
+/**
+ * End the sign-in at the app's own address, and forget its cookies. The
+ * person stays signed in to Initiative.
+ * @summary Sign Out
+ */
+export const signOut = (options?: SecondParameter<typeof apiMutator>, signal?: AbortSignal) => {
+  return apiMutator<void>({ url: `/api/v1/auth/sign-out`, method: "POST", signal }, options);
+};
+
+export const getSignOutMutationKey = () => ["signOut"] as const;
+
+export const getSignOutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext>;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext> => {
+  const mutationKey = getSignOutMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof signOut>>, void> = () => {
+    return signOut(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SignOutMutationResult = NonNullable<Awaited<ReturnType<typeof signOut>>>;
+
+export type SignOutMutationError = ErrorType<unknown>;
+
+/**
+ * End the sign-in at the app's own address, and forget its cookies. The
+ * person stays signed in to Initiative.
+ * @summary Sign Out
+ */
+export const useSignOut = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<Awaited<ReturnType<typeof signOut>>, TError, void, TContext> => {
+  return useMutation(getSignOutMutationOptions(options), queryClient);
+};
+/**
+ * Spend the code the system browser brought the phone app back with, and
+ * answer its session and renewal. Any attempt spends the code: one that does
+ * not answer its challenge, or comes from another install, also ends the
+ * sign-in it was for.
+ * @summary Exchange Device Code
+ */
+export const exchangeDeviceCode = (
+  deviceCode: BodyType<DeviceCode>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<DeviceSession>(
+    {
+      url: `/api/v1/auth/device/token`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: deviceCode,
+      signal,
+    },
+    options
+  );
+};
+
+export const getExchangeDeviceCodeMutationKey = () => ["exchangeDeviceCode"] as const;
+
+export const getExchangeDeviceCodeMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof exchangeDeviceCode>>,
+    TError,
+    ExchangeDeviceCodeMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof exchangeDeviceCode>>,
+  TError,
+  ExchangeDeviceCodeMutationVariables,
+  TContext
+> => {
+  const mutationKey = getExchangeDeviceCodeMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof exchangeDeviceCode>>,
+    ExchangeDeviceCodeMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return exchangeDeviceCode(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ExchangeDeviceCodeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof exchangeDeviceCode>>
+>;
+export type ExchangeDeviceCodeMutationBody = BodyType<DeviceCode>;
+export type ExchangeDeviceCodeMutationError = ErrorType<void | HTTPValidationError>;
+export type ExchangeDeviceCodeMutationVariables = { data: BodyType<DeviceCode> };
+
+/**
+ * Spend the code the system browser brought the phone app back with, and
+ * answer its session and renewal. Any attempt spends the code: one that does
+ * not answer its challenge, or comes from another install, also ends the
+ * sign-in it was for.
+ * @summary Exchange Device Code
+ */
+export const useExchangeDeviceCode = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof exchangeDeviceCode>>,
+      TError,
+      ExchangeDeviceCodeMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof exchangeDeviceCode>>,
+  TError,
+  ExchangeDeviceCodeMutationVariables,
+  TContext
+> => {
+  return useMutation(getExchangeDeviceCodeMutationOptions(options), queryClient);
+};
+/**
+ * Renew a phone app's session: spend its renewal, from its install.
+ * @summary Refresh Device Session
+ */
+export const refreshDeviceSession = (
+  deviceRenewal: BodyType<DeviceRenewal>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<DeviceSession>(
+    {
+      url: `/api/v1/auth/device/refresh`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: deviceRenewal,
+      signal,
+    },
+    options
+  );
+};
+
+export const getRefreshDeviceSessionMutationKey = () => ["refreshDeviceSession"] as const;
+
+export const getRefreshDeviceSessionMutationOptions = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshDeviceSession>>,
+    TError,
+    RefreshDeviceSessionMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshDeviceSession>>,
+  TError,
+  RefreshDeviceSessionMutationVariables,
+  TContext
+> => {
+  const mutationKey = getRefreshDeviceSessionMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshDeviceSession>>,
+    RefreshDeviceSessionMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return refreshDeviceSession(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshDeviceSessionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshDeviceSession>>
+>;
+export type RefreshDeviceSessionMutationBody = BodyType<DeviceRenewal>;
+export type RefreshDeviceSessionMutationError = ErrorType<void | HTTPValidationError>;
+export type RefreshDeviceSessionMutationVariables = { data: BodyType<DeviceRenewal> };
+
+/**
+ * Renew a phone app's session: spend its renewal, from its install.
+ * @summary Refresh Device Session
+ */
+export const useRefreshDeviceSession = <
+  TError = ErrorType<void | HTTPValidationError>,
+  TContext = unknown,
+>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshDeviceSession>>,
+      TError,
+      RefreshDeviceSessionMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof refreshDeviceSession>>,
+  TError,
+  RefreshDeviceSessionMutationVariables,
+  TContext
+> => {
+  return useMutation(getRefreshDeviceSessionMutationOptions(options), queryClient);
+};
+/**
+ * End a phone app's sign-in. The person stays signed in to Initiative.
+ * @summary Sign Out Device
+ */
+export const signOutDevice = (
+  deviceRenewal: BodyType<DeviceRenewal>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<void>(
+    {
+      url: `/api/v1/auth/device/sign-out`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: deviceRenewal,
+      signal,
+    },
+    options
+  );
+};
+
+export const getSignOutDeviceMutationKey = () => ["signOutDevice"] as const;
+
+export const getSignOutDeviceMutationOptions = <
+  TError = ErrorType<HTTPValidationError>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof signOutDevice>>,
+    TError,
+    SignOutDeviceMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof signOutDevice>>,
+  TError,
+  SignOutDeviceMutationVariables,
+  TContext
+> => {
+  const mutationKey = getSignOutDeviceMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof signOutDevice>>,
+    SignOutDeviceMutationVariables
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return signOutDevice(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SignOutDeviceMutationResult = NonNullable<Awaited<ReturnType<typeof signOutDevice>>>;
+export type SignOutDeviceMutationBody = BodyType<DeviceRenewal>;
+export type SignOutDeviceMutationError = ErrorType<HTTPValidationError>;
+export type SignOutDeviceMutationVariables = { data: BodyType<DeviceRenewal> };
+
+/**
+ * End a phone app's sign-in. The person stays signed in to Initiative.
+ * @summary Sign Out Device
+ */
+export const useSignOutDevice = <TError = ErrorType<HTTPValidationError>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof signOutDevice>>,
+      TError,
+      SignOutDeviceMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof signOutDevice>>,
+  TError,
+  SignOutDeviceMutationVariables,
+  TContext
+> => {
+  return useMutation(getSignOutDeviceMutationOptions(options), queryClient);
+};

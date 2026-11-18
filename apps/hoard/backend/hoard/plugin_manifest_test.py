@@ -9,6 +9,7 @@ import re
 from hoard import events, plugin_manifest
 from hoard.endpoints import ENDPOINTS
 from hoard.records import Channel
+from seneschal_core.sign_in import API_PREFIX, RETURN_PATH
 
 #: The plug-in contract's identifiers and metadata keys.
 IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
@@ -133,3 +134,10 @@ def test_its_store_connections_route_and_check_their_webhooks():
     for schedule in definition["schedules"]:
         assert IDENTIFIER.match(schedule["id"]) and re.fullmatch(r"[0-9]+[mh]", schedule["every"])
     assert len({schedule["id"] for schedule in definition["schedules"]}) == 2
+
+
+def test_its_sign_in_lands_on_one_of_its_pages_and_returns_to_the_core_route():
+    sign_in = plugin_manifest.definition()["sign_in"]
+
+    assert sign_in["page"] in {page for page, *_ in plugin_manifest.PAGES}
+    assert sign_in["return_path"] == f"{API_PREFIX}{RETURN_PATH}"

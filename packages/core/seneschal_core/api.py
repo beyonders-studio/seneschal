@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
@@ -31,6 +31,9 @@ from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.organizations import Organization
 from seneschal_core.sessions import SessionClaims, SessionRefused, Sessions
+
+if TYPE_CHECKING:
+    from seneschal_core.sign_in import SignIn
 
 
 class ErrorCode(StrEnum):
@@ -52,6 +55,13 @@ class ErrorCode(StrEnum):
     JOB_NOT_FOUND = "JOB_NOT_FOUND"
     JOB_RESULT_NOT_FOUND = "JOB_RESULT_NOT_FOUND"
     JOB_STARTER_ONLY = "JOB_STARTER_ONLY"
+    SIGN_IN_NOT_OFFERED = "SIGN_IN_NOT_OFFERED"
+    SIGN_IN_ENDED = "SIGN_IN_ENDED"
+    SIGN_IN_EXPIRED = "SIGN_IN_EXPIRED"
+    SIGN_IN_FAILED = "SIGN_IN_FAILED"
+    SIGN_IN_CANCELLED = "SIGN_IN_CANCELLED"
+    INITIATIVE_UNAVAILABLE = "INITIATIVE_UNAVAILABLE"
+    CROSS_SITE_REQUEST = "CROSS_SITE_REQUEST"
 
 
 def refuse(status_code: int, code: StrEnum) -> HTTPException:
@@ -69,6 +79,9 @@ class Plugin:
     initiative: Initiative
     api: InitiativeApi
     sessions: Sessions
+    #: Sign in with Initiative at the app's own address; None when the app
+    #: has no sealing key, and its pages open only inside Initiative.
+    sign_in: SignIn | None = None
 
     async def start(self) -> None:
         """Before serving: refuse a serving login the organization policy does not bind."""
@@ -92,13 +105,25 @@ PluginDep = Annotated[Plugin, Depends(_plugin)]
 
 
 def _session(request: Request, plugin: PluginDep) -> SessionClaims:
-    token = request.cookies.get(plugin.sessions.cookie_name)
-    if not token:
-        raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED)
+    """The request's session: a phone app's as a Bearer token, a page's in the
+    cookie. Each is taken only the way it was made to travel."""
+    unauthenticated = refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED)
+    authorization = request.headers.get("authorization")
+    if authorization is not None:
+        scheme, _, token = authorization.partition(" ")
+        device = True
+    else:
+        scheme, token = "bearer", request.cookies.get(plugin.sessions.cookie_name, "")
+        device = False
+    if scheme.lower() != "bearer" or not token:
+        raise unauthenticated
     try:
-        return plugin.sessions.verify(token)
+        session = plugin.sessions.verify(token.strip())
     except SessionRefused:
-        raise refuse(status.HTTP_401_UNAUTHORIZED, ErrorCode.NOT_AUTHENTICATED) from None
+        raise unauthenticated from None
+    if (session.via == "device") != device:
+        raise unauthenticated
+    return session
 
 
 SessionDep = Annotated[SessionClaims, Depends(_session)]

@@ -16,9 +16,10 @@ from alembic.operations import Operations
 from fastapi import FastAPI
 from httpx2 import ASGITransport, AsyncClient
 
-from seneschal_core import jobs, ledger, migrations, search
+from seneschal_core import jobs, ledger, migrations, search, sign_in
 from seneschal_core.api import Plugin, install
 from seneschal_core.auth import router as auth_router
+from seneschal_core.csrf import SameOriginOnly
 from seneschal_core.db import Database
 from seneschal_core.platform import (
     ORGANIZATION_HOOKS,
@@ -28,6 +29,8 @@ from seneschal_core.platform import (
     write_session,
 )
 from seneschal_core.sessions import Sessions
+from seneschal_core.sign_in import SignIn
+from seneschal_core.sign_in import router as sign_in_router
 from seneschal_core.testing import AppDatabase, InitiativeStandIn, database_fixture, new_key_pem
 
 
@@ -89,6 +92,7 @@ def _migrate(database: AppDatabase) -> None:
                 create=True,
             )
             search.create_table()
+            sign_in.create_table()
             op.create_table(
                 "gadgets",
                 sa.Column("id", sa.BigInteger(), sa.Identity(), primary_key=True),
@@ -114,6 +118,9 @@ def _migrate(database: AppDatabase) -> None:
 
 database = database_fixture("core", migrate=_migrate)
 
+#: Where the test app's pages are served, and its sign-in returns to.
+APP_ORIGIN = "http://test"
+
 
 @pytest.fixture
 def initiative_stand_in() -> InitiativeStandIn:
@@ -135,6 +142,14 @@ async def plugin(
         initiative=initiative_stand_in.initiative(),
         api=initiative_stand_in.api(),
         sessions=Sessions(app="core", private_key_pem=new_key_pem(), cookie_secure=False),
+        sign_in=SignIn(
+            app="core",
+            issuer=initiative_stand_in.ORIGIN,
+            app_origin=APP_ORIGIN,
+            sealing_key=secrets.token_urlsafe(32),
+            cookie_secure=False,
+            device_scheme="coretest",
+        ),
     )
     yield plugin
     await plugin.initiative.aclose()
@@ -165,7 +180,13 @@ async def _received(call: HookCall) -> None:
 def app(plugin: Plugin) -> FastAPI:
     app = FastAPI()
     install(app, plugin)
+    app.add_middleware(
+        SameOriginOnly,
+        cookie_names=["core_session", "core_renew"],
+        origins=[APP_ORIGIN],
+    )
     app.include_router(auth_router, prefix="/api/v1")
+    app.include_router(sign_in_router, prefix="/api/v1")
     app.include_router(jobs.router, prefix="/api/v1")
     app.include_router(
         platform_router(
@@ -179,5 +200,8 @@ def app(plugin: Plugin) -> FastAPI:
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # As the app's own pages call it: from its origin.
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url=APP_ORIGIN, headers={"Origin": APP_ORIGIN}
+    ) as client:
         yield client

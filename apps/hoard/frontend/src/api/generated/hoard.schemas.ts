@@ -754,6 +754,78 @@ export const DefaultReason = {
 } as const;
 
 /**
+ * What the phone app sends for the code the browser brought it back with.
+ */
+export interface DeviceCode {
+  /**
+   * @minLength 1
+   * @maxLength 4096
+   */
+  code: string;
+  /**
+   * @minLength 43
+   * @maxLength 128
+   */
+  verifier: string;
+  /**
+   * @minLength 8
+   * @maxLength 64
+   */
+  install: string;
+}
+
+/**
+ * A phone app's renewal, from its install.
+ */
+export interface DeviceRenewal {
+  /**
+   * @minLength 1
+   * @maxLength 1024
+   */
+  renewal: string;
+  /**
+   * @minLength 8
+   * @maxLength 64
+   */
+  install: string;
+}
+
+export type MeTheme = (typeof MeTheme)[keyof typeof MeTheme] | null;
+
+export const MeTheme = {
+  light: "light",
+  dark: "dark",
+} as const;
+
+/**
+ * Who is signed in, where the page was opened, and where the
+ * organization stands.
+ */
+export interface Me {
+  member_ref: string;
+  community_ref: string;
+  initiative_id: number | null;
+  page: string;
+  admin: boolean;
+  permissions: string[];
+  theme: MeTheme;
+  locale: string | null;
+  read_only: boolean;
+  plan: string | null;
+}
+
+/**
+ * A phone app's session, sent as a Bearer token until it expires, and
+ * the renewal that renews it, which the app keeps and spends once.
+ */
+export interface DeviceSession {
+  session: string;
+  session_expires_at: string;
+  renewal: string;
+  me: Me;
+}
+
+/**
  * How long the organization's rules ask for records to be kept.
  */
 export interface DocumentBackupPeriod {
@@ -1634,30 +1706,6 @@ export interface MaterialWrite {
   supplier_contact_id?: number | null;
   supplier_code?: string | null;
   notes?: string | null;
-}
-
-export type MeTheme = (typeof MeTheme)[keyof typeof MeTheme] | null;
-
-export const MeTheme = {
-  light: "light",
-  dark: "dark",
-} as const;
-
-/**
- * Who is signed in, where the page was opened, and where the
- * organization stands.
- */
-export interface Me {
-  member_ref: string;
-  community_ref: string;
-  initiative_id: number | null;
-  page: string;
-  admin: boolean;
-  permissions: string[];
-  theme: MeTheme;
-  locale: string | null;
-  read_only: boolean;
-  plan: string | null;
 }
 
 /**
