@@ -30,7 +30,16 @@ from hoard.api.adjustments import (
 )
 from hoard.api.deps import HoardError
 from hoard.api.shapes import Page, PageDep
-from hoard.records import Category, CategoryKind, StockLevel, Stocktake, StocktakeRow
+from hoard.records import (
+    Category,
+    CategoryKind,
+    Lot,
+    LotCount,
+    StockLevel,
+    Stocktake,
+    StocktakeRow,
+)
+from hoard.stocktakes import StocktakeRefused
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 from seneschal_core.db import OrganizationSession
 
@@ -42,12 +51,26 @@ class StocktakeError(StrEnum):
 
     #: The category sorts the other kind of record.
     STOCKTAKE_CATEGORY_KIND = "STOCKTAKE_CATEGORY_KIND"
+    #: The stocktake counts each item as one, so a lot isn't added to it.
+    STOCKTAKE_NOT_BY_LOT = "STOCKTAKE_NOT_BY_LOT"
+    #: The lot is at another location, or of another kind of item.
+    STOCKTAKE_LOT_MISMATCH = "STOCKTAKE_LOT_MISMATCH"
+
+
+class StocktakeLot(BaseModel):
+    id: int
+    number: str
+    expires_on: date | None
 
 
 class StocktakeRowRead(BaseModel):
     id: int
     item: AdjustmentItem
-    #: What is on hand at the stocktake's location now.
+    #: The lot it counts; null for the item's stock in no lot, or the whole
+    #: item in a stocktake that counts each item as one.
+    lot: StocktakeLot | None
+    #: What it would count now: its lot's balance, the item's stock in no lot,
+    #: or all the item holds at the stocktake's location.
     on_hand: Decimal
     #: What was on hand when the row was first confirmed; null until then.
     expected: Decimal | None
@@ -61,6 +84,8 @@ class StocktakeSummary(BaseModel):
     category_id: int | None
     #: How many items it samples at random; null when it counts every one.
     sample_size: int | None
+    #: How it counts lots: a full count, a spot check, or null, each item as one.
+    lot_count: LotCount | None
     dated_on: date
     notes: str | None
     row_count: int
@@ -113,6 +138,7 @@ def _summary(stocktake: Stocktake, rows: int, confirmed: int, matched: int) -> S
         location_id=stocktake.location_id,
         category_id=stocktake.category_id,
         sample_size=stocktake.sample_size,
+        lot_count=stocktake.lot_count,
         dated_on=stocktake.dated_on,
         notes=stocktake.notes,
         row_count=rows,
@@ -182,6 +208,38 @@ async def _read(db: OrganizationSession, stocktake: Stocktake) -> StocktakeRead:
         )
     )
     on_hand = dict(levels.all())
+    lots = {
+        lot.id: lot
+        for lot in (
+            await db.exec(
+                select(Lot).where(col(Lot.id).in_([row.lot_id for row in rows if row.lot_id]))
+            )
+        ).all()
+    }
+    outside: dict[int, Decimal] = {}
+    if stocktake.lot_count is not None:
+        in_lots = await db.exec(
+            select(col(Lot.item_id), func.sum(col(Lot.balance)))
+            .where(
+                Lot.location_id == stocktake.location_id,
+                col(Lot.item_id).in_([row.item_id for row in rows]),
+            )
+            .group_by(col(Lot.item_id))
+        )
+        held = dict(in_lots.all())
+        outside = {
+            row.item_id: on_hand.get(row.item_id, Decimal(0)) - Decimal(held.get(row.item_id, 0))
+            for row in rows
+        }
+
+    def now(row: StocktakeRow) -> Decimal:
+        if row.lot_id is not None:
+            lot = lots.get(row.lot_id)
+            return lot.balance if lot is not None else Decimal(0)
+        if stocktake.lot_count is not None:
+            return outside.get(row.item_id, Decimal(0))
+        return on_hand.get(row.item_id, Decimal(0))
+
     confirmed = [row for row in rows if row.counted is not None]
     return StocktakeRead(
         **_summary(
@@ -194,7 +252,14 @@ async def _read(db: OrganizationSession, stocktake: Stocktake) -> StocktakeRead:
             StocktakeRowRead(
                 id=row.id,
                 item=items[row.item_id],
-                on_hand=on_hand.get(row.item_id, Decimal(0)),
+                lot=StocktakeLot(
+                    id=lots[row.lot_id].id,
+                    number=lots[row.lot_id].number,
+                    expires_on=lots[row.lot_id].expires_on,
+                )
+                if row.lot_id in lots
+                else None,
+                on_hand=now(row),
                 expected=row.expected,
                 counted=row.counted,
             )
@@ -217,6 +282,9 @@ class StocktakeCreate(BaseModel):
     category_id: int | None = None
     #: How many items to sample at random; every one when not given.
     sample_size: Annotated[int, Field(gt=0)] | None = None
+    #: How to count lots: a full count or a spot check; each item as one when
+    #: not given.
+    lot_count: LotCount | None = None
     #: Today when not given.
     dated_on: date | None = None
     notes: str | None = NOTES
@@ -240,6 +308,7 @@ async def create_stocktake(db: WriteSessionDep, body: StocktakeCreate) -> Stockt
         location_id=await location_or_main(db, body.location_id),
         category_id=body.category_id,
         sample_size=body.sample_size,
+        lot_count=body.lot_count,
         dated_on=body.dated_on or date.today(),
         notes=body.notes,
     )
@@ -264,5 +333,50 @@ async def confirm_stocktake_row(
     if row.stocktake_id != stocktake.id:
         raise refuse(status.HTTP_404_NOT_FOUND, HoardError.NOT_FOUND)
     await stocktakes.confirm_row(db, row, body.counted)
+    await db.commit()
+    return await _read(db, stocktake)
+
+
+class StocktakeLotAdd(BaseModel):
+    """A lot found while counting, to count in the stocktake."""
+
+    lot_id: int
+
+
+@router.post(
+    "/{stocktake_id}/rows",
+    responses={
+        **NOT_FOUND,
+        409: {"description": "STOCKTAKE_NOT_BY_LOT"},
+        422: {"description": "STOCKTAKE_LOT_MISMATCH"},
+    },
+)
+async def add_stocktake_lot(
+    db: WriteSessionDep, stocktake_id: int, body: StocktakeLotAdd
+) -> StocktakeRead:
+    """Count a lot the stocktake doesn't list, found while counting; one it
+    lists already is left as it is."""
+    stocktake = await known(db, Stocktake, stocktake_id)
+    lot = await known(db, Lot, body.lot_id)
+    try:
+        await stocktakes.add_lot(db, stocktake, lot)
+    except StocktakeRefused as refused:
+        code = StocktakeError(refused.code)
+        status_code = (
+            status.HTTP_409_CONFLICT
+            if code is StocktakeError.STOCKTAKE_NOT_BY_LOT
+            else status.HTTP_422_UNPROCESSABLE_CONTENT
+        )
+        raise refuse(status_code, code) from None
+    await db.commit()
+    return await _read(db, stocktake)
+
+
+@router.post("/{stocktake_id}/finish", responses=NOT_FOUND)
+async def finish_stocktake(db: WriteSessionDep, stocktake_id: int) -> StocktakeRead:
+    """Finish a stocktake: in a full count, each lot of an item counted that
+    wasn't counted is confirmed as nothing. A spot check changes nothing."""
+    stocktake = await known(db, Stocktake, stocktake_id)
+    await stocktakes.finish(db, stocktake)
     await db.commit()
     return await _read(db, stocktake)

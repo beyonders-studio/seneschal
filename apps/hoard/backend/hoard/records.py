@@ -255,6 +255,17 @@ class LotSource(StrEnum):
     ADMIN = "admin"
 
 
+class LotCount(StrEnum):
+    """How a stocktake counts lots, chosen when it is started; a stocktake
+    that counts none counts each item as one."""
+
+    #: Every lot of an item counted: finishing it writes the lots of a
+    #: counted item that weren't counted down to nothing.
+    FULL = "full"
+    #: Only the lots counted change; the rest keep their balances.
+    SPOT = "spot"
+
+
 class HoldEnd(StrEnum):
     """How a hold ended."""
 
@@ -964,21 +975,33 @@ class Stocktake(OrganizationRow, Stamped, table=True):
     category_id: int | None = Field(default=None, sa_type=BigInteger)
     #: How many items it samples at random; every one when None.
     sample_size: int | None = None
+    #: How it counts lots; each item as one when None.
+    lot_count: LotCount | None = Field(
+        default=None, sa_column=enum_column(LotCount, "lot_count", nullable=True)
+    )
     dated_on: date
     notes: str | None = None
 
 
 class StocktakeRow(OrganizationRow, Stamped, table=True):
-    """One item to count. Confirming it records what was on hand and what was
-    counted; their difference is its variance."""
+    """One item to count, or, in a stocktake that counts lots, one lot of it
+    (or its stock in no lot). Confirming it records what was on hand and what
+    was counted; their difference is its variance."""
 
     __tablename__ = "stocktake_rows"
     __table_args__ = (
         referable("stocktake_rows"),
         reference("stocktake_rows", "stocktake_id", "stocktakes", ondelete="CASCADE"),
         reference("stocktake_rows", "item_id", "items", ondelete="CASCADE"),
-        UniqueConstraint(
-            "organization_id", "stocktake_id", "item_id", name="uq_stocktake_rows_item"
+        reference("stocktake_rows", "lot_id", "lots", ondelete="CASCADE"),
+        Index(
+            "uq_stocktake_rows_item_lot",
+            "organization_id",
+            "stocktake_id",
+            "item_id",
+            "lot_id",
+            unique=True,
+            postgresql_nulls_not_distinct=True,
         ),
         CheckConstraint(
             "(expected IS NULL) = (counted IS NULL)", name="ck_stocktake_rows_confirmed"
@@ -988,6 +1011,9 @@ class StocktakeRow(OrganizationRow, Stamped, table=True):
     id: int = identity()
     stocktake_id: int = Field(sa_type=BigInteger)
     item_id: int = Field(sa_type=BigInteger)
+    #: The lot it counts, in a stocktake that counts lots; None for the item's
+    #: stock in no lot, or the whole item.
+    lot_id: int | None = Field(default=None, sa_type=BigInteger)
     #: On hand when first confirmed.
     expected: Decimal | None = amount(None)
     counted: Decimal | None = amount(None)

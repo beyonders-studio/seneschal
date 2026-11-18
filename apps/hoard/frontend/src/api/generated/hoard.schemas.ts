@@ -1575,6 +1575,17 @@ export interface ListingRead {
 }
 
 /**
+ * How a stocktake counts lots, chosen when it is started; a stocktake
+ * that counts none counts each item as one.
+ */
+export type LotCount = (typeof LotCount)[keyof typeof LotCount];
+
+export const LotCount = {
+  full: "full",
+  spot: "spot",
+} as const;
+
+/**
  * A lot's open hold.
  */
 export interface LotHoldRead {
@@ -2117,6 +2128,7 @@ export interface StocktakeListed {
   location_id: number;
   category_id: number | null;
   sample_size: number | null;
+  lot_count: LotCount | null;
   dated_on: string;
   notes: string | null;
   row_count: number;
@@ -3195,13 +3207,28 @@ export interface StocktakeCreate {
   location_id?: number | null;
   category_id?: number | null;
   sample_size?: number | null;
+  lot_count?: LotCount | null;
   dated_on?: string | null;
   notes?: string | null;
+}
+
+export interface StocktakeLot {
+  id: number;
+  number: string;
+  expires_on: string | null;
+}
+
+/**
+ * A lot found while counting, to count in the stocktake.
+ */
+export interface StocktakeLotAdd {
+  lot_id: number;
 }
 
 export interface StocktakeRowRead {
   id: number;
   item: AdjustmentItem;
+  lot: StocktakeLot | null;
   on_hand: string;
   expected: string | null;
   counted: string | null;
@@ -3213,6 +3240,7 @@ export interface StocktakeRead {
   location_id: number;
   category_id: number | null;
   sample_size: number | null;
+  lot_count: LotCount | null;
   dated_on: string;
   notes: string | null;
   row_count: number;

@@ -1,7 +1,12 @@
 """Stocktakes: counting what is on hand at a location.
 
 A stocktake counts materials or products: every one, or a random sample, of
-one category or all. Its rows are confirmed one by one. Confirming a row
+one category or all. It counts each item as one, or each lot of it at its
+location (``Stocktake.lot_count``), chosen when it is started: a full count,
+where finishing it writes the lots of a counted item that weren't counted down
+to nothing, or a spot check, where only the lots counted change. Counting by
+lot, an item's stock in no lot is a row of its own, and a lot found while
+counting is added to it. Its rows are confirmed one by one. Confirming a row
 records what was on hand and what was counted, and a difference between them
 becomes the row's stocktake adjustment. Confirming it again with a new count
 changes that adjustment, or removes it once the count matches.
@@ -22,6 +27,10 @@ from hoard.records import (
     AdjustmentKind,
     Base,
     CategoryKind,
+    Item,
+    ItemKind,
+    Lot,
+    LotCount,
     Material,
     Product,
     Stocktake,
@@ -55,13 +64,119 @@ async def start_stocktake(db: WriteSession, stocktake: Stocktake) -> list[Stockt
             items = items.where(Product.category_id == stocktake.category_id)
     if stocktake.sample_size is not None:
         items = items.order_by(func.random()).limit(stocktake.sample_size)
-    rows = [
-        StocktakeRow(organization_id=db.organization_id, stocktake_id=stocktake.id, item_id=item)
-        for item in (await db.exec(items)).all()
-    ]
+    rows: list[StocktakeRow] = []
+    for item_id in (await db.exec(items)).all():
+        lots: list[int | None] = [None]
+        if stocktake.lot_count is not None:
+            held = await _lots_held(db, item_id, stocktake.location_id)
+            outside = await _outside_lots(db, item_id, stocktake.location_id)
+            # Each lot holding stock there, and its stock in no lot when it has
+            # some, or when it has nothing at all, so it is counted still.
+            lots = [*held, *([None] if outside or not held else [])]
+        rows += [
+            StocktakeRow(
+                organization_id=db.organization_id,
+                stocktake_id=stocktake.id,
+                item_id=item_id,
+                lot_id=lot_id,
+            )
+            for lot_id in lots
+        ]
     db.add_all(rows)
     await db.flush()
     return rows
+
+
+async def _lots_held(db: WriteSession, item_id: int, location_id: int) -> list[int]:
+    """The item's lots holding stock at a location, oldest first."""
+    found = await db.exec(
+        select(Lot.id)
+        .where(Lot.item_id == item_id, Lot.location_id == location_id, Lot.balance != 0)
+        .order_by(col(Lot.dated_on), col(Lot.id))
+    )
+    return list(found.all())
+
+
+async def _outside_lots(db: WriteSession, item_id: int, location_id: int) -> Decimal:
+    """What the item holds at a location in no lot."""
+    in_lots = (
+        await db.exec(
+            select(func.coalesce(func.sum(Lot.balance), 0)).where(
+                Lot.item_id == item_id, Lot.location_id == location_id
+            )
+        )
+    ).one()
+    return await on_hand(db, item_id, location_id) - Decimal(in_lots)
+
+
+async def expected_of(db: WriteSession, stocktake: Stocktake, row: StocktakeRow) -> Decimal:
+    """What a row would count now: its lot's balance, the item's stock in no
+    lot, or, counting each item as one, all it holds at the location."""
+    if row.lot_id is not None:
+        return (await db.get_one(Lot, row.lot_id)).balance
+    if stocktake.lot_count is not None:
+        return await _outside_lots(db, row.item_id, stocktake.location_id)
+    return await on_hand(db, row.item_id, stocktake.location_id)
+
+
+class StocktakeRefused(Exception):
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+#: The kinds of item each kind of stocktake counts.
+_COUNTS = {
+    CategoryKind.MATERIAL: ItemKind.MATERIAL,
+    CategoryKind.BASE: ItemKind.BASE,
+    CategoryKind.PRODUCT: ItemKind.VARIATION,
+}
+
+
+async def add_lot(db: WriteSession, stocktake: Stocktake, lot: Lot) -> StocktakeRow:
+    """The row counting ``lot``, added when the stocktake doesn't list it: a
+    lot found while counting. Refused for a stocktake that counts each item as
+    one (``STOCKTAKE_NOT_BY_LOT``), and for a lot at another location or of
+    another kind of item than it counts (``STOCKTAKE_LOT_MISMATCH``)."""
+    if stocktake.lot_count is None:
+        raise StocktakeRefused("STOCKTAKE_NOT_BY_LOT")
+    item = await db.get_one(Item, lot.item_id)
+    if lot.location_id != stocktake.location_id or item.kind != _COUNTS[stocktake.kind]:
+        raise StocktakeRefused("STOCKTAKE_LOT_MISMATCH")
+    found = (
+        await db.exec(
+            select(StocktakeRow).where(
+                StocktakeRow.stocktake_id == stocktake.id, StocktakeRow.lot_id == lot.id
+            )
+        )
+    ).first()
+    if found is not None:
+        return found
+    row = StocktakeRow(
+        organization_id=db.organization_id,
+        stocktake_id=stocktake.id,
+        item_id=lot.item_id,
+        lot_id=lot.id,
+    )
+    db.add(row)
+    await db.flush()
+    return row
+
+
+async def finish(db: WriteSession, stocktake: Stocktake) -> int:
+    """Finish a full count: each lot of an item with a counted row that
+    wasn't counted is confirmed as nothing. Answers how many it confirmed; a
+    spot check, and a stocktake by item, confirm none."""
+    if stocktake.lot_count is not LotCount.FULL:
+        return 0
+    rows = (
+        await db.exec(select(StocktakeRow).where(StocktakeRow.stocktake_id == stocktake.id))
+    ).all()
+    counted = {row.item_id for row in rows if row.counted is not None}
+    left = [row for row in rows if row.counted is None and row.item_id in counted]
+    for row in left:
+        await confirm_row(db, row, Decimal(0))
+    return len(left)
 
 
 async def confirm_row(db: WriteSession, row: StocktakeRow, counted: Decimal) -> None:
@@ -70,7 +185,7 @@ async def confirm_row(db: WriteSession, row: StocktakeRow, counted: Decimal) -> 
     stocktake's location and date."""
     stocktake = await db.get_one(Stocktake, row.stocktake_id)
     if row.expected is None:
-        row.expected = await on_hand(db, row.item_id, stocktake.location_id)
+        row.expected = await expected_of(db, stocktake, row)
     row.counted = counted
     variance = counted - row.expected
     adjustment = (
@@ -87,6 +202,7 @@ async def confirm_row(db: WriteSession, row: StocktakeRow, counted: Decimal) -> 
                 organization_id=db.organization_id,
                 item_id=row.item_id,
                 location_id=stocktake.location_id,
+                lot_id=row.lot_id,
                 kind=AdjustmentKind.STOCKTAKE,
                 dated_on=stocktake.dated_on,
                 change=variance,
