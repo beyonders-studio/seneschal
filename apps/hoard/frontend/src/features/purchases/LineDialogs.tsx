@@ -1,4 +1,4 @@
-import { ScanButton } from "@seneschal/app/scan";
+import { ScanButton, useScanTarget } from "@seneschal/app/scan";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -238,6 +238,8 @@ function ReceiveForm({
     if (read.expires_on) setExpiresOn(read.expires_on);
     setUnknownGtin(read.problems.includes("unknown_gtin") ? read.gtin : null);
   };
+
+  useScanTarget((text) => void scanLabel(text));
 
   const rememberGtin = async (gtin: string) => {
     try {

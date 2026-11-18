@@ -1,4 +1,4 @@
-import { ScanButton } from "@seneschal/app/scan";
+import { ScanButton, useScanTarget } from "@seneschal/app/scan";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -121,6 +121,9 @@ export function SearchField() {
     close();
     void navigate({ to: "/search", search: { q: typed } });
   };
+
+  // Every page's last resort for a handheld scanner's scan: open what it names.
+  useScanTarget((scanned) => void enter(scanned));
 
   const keyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     switch (event.key) {

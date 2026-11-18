@@ -1,4 +1,4 @@
-import { ScanButton } from "@seneschal/app/scan";
+import { ScanButton, useScanTarget } from "@seneschal/app/scan";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Ban, ExternalLink, Pencil, Plus, RotateCcw, Trash2, Truck } from "lucide-react";
@@ -296,6 +296,8 @@ function Order({ order }: { order: OrderRead }) {
           number={index + 1}
           cancelled={cancelled}
           managed={managed}
+          // A handheld scanner's scans go to the first shipment still to ship.
+          takesScans={shipment.id === order.shipments.find((each) => each.status === "pending")?.id}
           onAction={setShipmentAction}
         />
       ))}
@@ -412,6 +414,7 @@ function ShipmentCard({
   number,
   cancelled,
   managed,
+  takesScans = false,
   onAction,
 }: {
   shipment: OrderShipmentRead;
@@ -419,6 +422,8 @@ function ShipmentCard({
   cancelled: boolean;
   /** Whether its order's store manages it: only lots and returns change here. */
   managed: boolean;
+  /** Whether a handheld scanner's scans place their lots on it. */
+  takesScans?: boolean;
   onAction: (action: ShipmentAction) => void;
 }) {
   const { t } = useTranslation("orders");
@@ -460,6 +465,10 @@ function ShipmentCard({
             balance: quantity(lot.balance),
           })
         : t("shipments.lotOption", { number: lot.number, balance: quantity(lot.balance) });
+
+  useScanTarget(
+    takesScans && pending && !cancelled && !read_only ? (text) => void scanLot(text) : null
+  );
 
   return (
     <Card>

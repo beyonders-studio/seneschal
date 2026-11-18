@@ -46,6 +46,7 @@ import {
   subscribeToTheme,
 } from "./parentBridge";
 import { type BarPage, StandaloneBar } from "./StandaloneBar";
+import { HandheldScanner } from "./scan";
 import {
   forgetSignInError,
   goToSignIn,
@@ -419,6 +420,7 @@ function Session({
     case "ready":
       return (
         <SessionContext value={{ me: state.me, own }}>
+          <HandheldScanner />
           {own && (
             <StandaloneBar
               pages={state.me.initiative_id === null ? pages.community : pages.initiative}
