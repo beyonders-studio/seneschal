@@ -6,6 +6,15 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Edit the catalogue in a spreadsheet.** Export materials, bases, products and recipes from Reports › Export, edit them, and bring them back in Settings › Import › Import Hoard spreadsheets. The check lists each change, field by field, and any problems before anything is written. A column you leave out stays as it is, and nothing is deleted.
+
+### Changed
+
+- **The catalogue exports read as spreadsheets:** categories, types, units and suppliers by name, products with their variations, and recipes with their lines. They export as CSV only.
+- **An import carries on past a row it can't write,** such as one a store refuses, and lists it when it's done.
+
 ## [0.4.0] - 2026-11-17
 
 ### Added
