@@ -46,7 +46,8 @@ export function bindApiClient(api: AxiosInstance): void {
   client = api;
 }
 
-const api = (): AxiosInstance => {
+/** The app's axios instance, which `bindApiClient` named. */
+export const api = (): AxiosInstance => {
   if (!client) throw new Error("call bindApiClient before the auth routes");
   return client;
 };

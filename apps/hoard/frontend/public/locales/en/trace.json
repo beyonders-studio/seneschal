@@ -50,6 +50,7 @@
     "madeEmpty": "No lot was made from it.",
     "shipments": "Shipments",
     "shipmentsEmpty": "It reached no shipment.",
-    "moved": "Moved to other locations"
+    "moved": "Moved to other locations",
+    "downloadFailed": "The file couldn't be downloaded. Try again."
   }
 }

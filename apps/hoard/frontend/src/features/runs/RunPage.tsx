@@ -1,3 +1,4 @@
+import { FileImage } from "@seneschal/app/files";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { CircleCheck, Pencil, Play, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
@@ -255,8 +256,8 @@ function Run({ run }: { run: RunRead }) {
               <TableCell>
                 <span className="inline-flex items-center gap-2">
                   {line.picture_id !== null && (
-                    <img
-                      src={pictureUrl(line.item.id, line.picture_id)}
+                    <FileImage
+                      path={pictureUrl(line.item.id, line.picture_id)}
                       alt=""
                       className="size-10 rounded object-cover"
                     />

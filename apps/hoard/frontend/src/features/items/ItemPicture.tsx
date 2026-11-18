@@ -1,3 +1,4 @@
+import { FileImage } from "@seneschal/app/files";
 import { useMutation } from "@tanstack/react-query";
 import type { TFunction } from "i18next";
 import { Trash2 } from "lucide-react";
@@ -80,8 +81,8 @@ export function ItemPicture({
       )}
       {item.picture_id !== null && (
         <div className="relative w-48 overflow-hidden rounded-md border">
-          <img
-            src={pictureUrl(item.id, item.picture_id)}
+          <FileImage
+            path={pictureUrl(item.id, item.picture_id)}
             alt={t("items.pictureOf", { name: item.name })}
             className="aspect-square w-full object-cover"
           />

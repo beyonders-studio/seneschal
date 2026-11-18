@@ -1,3 +1,4 @@
+import { FileImage } from "@seneschal/app/files";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -55,8 +56,8 @@ export function ProductImages({ productId, name }: { productId: number; name: st
         <ul className="grid grid-cols-fill-32/6 gap-3">
           {images.map((image, index) => (
             <li key={image.id} className="relative overflow-hidden rounded-md border">
-              <img
-                src={imageUrl(productId, image.id)}
+              <FileImage
+                path={imageUrl(productId, image.id)}
                 alt={t("products.imageOf", { name, number: index + 1 })}
                 className="aspect-square w-full object-cover"
               />
