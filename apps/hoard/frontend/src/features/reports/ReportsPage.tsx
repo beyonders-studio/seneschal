@@ -1,3 +1,4 @@
+import { FileLink } from "@seneschal/app/files";
 import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { type ReactNode, useState } from "react";
@@ -250,9 +251,10 @@ function ExportRow({ kind }: { kind: ExportKind }) {
         {job && job.state !== JobState.done && <JobProgress job={job} />}
         {job?.state === JobState.done && started && (
           <Button asChild size="sm">
-            <a
-              href={jobResultUrl(job.id)}
-              download={job.file_name ?? undefined}
+            <FileLink
+              path={jobResultUrl(job.id)}
+              fileName={job.file_name ?? undefined}
+              onFailed={(error) => toast.error(errorMessage(error, t, "export.downloadFailed"))}
               aria-label={t("export.download", {
                 kind: name,
                 format: t(`export.formats.${started.format}`),
@@ -260,7 +262,7 @@ function ExportRow({ kind }: { kind: ExportKind }) {
             >
               <Download aria-hidden />
               {t("export.downloadReady")}
-            </a>
+            </FileLink>
           </Button>
         )}
         {Object.values(ExportFormat).map((format) => (

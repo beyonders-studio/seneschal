@@ -187,9 +187,15 @@ importers:
       '@capacitor/core':
         specifier: ^8.6.0
         version: 8.6.0
+      '@capacitor/filesystem':
+        specifier: ^8.0.0
+        version: 8.1.5(@capacitor/core@8.6.0)
       '@capacitor/preferences':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.6.0)
+      '@capacitor/share':
+        specifier: ^8.0.0
+        version: 8.0.3(@capacitor/core@8.6.0)
       '@fontsource-variable/outfit':
         specifier: ^5.3.0
         version: 5.3.0
@@ -281,9 +287,15 @@ importers:
       '@capacitor/core':
         specifier: ^8.6.0
         version: 8.6.0
+      '@capacitor/filesystem':
+        specifier: ^8.0.0
+        version: 8.1.5(@capacitor/core@8.6.0)
       '@capacitor/preferences':
         specifier: ^8.0.1
         version: 8.0.1(@capacitor/core@8.6.0)
+      '@capacitor/share':
+        specifier: ^8.0.0
+        version: 8.0.3(@capacitor/core@8.6.0)
       axios:
         specifier: ^1.21.0
         version: 1.21.1(debug@4.4.3)
@@ -720,10 +732,23 @@ packages:
   '@capacitor/core@8.6.0':
     resolution: {integrity: sha512-9F2zzuGYTJu+wqmQSEmqnFBfGrhC/njjMCfmxbvg9mq8xJT4wNh5pxbMFZxvW/yDhYJWPEBFQxeqzfo1gKrvxg==}
 
+  '@capacitor/filesystem@8.1.5':
+    resolution: {integrity: sha512-m1RkI8L83NJeppEKyRWioK3MDp2vjlA+QfUQcF8/xRlcXNC2HYxqoyYJ+K4M0EcVovy+g+4F24S05+bhK4Vgdg==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
   '@capacitor/preferences@8.0.1':
     resolution: {integrity: sha512-T6no3ebi79XJCk91U3Jp/liJUwgBdvHR+s6vhvPkPxSuch7z3zx5Rv1bdWM6sWruNx+pViuEGqZvbfCdyBvcHQ==}
     peerDependencies:
       '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/share@8.0.3':
+    resolution: {integrity: sha512-gnvZBV1NPu2B8vd1UKncR56G15ueHd0aZLqgDov++t3SmTBG9Q0VrAZ1VnHn5stxlmglVaTb4RwopMgbpLzroA==}
+    peerDependencies:
+      '@capacitor/core': '>=8.0.0'
+
+  '@capacitor/synapse@1.0.4':
+    resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
 
   '@chevrotain/cst-dts-gen@11.0.3':
     resolution: {integrity: sha512-BvIKpRLeS/8UbfxXxgC33xOumsacaeCKAjAeLyOn7Pcp95HiRbrpl14S+9vaZLolnbssPIUuiUd8IvgkRyt6NQ==}
@@ -5409,9 +5434,20 @@ snapshots:
     dependencies:
       tslib: 2.9.1
 
+  '@capacitor/filesystem@8.1.5(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
+      '@capacitor/synapse': 1.0.4
+
   '@capacitor/preferences@8.0.1(@capacitor/core@8.6.0)':
     dependencies:
       '@capacitor/core': 8.6.0
+
+  '@capacitor/share@8.0.3(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
+
+  '@capacitor/synapse@1.0.4': {}
 
   '@chevrotain/cst-dts-gen@11.0.3':
     dependencies:

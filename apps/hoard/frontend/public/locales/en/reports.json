@@ -43,7 +43,8 @@
     "formats": {
       "csv": "CSV",
       "json": "JSON"
-    }
+    },
+    "downloadFailed": "The file couldn't be downloaded. Try again."
   },
   "errors": {
     "COSTS_ONLY": "Only members who can see costs can see what stock is worth.",

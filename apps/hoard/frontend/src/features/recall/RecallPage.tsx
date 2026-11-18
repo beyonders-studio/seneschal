@@ -1,3 +1,4 @@
+import { FileLink } from "@seneschal/app/files";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { Download, Undo2 } from "lucide-react";
 import { type FormEvent, useState } from "react";
@@ -10,6 +11,7 @@ import {
   type TraceStepRead,
 } from "@/api/generated/hoard.schemas";
 import { useReadRecall } from "@/api/generated/trace/trace";
+import { toast } from "@/components/Toaster";
 import { ItemField } from "@/features/adjustments/fields";
 import { useMovementLabels } from "@/features/adjustments/labels";
 import { LotLink, MayHaveBadge, StepsTable } from "@/features/trace/StepsTable";
@@ -114,10 +116,13 @@ function RecallResults({ params }: { params: ReadRecallParams }) {
         <span className="text-sm text-muted-foreground">{t("recall.download")}</span>
         {Object.values(TraceRecallFormat).map((format) => (
           <Button key={format} asChild variant="outline" size="sm">
-            <a href={exportHref(params, format)} download>
+            <FileLink
+              path={exportHref(params, format)}
+              onFailed={(error) => toast.error(errorMessage(error, t, "recall.downloadFailed"))}
+            >
               <Download aria-hidden />
               {t(`recall.formats.${format}`)}
-            </a>
+            </FileLink>
           </Button>
         ))}
       </div>
