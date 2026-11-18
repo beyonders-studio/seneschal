@@ -4,7 +4,8 @@
     "placeholder": "Search records, codes and lot numbers (Ctrl K)",
     "suggestions": "Suggestions",
     "exact": "Exact code",
-    "nothing": "No suggestions. Press Enter to search everything."
+    "nothing": "No suggestions. Press Enter to search everything.",
+    "scan": "Scan a barcode"
   },
   "kinds": {
     "material": "Material",

@@ -33,5 +33,14 @@
     "COMMUNITY_UNAVAILABLE": "This community can't use {{app}} right now.",
     "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment.",
     "SIGN_IN_NOT_OFFERED": "This {{app}} doesn't let people sign in outside Initiative yet."
+  },
+  "scan": {
+    "button": "Scan",
+    "title": "Scan a barcode",
+    "hint": "Point the camera at a barcode or a label.",
+    "cancel": "Cancel",
+    "preparing": "The phone is getting its barcode scanner ready. Try again in a moment.",
+    "denied": "The camera isn't allowed. Allow it in the browser's settings for this site.",
+    "failed": "The camera couldn't scan. Try again, or type the code."
   }
 }

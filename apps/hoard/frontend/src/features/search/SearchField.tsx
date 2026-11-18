@@ -1,3 +1,4 @@
+import { ScanButton } from "@seneschal/app/scan";
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -181,6 +182,12 @@ export function SearchField() {
         onFocus={() => setOpen(true)}
         onBlur={close}
         onKeyDown={keyDown}
+      />
+      {/* Where the camera can scan: a scan opens what it names, as Enter does. */}
+      <ScanButton
+        label={t("field.scan")}
+        className="absolute top-1/2 right-1 size-7 -translate-y-1/2"
+        onScan={(scanned) => void enter(scanned)}
       />
       {listed && (
         <div
