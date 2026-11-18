@@ -32,8 +32,12 @@ Theme = Literal["light", "dark"]
 #: How a session was made, which says how it may be presented: ``frame`` (a
 #: handoff in Initiative's frame) and ``browser`` (a sign-in at the app's own
 #: address) travel in the cookie; ``device`` (a sign-in in the app's phone
-#: app) travels as a Bearer token, and never in the cookie.
-Via = Literal["frame", "browser", "device"]
+#: app) and ``mcp`` (an MCP client's sign-in, :mod:`seneschal_core.oauth`)
+#: travel as a Bearer token, and never in the cookie.
+Via = Literal["frame", "browser", "device", "mcp"]
+
+#: The sessions that travel as a Bearer token.
+BEARER_VIAS: frozenset[Via] = frozenset({"device", "mcp"})
 
 
 @dataclass(frozen=True)

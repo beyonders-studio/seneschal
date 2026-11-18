@@ -44,6 +44,12 @@ gets a session it sends as a Bearer token and a renewal it keeps itself, which
 renewal is bound to its install: presented from another, or at the browser's
 route, it ends the sign-in.
 
+**An MCP client signs in the same way too**, as an OAuth client of the app
+(:mod:`seneschal_core.oauth`): its authorize request starts the sign-in with
+``client=mcp``, and once the person is admitted the browser goes back to the
+client's own redirect URI with a code the client spends at the app's token
+endpoint. Its renewal is its refresh token, bound to the client it was made for.
+
 The renewal travels in an HttpOnly cookie sent only to ``/api/v1/auth``, so no
 other call carries it. Every answer here is ``no-store``. A renewal that is
 refused clears both cookies and says only ``SIGN_IN_ENDED``.
@@ -109,6 +115,11 @@ DEVICE_IDLE = timedelta(days=90)
 DEVICE_CODE_LIFETIME = timedelta(minutes=2)
 #: Where the system browser hands a phone app its code, under its own scheme.
 DEVICE_CALLBACK = "sign-in/callback"
+#: The kinds of client a sign-in is made for: a browser at the app's own
+#: address, a phone app, and an MCP client.
+CLIENTS = ("browser", "device", "mcp")
+#: How long an MCP client has to spend the code the browser brings it back with.
+MCP_CODE_LIFETIME = timedelta(minutes=2)
 #: A PKCE challenge (S256, base64url) and the verifier that answers it.
 _CHALLENGE = re.compile(r"^[A-Za-z0-9_-]{43}$")
 _VERIFIER = re.compile(r"^[A-Za-z0-9._~-]{43,128}$")
@@ -180,6 +191,9 @@ class Sealer:
 # --- the chain of renewals -----------------------------------------------------
 
 
+_CLIENT_CHECK = "client IN (" + ", ".join(f"'{client}'" for client in CLIENTS) + ")"
+
+
 class SignInRow(OrganizationRow, table=True):
     """One renewal of a sign-in. A renewal spent is revoked, and the row that
     replaced it names it as its parent; together they are the sign-in's chain."""
@@ -187,7 +201,7 @@ class SignInRow(OrganizationRow, table=True):
     __tablename__ = "sign_ins"
     __table_args__ = (
         CheckConstraint("parent_id IS NULL OR parent_id <> id", name="ck_sign_ins_parent"),
-        CheckConstraint("client IN ('browser', 'device')", name="ck_sign_ins_client"),
+        CheckConstraint(_CLIENT_CHECK, name="ck_sign_ins_client"),
     )
 
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
@@ -198,9 +212,10 @@ class SignInRow(OrganizationRow, table=True):
     initiative_refresh: str
     #: The member, by the app's reference for them.
     member_ref: str
-    #: ``browser`` or ``device``.
+    #: One of :data:`CLIENTS`.
     client: str
-    #: The phone app's install, when a device signed in.
+    #: The phone app's install, when a device signed in; the client's
+    #: fingerprint, when an MCP client did.
     install_id: str | None = None
     user_agent: str | None = None
     #: When the person signed in: the chain's first row's time, kept on each.
@@ -232,10 +247,17 @@ def create_table() -> None:
         sa.Column("revoked_at", moment, nullable=True),
         sa.Column("revoked_reason", sa.Text(), nullable=True),
         sa.CheckConstraint("parent_id IS NULL OR parent_id <> id", name="ck_sign_ins_parent"),
-        sa.CheckConstraint("client IN ('browser', 'device')", name="ck_sign_ins_client"),
+        sa.CheckConstraint(_CLIENT_CHECK, name="ck_sign_ins_client"),
     )
     isolate("sign_ins")
     op.create_index("ix_sign_ins_parent_id", "sign_ins", ["parent_id"])
+
+
+def allow_clients() -> None:
+    """Let ``sign_ins`` hold a sign-in for each of :data:`CLIENTS`, in a table
+    an earlier :func:`create_table` made for fewer."""
+    op.drop_constraint("ck_sign_ins_client", "sign_ins", type_="check")
+    op.create_check_constraint("ck_sign_ins_client", "sign_ins", _CLIENT_CHECK)
 
 
 def drop_table() -> None:
@@ -329,8 +351,11 @@ class SignIn:
     ) -> None:
         #: The deployment's own address, which issues the ID tokens.
         self.issuer = issuer.rstrip("/")
+        #: Where people's browsers reach the app, which issues what it hands
+        #: an MCP client.
+        self.app_origin = app_origin.rstrip("/")
         #: The manifest's ``return_path`` on the app's origin, exactly.
-        self.redirect_uri = f"{app_origin.rstrip('/')}{API_PREFIX}{RETURN_PATH}"
+        self.redirect_uri = f"{self.app_origin}{API_PREFIX}{RETURN_PATH}"
         self.sealer = Sealer(sealing_key)
         self.cookie_secure = cookie_secure
         self.pending_cookie = f"{app}_sign_in"
@@ -644,6 +669,30 @@ def _back_to_device(sign_in: SignIn, params: Mapping[str, str]) -> RedirectRespo
     return response
 
 
+#: The OAuth error an MCP client is sent back with, for why the person could
+#: not sign in; any other reason is ``access_denied``.
+_OAUTH_ERRORS = {ErrorCode.INITIATIVE_UNAVAILABLE.value: "temporarily_unavailable"}
+
+
+def _back_to_mcp_client(
+    sign_in: SignIn, pending: Mapping[str, Any], params: Mapping[str, str]
+) -> RedirectResponse:
+    """Send the browser back to the MCP client's redirect URI with ``params``,
+    its own ``state`` and the app as the answer's issuer (RFC 9207)."""
+    redirect_uri = str(pending["redirect_uri"])
+    query = dict(params) | {"iss": sign_in.app_origin}
+    if pending.get("client_state") is not None:
+        query["state"] = str(pending["client_state"])
+    separator = "&" if "?" in redirect_uri else "?"
+    response = RedirectResponse(
+        f"{redirect_uri}{separator}{urlencode(query)}",
+        status_code=status.HTTP_303_SEE_OTHER,
+        headers=_NO_STORE,
+    )
+    sign_in.clear_pending(response)
+    return response
+
+
 class SignInOffer(BaseModel):
     """Which sign-ins the app offers at its own address. A phone app reads it
     to know a server is the app it is for before it signs in there."""
@@ -692,6 +741,13 @@ async def start_sign_in(
         ):
             raise refuse(status.HTTP_400_BAD_REQUEST, ErrorCode.REQUEST_INVALID)
         pending |= {"challenge": challenge, "device_state": state, "install": install}
+    return send_to_initiative(plugin, pending)
+
+
+def send_to_initiative(plugin: Plugin, pending: Mapping[str, Any]) -> RedirectResponse:
+    """Send the person to Initiative's authorize page, keeping ``pending``
+    (where to go after, and for which client) for their return."""
+    sign_in = _offered(plugin)
     oidc_state, nonce, verifier = (secrets.token_urlsafe(32) for _ in range(3))
     response = RedirectResponse(
         sign_in.authorize_url(
@@ -715,8 +771,8 @@ async def start_sign_in(
 @router.get("/sign-in/return", include_in_schema=False)
 async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectResponse:
     """Where Initiative sends the person back: spend the code, admit them,
-    and give them a session and a renewal; or, for the phone app, send the
-    browser back to it with a code for them."""
+    and give them a session and a renewal; or, for the phone app or an MCP
+    client, send the browser back to it with a code for them."""
     sign_in = _offered(plugin)
     params = request.query_params
     try:
@@ -727,11 +783,18 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
         return _back(sign_in, "/", ErrorCode.SIGN_IN_EXPIRED)
     next_path = _local(pending.get("next"))
     device = pending.get("client") == "device" and sign_in.device_scheme is not None
+    mcp = pending.get("client") == "mcp"
+    client = "device" if device else "mcp" if mcp else "browser"
 
     def fail(code: str) -> RedirectResponse:
         if device:
             return _back_to_device(
                 sign_in, {"error": code, "state": str(pending.get("device_state", ""))}
+            )
+        if mcp:
+            error = _OAUTH_ERRORS.get(code, "access_denied")
+            return _back_to_mcp_client(
+                sign_in, pending, {"error": error, "error_description": code}
             )
         return _back(sign_in, next_path, code)
 
@@ -769,9 +832,9 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
         organization,
         claims,
         str(answer["refresh_token"]),
-        client="device" if device else "browser",
+        client=client,
         user_agent=_user_agent(request),
-        install_id=str(pending["install"]) if device else None,
+        install_id=str(pending["install"]) if device or mcp else None,
     )
     if device:
         device_code = sign_in.sealer.seal(
@@ -787,6 +850,19 @@ async def finish_sign_in(request: Request, plugin: PluginDep) -> RedirectRespons
         return _back_to_device(
             sign_in, {"code": device_code, "state": str(pending["device_state"])}
         )
+    if mcp:
+        mcp_code = sign_in.sealer.seal(
+            "mcp-code",
+            {
+                "o": organization.id,
+                "jti": secrets.token_urlsafe(16),
+                "renewal": renewal,
+                "challenge": pending["challenge"],
+                "redirect_uri": pending["redirect_uri"],
+                "install": pending["install"],
+            },
+        )
+        return _back_to_mcp_client(sign_in, pending, {"code": mcp_code})
     response = _back(sign_in, next_path)
     plugin.sessions.set_cookie(
         response,

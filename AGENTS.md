@@ -101,6 +101,14 @@ pages the image serves.
   `<APP>_SEALING_KEY` an app opens only inside Initiative. An unsafe request
   carrying an app's cookie must come from its own origin
   (`seneschal_core.csrf`).
+- **An MCP client** (an assistant on the person's computer) reaches an app at
+  `/api/v1/mcp` wherever Sign in with Initiative is offered. The app is the
+  client's OAuth authorization server (`seneschal_core.oauth`): the client
+  registers with a loopback redirect and gets a Bearer session and a refresh
+  token from the same sign-in chain. Its tools are the app's own routes,
+  called in process with that session (`seneschal_core.mcp`), and only the
+  ones the app names (Hoard's `hoard/mcp.py`). A new route is not a tool
+  until it is named there.
 - The plug-in contract is the plug-in SDK's
   ([initiative-plugin-sdk](https://github.com/beyonders-studio/initiative-plugin-sdk)).
 - `scripts/ci/check`: what CI runs, for what the branch changed against
