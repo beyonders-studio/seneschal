@@ -4,7 +4,8 @@ import { Search } from "lucide-react";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { SearchHit, Suggestions } from "@/api/generated/hoard.schemas";
+import type { ScanRead, SearchHit, Suggestions } from "@/api/generated/hoard.schemas";
+import { scanCode } from "@/api/generated/scans/scans";
 import { getSuggestRecordsQueryOptions, useSuggestRecords } from "@/api/generated/search/search";
 import { useKindName, useOpenRecord } from "@/features/search/records";
 import { Input } from "@/ui/input";
@@ -30,9 +31,10 @@ function grouped(hits: SearchHit[]): { key: string; exact: boolean; hits: Search
 /**
  * The search field at the top of every Hoard page. Ctrl/Cmd-K focuses it.
  * Typing suggests records, grouped by kind, exact codes first; the arrow keys
- * move through them. Enter opens the one chosen; with none chosen, it opens
- * the record whose code the query is, when exactly one is, so scanning a
- * label goes straight to it; otherwise it opens every result.
+ * move through them. Enter opens the one chosen. With none chosen, a label
+ * or code that names one lot opens the lot, and one that names one item opens
+ * the item (`POST /scans`), so scanning a label goes straight to it; else the
+ * record whose code the query is, when exactly one is; otherwise every result.
  */
 export function SearchField() {
   const { t } = useTranslation("search");
@@ -83,13 +85,30 @@ export function SearchField() {
     setActive(-1);
   };
 
-  const go = (hit: SearchHit) => {
+  const go = (hit: Pick<SearchHit, "path">) => {
     close();
     setText("");
     openRecord(hit);
   };
 
+  /** What Hoard holds of a scan or a code; nothing when it couldn't say. */
+  const scanned = async (typed: string): Promise<ScanRead | undefined> => {
+    try {
+      return await scanCode({ text: typed });
+    } catch {
+      return undefined;
+    }
+  };
+
   const enter = async (typed: string) => {
+    const read = await scanned(typed);
+    const [lot] = read?.lots ?? [];
+    const [item] = read?.items ?? [];
+    const page =
+      read?.lots.length === 1 ? lot.path : read?.items.length === 1 ? item.path : undefined;
+    if (page) return go({ path: page });
+    // A label Hoard holds nothing of is searched for by its GTIN.
+    if (read?.kind === "gs1" && read.gtin) typed = read.gtin;
     let answer: Suggestions | undefined;
     try {
       answer = await queries.fetchQuery(getSuggestRecordsQueryOptions({ q: typed }));

@@ -2791,6 +2791,62 @@ export interface RunUpdate {
 }
 
 /**
+ * A scan, and where the page that took it stands.
+ */
+export interface ScanAsk {
+  /**
+   * @minLength 1
+   * @maxLength 2048
+   */
+  text: string;
+  gs1?: boolean | null;
+  location_id?: number | null;
+  item_id?: number | null;
+}
+
+export type ScanItemAttributes = { [key: string]: string };
+
+export interface ScanItem {
+  id: number;
+  kind: ItemKind;
+  name: string;
+  attributes: ScanItemAttributes;
+  archived: boolean;
+  path: string;
+}
+
+export interface ScanLot {
+  id: number;
+  item_id: number;
+  location_id: number;
+  number: string;
+  expires_on: string | null;
+  balance: string;
+  on_hold: boolean;
+  loose: boolean;
+  path: string;
+}
+
+/**
+ * What a scan says, and what Hoard holds of it.
+ */
+export interface ScanRead {
+  kind: string;
+  text: string;
+  gtin: string | null;
+  lot: string | null;
+  serial: string | null;
+  sscc: string | null;
+  expires_on: string | null;
+  best_before: string | null;
+  produced_on: string | null;
+  count: number | null;
+  items: ScanItem[];
+  lots: ScanLot[];
+  problems: string[];
+}
+
+/**
  * A stretch of a snippet, and whether it is a word the query matched.
  */
 export interface SnippetPart {
