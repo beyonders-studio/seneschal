@@ -40,11 +40,16 @@ RUN apk add --no-cache zip \
     && mkdir -p /ota \
     && cd apps/hoard/frontend/dist \
     && zip -qrX /ota/bundle.zip .
+# The key's id (the SHA-256 of its public half) names which key signs, so a
+# build signed with another key, or with none, never comes from this one's
+# cache: a secret alone does not change what the cache matches.
+ARG OTA_KEY_ID=""
 RUN --mount=type=secret,id=ota_signing_key,required=false \
     node packages/native/bin/sign-ota.mjs /ota hoard \
         "$(cat apps/hoard/VERSION)${OTA_VERSION_SUFFIX}" \
         "$(cat apps/hoard/MIN_NATIVE_VERSION)" \
-        /run/secrets/ota_signing_key
+        /run/secrets/ota_signing_key \
+        "${OTA_KEY_ID}"
 
 # uv builds the environment, and stays in this stage: the runtime runs alembic
 # and uvicorn from the environment and never calls uv. Both stages share the
