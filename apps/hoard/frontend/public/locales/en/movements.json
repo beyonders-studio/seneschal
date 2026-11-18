@@ -57,7 +57,15 @@
       "unreceive": "Take back",
       "lotNumber": "Lot number",
       "lotNumberHint": "Left empty, the purchase's code and the line make one.",
-      "expiresOn": "Expires on"
+      "expiresOn": "Expires on",
+      "scanLabel": "Scan the label",
+      "scanFailed": "That scan couldn't be read. Try again, or type the lot number.",
+      "scanOtherItem": "That label is for another item than {{item}}.",
+      "scanAmbiguous": "That label didn't read cleanly: check the lot number.",
+      "gtinUnknown": "No item has the GTIN {{gtin}} yet. Is it {{item}}'s?",
+      "rememberGtin": "Remember it",
+      "gtinRemembered": "{{gtin}} is now {{item}}'s GTIN.",
+      "gtinFailed": "The GTIN couldn't be kept."
     }
   },
   "adjustments": {

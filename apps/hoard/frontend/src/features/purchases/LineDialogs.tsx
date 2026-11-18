@@ -1,12 +1,15 @@
+import { ScanButton } from "@seneschal/app/scan";
 import { type FormEvent, type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { PurchaseLineRead, PurchaseRead } from "@/api/generated/hoard.schemas";
+import { setItemGtin } from "@/api/generated/items/items";
 import {
   useCreatePurchaseLine,
   useReceivePurchaseLine,
   useUpdatePurchaseLine,
 } from "@/api/generated/purchases/purchases";
+import { scanCode } from "@/api/generated/scans/scans";
 import { toast } from "@/components/Toaster";
 import { ItemField } from "@/features/adjustments/fields";
 import { today, useMovementLabels } from "@/features/adjustments/labels";
@@ -213,6 +216,38 @@ function ReceiveForm({
   const [expiresOn, setExpiresOn] = useState("");
   const [notes, setNotes] = useState("");
   const receive = useReceivePurchaseLine();
+  // A GTIN the scanned label carries that no item has yet, offered as this line's.
+  const [unknownGtin, setUnknownGtin] = useState<string | null>(null);
+
+  /** Fill the lot number and expiry from a scanned label of this line's item. */
+  const scanLabel = async (text: string) => {
+    let read: Awaited<ReturnType<typeof scanCode>>;
+    try {
+      read = await scanCode({ text, item_id: line.item.id });
+    } catch (error) {
+      toast.error(errorMessage(error, t, "purchases.lines.scanFailed"));
+      return;
+    }
+    if (read.problems.includes("item_mismatch")) {
+      toast.error(t("purchases.lines.scanOtherItem", { item: line.item.name }));
+      return;
+    }
+    if (read.problems.includes("ambiguous")) toast.error(t("purchases.lines.scanAmbiguous"));
+    const lot = read.kind === "gs1" ? read.lot : read.items.length ? null : read.text;
+    if (lot) setNumber(lot);
+    if (read.expires_on) setExpiresOn(read.expires_on);
+    setUnknownGtin(read.problems.includes("unknown_gtin") ? read.gtin : null);
+  };
+
+  const rememberGtin = async (gtin: string) => {
+    try {
+      await setItemGtin(line.item.id, { gtin });
+      toast.success(t("purchases.lines.gtinRemembered", { gtin, item: line.item.name }));
+      setUnknownGtin(null);
+    } catch (error) {
+      toast.error(errorMessage(error, t, "purchases.lines.gtinFailed"));
+    }
+  };
 
   const submit = async () => {
     try {
@@ -257,6 +292,28 @@ function ReceiveForm({
           />
         </Field>
       </div>
+      <div className="flex justify-end">
+        <ScanButton
+          size="sm"
+          label={t("purchases.lines.scanLabel")}
+          onScan={(text) => void scanLabel(text)}
+        />
+      </div>
+      {unknownGtin && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-2 text-sm">
+          <span>
+            {t("purchases.lines.gtinUnknown", { gtin: unknownGtin, item: line.item.name })}
+          </span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={() => void rememberGtin(unknownGtin)}
+          >
+            {t("purchases.lines.rememberGtin")}
+          </Button>
+        </div>
+      )}
       <Field label={t("purchases.lines.lotNumber")} hint={t("purchases.lines.lotNumberHint")}>
         <Input value={number} onChange={(event) => setNumber(event.target.value)} />
       </Field>

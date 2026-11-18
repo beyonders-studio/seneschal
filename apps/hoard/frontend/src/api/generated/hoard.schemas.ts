@@ -1474,6 +1474,17 @@ export interface ImporterRead {
   files: ImportFileRead[];
 }
 
+/**
+ * An item's GTIN: 8, 12, 13 or 14 digits, kept as 14; null clears it.
+ */
+export interface ItemGtin {
+  gtin?: string | null;
+}
+
+export interface ItemGtinRead {
+  gtin: string | null;
+}
+
 export interface ItemPictureRead {
   id: number;
   content_type: string;
