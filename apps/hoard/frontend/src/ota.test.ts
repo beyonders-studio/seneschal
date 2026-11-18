@@ -1,4 +1,4 @@
-import { verifiedStatement } from "@seneschal/app/native/otaTrust";
+import { DEV_KEYS, RELEASE_KEYS, verifiedStatement } from "@seneschal/app/native/otaTrust";
 import { checkForUpdate, decideUpdate } from "@seneschal/app/native/update";
 import axios from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,5 +132,21 @@ describe("Web bundles over the air", () => {
     expect(decideUpdate({ ...at, served: "0.6.0", minNative: "0.6.0" })).toBe("native-required");
     expect(decideUpdate({ ...at, served: "0.5.1" })).toBe("download");
     expect(decideUpdate({ ...at, served: "0.5.0-dev.abc1234" })).toBe("download");
+  });
+});
+
+describe("The keys a phone app is built to trust", () => {
+  it("are P-256 public keys, a release key and its backup and a dev key", async () => {
+    expect([RELEASE_KEYS.length, DEV_KEYS.length]).toEqual([2, 1]);
+    for (const spki of [...RELEASE_KEYS, ...DEV_KEYS]) {
+      const bytes = Uint8Array.from(atob(spki), (c) => c.charCodeAt(0));
+      await crypto.subtle.importKey("spki", bytes, { name: "ECDSA", namedCurve: "P-256" }, false, [
+        "verify",
+      ]);
+    }
+  });
+
+  it("never let a release app take a dev bundle", () => {
+    expect(RELEASE_KEYS.filter((key) => DEV_KEYS.includes(key))).toEqual([]);
   });
 });

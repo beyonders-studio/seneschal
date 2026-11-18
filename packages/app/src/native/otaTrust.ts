@@ -12,10 +12,16 @@
  */
 
 /** Base64 SPKI DER of the release key, then its backup. */
-export const RELEASE_KEYS: readonly string[] = [];
+export const RELEASE_KEYS: readonly string[] = [
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE40gXx4/OQPjSmaLP3+A0Efw59K5DvKuZkvxLcl1kvkWLU5jiXMvtIGUM79DGOClqH/iHALkoVlMLkbZqa5Y2DQ==",
+  // The offline backup.
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEpx1ux+HGakJR308O/uC123LzhW2ITW18CL88etWXo661MiFlnoTcnU7jotzRYtDD/a42Rh5ciEdLCH6DCfSbPA==",
+];
 
 /** Base64 SPKI DER of the dev key. */
-export const DEV_KEYS: readonly string[] = [];
+export const DEV_KEYS: readonly string[] = [
+  "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEw+6wajyLiaiEK4cpXKh4nu4oWR+yr6hkKeqHGbC16YaOYBXoTbSMjPjwh00HVY8/g0X4/MdwsLzt1TkYzvRr+A==",
+];
 
 /** The keys an app with the id `appId` trusts. */
 export const keysFor = (appId: string): readonly string[] =>
