@@ -45,6 +45,16 @@ Each app has its own Docker image, database, plug-in manifest, `VERSION` and
    initiative-packages to pin it. The pin puts it in the packages our
    deployments read; each runs it on its next deploy.
 
+An app with a phone app gets its Android release from the same tag
+(`native.yml`): an APK signed with the app's release key, attached to the
+GitHub Release, and an AAB kept as the run's artifact for uploading to Google
+Play by hand. Each push to `dev` builds its dev app (`<appId>.dev`), signed
+with its dev key. The keys live in Secret Manager
+(`seneschal-<app>-android-<kind>`), and the signing job reaches them only from
+its environment (`<app>-android-<kind>`) on that ref, as the infra
+repository's `docs/runbooks/android-signing.md` sets up. A new phone app needs
+that setup, and its tag pattern in `native.yml`, before its first release.
+
 The listing's runtime (how a deployment runs the image, in the backend's
 `scripts/export_plugin.py`) names only variables the app reads. A change to it,
 a new setting or secret, needs the deployments' infrastructure to agree before
