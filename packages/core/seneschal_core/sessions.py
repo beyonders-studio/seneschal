@@ -67,6 +67,8 @@ class Sessions:
     """Signs and checks the app's sessions, under the app's own name."""
 
     def __init__(self, *, app: str, private_key_pem: str, cookie_secure: bool) -> None:
+        #: The app's own name (``hoard``).
+        self.app = app
         self._issuer = app
         self._audience = f"{app}:session"
         self._private_key = load_private_key(private_key_pem)

@@ -1,0 +1,14 @@
+{
+  "name": "@seneschal/native",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "seneschal-native": "./bin/seneschal-native.mjs"
+  },
+  "exports": {
+    "./config": {
+      "types": "./config.d.cts",
+      "default": "./config.cjs"
+    }
+  }
+}

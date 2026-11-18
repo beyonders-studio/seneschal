@@ -7,10 +7,18 @@
     "build": "tsc && vite build",
     "typecheck": "tsc",
     "test": "vitest run",
-    "generate:api": "orval && biome format --write src/api/generated"
+    "generate:api": "orval && biome format --write src/api/generated",
+    "native:sync": "vite build && cap sync android",
+    "native:android": "pnpm native:sync && cap run android"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/preferences": "^8.0.1",
     "@fontsource-variable/outfit": "^5.3.0",
+    "@seneschal/app": "workspace:*",
     "@seneschal/ui": "workspace:*",
     "@tanstack/react-query": "^5.106.0",
     "@tanstack/react-router": "^1.170.46",
@@ -23,6 +31,9 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.4",
+    "@capacitor/assets": "^4.0.0",
+    "@capacitor/cli": "^8.6.0",
+    "@seneschal/native": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/router-plugin": "^1.168.48",
     "@testing-library/react": "^16.3.3",

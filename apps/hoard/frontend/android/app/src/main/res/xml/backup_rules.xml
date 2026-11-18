@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 11 and older: the credentials and the web view's data stay out of backups. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="SeneschalCredentials.xml" />
+    <exclude domain="root" path="app_webview/" />
+</full-backup-content>

@@ -1,0 +1,69 @@
+// What every Seneschal phone app's Android build shares. Applied at the end of
+// apps/<app>/frontend/android/app/build.gradle, where `seneschal-native new`
+// puts it, so what it sets is what the build uses:
+//
+// - the application id and name from apps/<app>/native.json;
+// - the version from apps/<app>/VERSION: versionName is it, versionCode is
+//   major*10000 + minor*100 + patch, so every release is higher than the last;
+// - the dev build, from Gradle properties: seneschalAppIdSuffix (".dev") and
+//   seneschalAppLabel ("Hoard Dev"), so it installs beside the release;
+// - release signing from the four seneschalSigning* properties, all or none:
+//   none builds an unsigned release, some is refused;
+// - unencrypted HTTP in debug builds alone, for a server on the local network.
+
+import groovy.json.JsonSlurper
+
+def appRoot = file("${rootDir}/../..")
+def nativeApp = new JsonSlurper().parse(new File(appRoot, "native.json"))
+def version = new File(appRoot, "VERSION").text.trim()
+def semver = version =~ /^(\d+)\.(\d+)\.(\d+)$/
+if (!semver.matches()) {
+    throw new GradleException("${appRoot}/VERSION is not major.minor.patch: '${version}'")
+}
+def (major, minor, patch) = (1..3).collect { semver[0][it].toInteger() }
+if (minor > 99 || patch > 99) {
+    throw new GradleException("VERSION ${version}: minor and patch must stay under 100 for versionCode")
+}
+
+def property = { String name -> project.findProperty(name)?.toString()?.trim() ?: null }
+
+android {
+    defaultConfig {
+        applicationId nativeApp.appId + (property("seneschalAppIdSuffix") ?: "")
+        versionCode major * 10000 + minor * 100 + patch
+        versionName version
+        manifestPlaceholders += [
+            appLabel: property("seneschalAppLabel") ?: nativeApp.name,
+            appScheme: nativeApp.scheme,
+        ]
+    }
+    buildTypes {
+        debug {
+            manifestPlaceholders += [usesCleartextTraffic: "true"]
+        }
+        release {
+            manifestPlaceholders += [usesCleartextTraffic: "false"]
+        }
+    }
+}
+
+def signing = [
+    "seneschalSigningStoreFile",
+    "seneschalSigningStorePassword",
+    "seneschalSigningKeyAlias",
+    "seneschalSigningKeyPassword",
+]
+def given = signing.findAll { property(it) != null }
+if (given.size() == signing.size()) {
+    android.signingConfigs {
+        seneschalRelease {
+            storeFile file(property("seneschalSigningStoreFile"))
+            storePassword property("seneschalSigningStorePassword")
+            keyAlias property("seneschalSigningKeyAlias")
+            keyPassword property("seneschalSigningKeyPassword")
+        }
+    }
+    android.buildTypes.release.signingConfig android.signingConfigs.seneschalRelease
+} else if (!given.isEmpty()) {
+    throw new GradleException("Release signing is partly configured: ${given} given, all of ${signing} needed")
+}

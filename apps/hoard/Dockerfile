@@ -19,9 +19,13 @@ RUN npm install --global corepack@0.36.0 && corepack enable
 # The manifests first, so the install is cached until the dependencies change.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/ui/package.json packages/ui/
+COPY packages/app/package.json packages/app/
+# The phone apps' build tooling, whole: it is small, and the install links its bin.
+COPY packages/native packages/native
 COPY apps/hoard/frontend/package.json apps/hoard/frontend/
 RUN pnpm install --frozen-lockfile
 COPY packages/ui packages/ui
+COPY packages/app packages/app
 COPY apps/hoard/frontend apps/hoard/frontend
 RUN pnpm --filter @seneschal/hoard build
 

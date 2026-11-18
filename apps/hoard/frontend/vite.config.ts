@@ -10,6 +10,9 @@ import { defineConfig } from "vitest/config";
 // resolve to the copy in packages/ui; every other `@/` is Hoard's own src.
 // tsconfig.json says the same for TypeScript.
 const kit = path.resolve(import.meta.dirname, "../../../packages/ui/src");
+// What every Seneschal app's pages share: the session, however the app was
+// opened, and the phone app's runtime (packages/app).
+const shared = path.resolve(import.meta.dirname, "../../../packages/app/src");
 const src = path.resolve(import.meta.dirname, "src");
 
 // Hoard's image serves its API and these pages from one origin. In dev the
@@ -26,6 +29,7 @@ export default defineConfig({
         find: /^@\/api\/generated\/initiativeAPI\.schemas$/,
         replacement: `${kit}/api/generated/initiativeAPI.schemas.ts`,
       },
+      { find: /^@seneschal\/app\//, replacement: `${shared}/` },
       { find: /^@\//, replacement: `${src}/` },
     ],
   },

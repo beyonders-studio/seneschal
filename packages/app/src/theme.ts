@@ -1,13 +1,13 @@
 /**
- * Hoard wears the reader's appearance in Initiative.
+ * An app wears the reader's appearance in Initiative.
  *
  * The kit's styles carry Initiative's light and dark colour tokens. What
- * Initiative sends over the parent bridge (src/lib/parentBridge.ts) picks the
+ * Initiative sends over the parent bridge (parentBridge.ts) picks the
  * mode, by the `.dark` class, and overlays the reader's own colours on those
  * tokens. Until it says, the OS appearance stands (public/theme-boot.js).
  */
 
-import type { HostTheme } from "@/lib/parentBridge";
+import type { HostTheme } from "./parentBridge";
 
 /** The kit's colour tokens: the only properties Initiative's colours may set. */
 const COLOR_TOKENS = new Set(

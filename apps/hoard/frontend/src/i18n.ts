@@ -2,8 +2,9 @@ import i18n, { type BackendModule } from "i18next";
 import { initReactI18next } from "react-i18next";
 
 /**
- * Hoard's words (public/locales/<language>/hoard.json) and the UI kit's
- * (packages/ui/public/locales), side by side as namespaces. Each file is its
+ * Hoard's words (public/locales/<language>/hoard.json), the UI kit's
+ * (packages/ui/public/locales) and the shared session's (packages/app, the
+ * `app` namespace), side by side as namespaces. Each file is its
  * own chunk, loaded the first time a page reads its namespace in the reader's
  * language.
  *
@@ -12,7 +13,11 @@ import { initReactI18next } from "react-i18next";
  * stands until the handoff arrives.
  */
 const files = import.meta.glob<Record<string, unknown>>(
-  ["../public/locales/*/*.json", "../../../../packages/ui/public/locales/*/*.json"],
+  [
+    "../public/locales/*/*.json",
+    "../../../../packages/ui/public/locales/*/*.json",
+    "../../../../packages/app/public/locales/*/*.json",
+  ],
   { import: "default" }
 );
 

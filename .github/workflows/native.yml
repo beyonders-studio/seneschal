@@ -1,0 +1,112 @@
+name: Phone apps
+
+# Builds each app's Android app (every app with an apps/<app>/native.json), so
+# a change to it, or to what every phone app shares, is proven to build. A
+# debug build, unsigned: signed builds and their release come with the apps'
+# signing environments.
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - "apps/*/native.json"
+      - "apps/*/VERSION"
+      - "apps/*/frontend/**"
+      - "packages/app/**"
+      - "packages/native/**"
+      - "packages/ui/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/native.yml"
+  push:
+    branches: [dev]
+    paths:
+      - "apps/*/native.json"
+      - "apps/*/frontend/**"
+      - "packages/app/**"
+      - "packages/native/**"
+      - ".github/workflows/native.yml"
+
+permissions: {}
+
+concurrency:
+  group: native-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  apps:
+    name: Which phone apps
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      apps: ${{ steps.apps.outputs.apps }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: List the apps with a phone app
+        id: apps
+        run: |
+          apps=$(for file in apps/*/native.json; do basename "$(dirname "$file")"; done | jq -cnR '[inputs]')
+          echo "apps=$apps" >> "$GITHUB_OUTPUT"
+          echo "Phone apps: $apps"
+
+  android:
+    name: Android (${{ matrix.app }})
+    needs: apps
+    if: needs.apps.outputs.apps != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{ fromJSON(needs.apps.outputs.apps) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Before setup-node, whose pnpm cache asks pnpm where its store is.
+      - name: Install pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.12.1"
+          cache: pnpm
+
+      - name: Install the pnpm workspace
+        run: pnpm install --frozen-lockfile
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up the Android SDK
+        uses: android-actions/setup-android@be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd # v4.0.4
+
+      # The project as committed is what `seneschal-native apply` makes of it.
+      - name: The shared pieces are applied
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          node packages/native/bin/seneschal-native.mjs apply "$APP"
+          if [[ -n "$(git status --porcelain -- "apps/$APP/frontend/android")" ]]; then
+            git status --short -- "apps/$APP/frontend/android"
+            echo "::error::apps/$APP/frontend/android differs from what seneschal-native apply makes; run it and commit."
+            exit 1
+          fi
+
+      - name: Build the pages and copy them in
+        working-directory: apps/${{ matrix.app }}/frontend
+        run: pnpm native:sync
+
+      - name: Build the debug app
+        working-directory: apps/${{ matrix.app }}/frontend/android
+        run: ./gradlew --no-daemon assembleDebug

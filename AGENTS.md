@@ -15,6 +15,8 @@ is gitignored.
 | `apps/hoard/frontend` | Hoard's pages, which Initiative shows in its iframe: Vite, React, TypeScript | npm package `@seneschal/hoard` |
 | `packages/core` | What every app's backend shares: organization isolation, the Initiative connection (token checks, handoff, hooks, statements) | Python package `seneschal_core`, project `seneschal-core` |
 | `packages/ui` | Initiative's UI kit, copied whole by the kit's own `src/ui/refresh.mjs`. Nobody edits the copy | npm package `@seneschal/ui` |
+| `packages/app` | What every app's pages share outside the kit: the session however the app was opened (framed, at its own address, as its phone app), the bar outside Initiative's frame, the phone app's runtime | npm package `@seneschal/app` |
+| `packages/native` | What every phone app's build shares: the Capacitor config, the Android build's id, version and signing, and `seneschal-native`, which makes and checks an app's native project | npm package `@seneschal/native` |
 | `scripts/ci/check` | The fast checks CI and the pre-push hook run | |
 
 Each app has its own Docker image, database, plug-in manifest, `VERSION` and
@@ -48,6 +50,27 @@ The listing's runtime (how a deployment runs the image, in the backend's
 a new setting or secret, needs the deployments' infrastructure to agree before
 the release reaches them. `scripts/ci/check listing` builds the listing on
 every pull request.
+
+## Phone apps
+
+An app with an `apps/<app>/native.json` (its id, name, URL scheme and cloud
+address) has a phone app: Android for now, built with Capacitor from the same
+pages the image serves.
+
+- **Making one:** write `native.json`, then `node packages/native/bin/seneschal-native.mjs new <app>`.
+  It adds `apps/<app>/frontend/android` and applies what every phone app
+  shares. `apply <app>` reapplies it; CI fails when the committed project
+  differs from what `apply` makes.
+- **Its version** is the app's `VERSION`: versionCode is
+  `major*10000 + minor*100 + patch`.
+- **The app's pages** wrap `SessionGate` from `@seneschal/app/session`, with
+  the app's identity (`phone: {scheme, cloudOrigin}`), and await `prepareApp()`
+  before rendering.
+- **The backend** passes `device_scheme` to `SignIn`, and allows
+  `phone_app_origins(<appId>)` through CORS.
+- **Building it:** `pnpm native:sync` in the app's frontend, then build the
+  project in `android/` (Java 21, the Android SDK). `.github/workflows/native.yml`
+  builds every app's debug app on pull requests.
 
 ## How an app meets Initiative
 

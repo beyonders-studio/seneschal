@@ -1,5 +1,5 @@
 /**
- * The messages Hoard's pages exchange with Initiative, the window that frames
+ * The messages an app's pages exchange with Initiative, the window that frames
  * them.
  *
  *   to Initiative
@@ -15,7 +15,7 @@
  *
  * The ready ping carries nothing, so it goes to whichever window frames the
  * page. The handoff token is the credential: the backend checks Initiative's
- * signature on it, that it names Hoard, and that it is used once. Everything
+ * signature on it, that it names the app, and that it is used once. Everything
  * else here is the reader's appearance, language and clock.
  */
 
