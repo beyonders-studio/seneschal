@@ -25,6 +25,7 @@ from seneschal_core.csrf import SameOriginOnly
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
+from seneschal_core.native import native_router
 from seneschal_core.platform import ORGANIZATION_HOOKS, platform_router
 from seneschal_core.sessions import Sessions
 from seneschal_core.sign_in import SignIn, phone_app_origins
@@ -184,6 +185,7 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
             return response
 
     app.include_router(api_router)
+    app.include_router(native_router(settings.ota_dir, _version()), prefix="/api/v1")
     app.include_router(imports.router(IMPORTERS), prefix="/api/v1")
     app.include_router(
         platform_router(

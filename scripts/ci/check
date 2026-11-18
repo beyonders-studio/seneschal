@@ -22,6 +22,8 @@
 #   listing     each plug-in app's listing, at its VERSION with its changelog
 #               section, builds as the plug-in SDK checks it for a release
 #               (scripts/release/registry-source.sh); needs the network
+#   native      a phone app's release whose native code changed since its
+#               last release tag raises its MIN_NATIVE_VERSION to the release
 #
 # A check whose files are not in the tree is skipped, and the summary says so.
 #
@@ -83,6 +85,7 @@ absent() {
         || echo "no app has both backend/scripts/export_openapi.py and frontend/orval.config.ts"
       ;;
     listing) [[ -n "$(apps_with backend/scripts/export_plugin.py)" ]] || echo "no app has backend/scripts/export_plugin.py" ;;
+    native) [[ -n "$(apps_with native.json MIN_NATIVE_VERSION)" ]] || echo "no app has both native.json and MIN_NATIVE_VERSION" ;;
   esac
 }
 
@@ -162,6 +165,50 @@ check_codegen() {
   fi
 }
 
+# What a phone app's installed native code is: a change to any of these needs
+# a new APK, not just a new web bundle.
+native_paths() {
+  local app=$1
+  echo "apps/$app/native.json apps/$app/frontend/capacitor.config.ts apps/$app/frontend/android apps/$app/frontend/ios packages/native"
+}
+
+# Each phone app's MIN_NATIVE_VERSION is the oldest phone app its web bundle
+# runs on, which a phone app compares before taking the bundle over the air.
+# A release (a change to the app's VERSION) whose native code changed since
+# the app's last release tag must raise it to the release's version, or
+# installed apps would take a bundle that needs native code they don't have.
+# A change to the Capacitor plug-ins the frontend depends on counts too.
+check_native() {
+  local app version floor last changed=0 stale=0
+  for app in $(apps_with native.json MIN_NATIVE_VERSION); do
+    if git diff --quiet "$BASE_REF"...HEAD -- "apps/$app/VERSION" 2>/dev/null; then
+      continue
+    fi
+    version=$(cat "apps/$app/VERSION")
+    floor=$(cat "apps/$app/MIN_NATIVE_VERSION")
+    last=$(git describe --tags --abbrev=0 --match "$app-v*" HEAD 2>/dev/null || true)
+    if [[ -z "$last" ]]; then
+      echo "$app: no release tag yet; $version is its first phone app release."
+      continue
+    fi
+    # shellcheck disable=SC2046 # one path per word
+    if ! git diff --quiet "$last" HEAD -- $(native_paths "$app"); then
+      changed=1
+    elif git diff "$last" HEAD -- "apps/$app/frontend/package.json" \
+      | grep -qE '^[-+][[:space:]]*"@(capacitor|capacitor-community|capacitor-mlkit|capgo|capawesome)/'; then
+      changed=1
+    fi
+    if [[ $changed -eq 1 && "$floor" != "$version" ]]; then
+      error "$app: its native code changed since $last, so apps/$app/MIN_NATIVE_VERSION must be $version (it is $floor)."
+      stale=1
+    else
+      echo "$app: MIN_NATIVE_VERSION $floor holds for $version."
+    fi
+    changed=0
+  done
+  return $stale
+}
+
 check_listing() {
   local app out
   out="$(mktemp -d)"
@@ -210,14 +257,17 @@ checks_for_changes() {
   if grep -qE '^(apps/[^/]+/(backend/|VERSION$|CHANGELOG\.md$)|packages/core/|scripts/release/|uv\.lock$)' <<<"$changed"; then
     echo "listing"
   fi
+  if grep -qE '^apps/[^/]+/(VERSION|MIN_NATIVE_VERSION)$' <<<"$changed"; then
+    echo "native"
+  fi
 }
 
 expand() {
   case "$1" in
-    all) echo "ruff format ty migrations biome tsc kit codegen listing" ;;
+    all) echo "ruff format ty migrations biome tsc kit codegen listing native" ;;
     backend) echo "ruff format ty migrations listing" ;;
     frontend) echo "biome tsc kit" ;;
-    ruff | format | ty | migrations | biome | tsc | kit | codegen | listing) echo "$1" ;;
+    ruff | format | ty | migrations | biome | tsc | kit | codegen | listing | native) echo "$1" ;;
     *)
       echo "Unknown check: $1 (see scripts/ci/check --help)" >&2
       exit 2
@@ -226,7 +276,7 @@ expand() {
 }
 
 if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
   exit 0
 fi
 

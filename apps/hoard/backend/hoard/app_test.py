@@ -164,3 +164,17 @@ async def test_hoards_phone_app_may_call_its_api_from_its_own_origin(client):
     assert asked.headers["access-control-allow-origin"] == "https://studio.beyonders.hoard"
     assert "access-control-allow-credentials" not in asked.headers
     assert "access-control-allow-origin" not in elsewhere.headers
+
+
+async def test_hoard_serves_its_phone_apps_bundle_from_its_image(
+    app: FastAPI, settings: Settings, tmp_path
+):
+    (tmp_path / "bundle.zip").write_bytes(b"PK zip")
+    hoard = create_app(settings.model_copy(update={"ota_dir": tmp_path}), app.state.plugin)
+    async with AsyncClient(transport=ASGITransport(app=hoard), base_url="http://test") as client:
+        manifest = await client.get("/api/v1/native/bundle/manifest")
+
+    assert (manifest.status_code, manifest.json()["url"]) == (
+        200,
+        "/api/v1/native/bundle/download",
+    )

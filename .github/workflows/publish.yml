@@ -75,6 +75,9 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Signing the phone app's bundle reads its key through Google's
+      # workload identity federation.
+      id-token: write
     strategy:
       fail-fast: false
       matrix:
@@ -104,14 +107,43 @@ jobs:
             # The version a dev image is on its way to, and the commit it is.
             version="$(cat "apps/$APP/VERSION")-dev.${SHA::7}"
             tags="$image:dev"$'\n'"$image:sha-${SHA::7}"
+            suffix="-dev.${SHA::7}"
           fi
           {
             echo "image=$image"
             echo "version=$version"
+            echo "ota_suffix=${suffix:-}"
             echo "tags<<EOF"
             echo "$tags"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # The phone app's bundle is signed with the project's update key: the
+      # release key on a release tag, the dev key on dev, each in Secret
+      # Manager, which Google hands only to this workflow on those pushes
+      # (the infra repository's terraform/ci). Until the keys exist and the
+      # repository's OTA_SIGNING variable is on, the bundle ships unsigned,
+      # and no phone app installs it.
+      - name: Sign in to Google Cloud for the update key
+        if: vars.OTA_SIGNING == 'on'
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.SENESCHAL_PUBLISH_PROVIDER }}
+          service_account: seneschal-ota-${{ startsWith(github.ref, 'refs/tags/') && 'release' || 'dev' }}@initiative-prod-510320.iam.gserviceaccount.com
+
+      - name: Read the update key
+        if: vars.OTA_SIGNING == 'on'
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          umask 077
+          kind=dev
+          [[ "$REF" == refs/tags/* ]] && kind=release
+          # Memory only: the key never reaches the runner's disk.
+          mkdir -p /dev/shm/ota
+          gcloud secrets versions access latest \
+            --secret "seneschal-ota-$kind" --project initiative-prod-510320 > /dev/shm/ota/key.pem
+          echo "OTA_KEY_FILE=/dev/shm/ota/key.pem" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -132,6 +164,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.name.outputs.tags }}
+          build-args: |
+            OTA_VERSION_SUFFIX=${{ steps.name.outputs.ota_suffix }}
+          secret-files: ${{ env.OTA_KEY_FILE && format('ota_signing_key={0}', env.OTA_KEY_FILE) || '' }}
           labels: |
             org.opencontainers.image.version=${{ steps.name.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
@@ -141,6 +176,10 @@ jobs:
           no-cache-filters: runtime
           cache-from: type=gha,scope=image-${{ matrix.app }}
           cache-to: type=gha,scope=image-${{ matrix.app }},mode=max
+
+      - name: Forget the update key
+        if: always()
+        run: rm -rf /dev/shm/ota
 
       # The image just pushed, by digest: its OS packages and everything in its
       # layers. Fails on HIGH and CRITICAL findings that have a fix.

@@ -42,5 +42,11 @@
     "preparing": "The phone is getting its barcode scanner ready. Try again in a moment.",
     "denied": "The camera isn't allowed. Allow it in the browser's settings for this site.",
     "failed": "The camera couldn't scan. Try again, or type the code."
+  },
+  "update": {
+    "ready": "{{app}} {{version}} is ready.",
+    "restart": "Restart to update",
+    "nativeRequired": "{{app}} {{version}} needs a newer {{app}} app.",
+    "getApp": "Get the app"
   }
 }

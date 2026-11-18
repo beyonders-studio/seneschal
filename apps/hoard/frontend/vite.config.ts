@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import tailwindcss from "@tailwindcss/vite";
@@ -19,6 +20,14 @@ const src = path.resolve(import.meta.dirname, "src");
 // pages are served here and the API and plug-in routes are proxied to the
 // backend, so the pages still reach them on their own origin.
 const backend = "http://localhost:8300";
+
+// The pages' version, which the phone app compares with the bundle its
+// server serves: the image build sets it with a dev image's suffix, and
+// otherwise it is apps/hoard/VERSION.
+process.env.VITE_APP_VERSION ??= readFileSync(
+  path.resolve(import.meta.dirname, "../VERSION"),
+  "utf8"
+).trim();
 
 export default defineConfig({
   plugins: [tanstackRouter({ target: "react" }), react(), tailwindcss()],

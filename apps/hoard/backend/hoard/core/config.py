@@ -66,6 +66,9 @@ class Settings(DatabaseSettings):
     sealing_key: str | None = None
     #: The built pages, served from Hoard's own origin.
     static_dir: Path = BACKEND_ROOT / "static"
+    #: The phone app's web bundle the image carries, which it takes over the
+    #: air (``seneschal_core.native``): ``apps/hoard/ota``.
+    ota_dir: Path = BACKEND_ROOT.parent / "ota"
 
     @field_validator("session_private_key_pem", "plugin_private_key_pem")
     @classmethod
