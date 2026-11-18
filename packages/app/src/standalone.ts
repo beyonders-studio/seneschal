@@ -1,28 +1,27 @@
 /**
- * Hoard at its own address: nobody frames it, so the reader signs in with
+ * An app at its own address: nobody frames it, so the reader signs in with
  * their Initiative account (Sign in with Initiative), and their session is
  * renewed from the renewal the backend keeps in a cookie of its own.
  *
  * A renewal is spent once, and one presented again ends the whole sign-in.
- * So renewing happens one at a time across every tab the reader has open
+ * So renewing happens one at a time across every tab of the app the reader has open
  * (the Web Locks API), and a tab that waited first looks whether another tab
  * already renewed: their cookies are the same.
  */
 
 import { type AxiosInstance, type InternalAxiosRequestConfig, isAxiosError } from "axios";
 
-import { readMe, refreshSession } from "@/api/generated/auth/auth";
-import type { Me } from "@/api/generated/hoard.schemas";
-import { browser } from "@/lib/browser";
+import { auth, type Me } from "./auth";
+import { browser } from "./browser";
 
 const SIGN_IN = "/api/v1/auth/sign-in/start";
 const AUTH = "/api/v1/auth/";
-const LOCK = "hoard:session:renew";
+const LOCK = "seneschal:session:renew";
 const SIGN_IN_ERROR = "sign_in_error";
 
 const unauthorized = (error: unknown) => isAxiosError(error) && error.response?.status === 401;
 
-/** Runs `work` while no other tab of Hoard's renews. */
+/** Runs `work` while no other tab of the app renews. */
 const oneAtATime = <T>(work: () => Promise<T>): Promise<T> =>
   typeof navigator !== "undefined" && navigator.locks
     ? navigator.locks.request(LOCK, work)
@@ -32,18 +31,18 @@ let renewing: Promise<Me | null> | null = null;
 
 /**
  * Who is signed in, renewing the session when it has ended. Null when the
- * reader must sign in again; throws when Hoard or Initiative couldn't answer,
+ * reader must sign in again; throws when the app or Initiative couldn't answer,
  * which leaves the sign-in as it was.
  */
 export function renewSession(): Promise<Me | null> {
   renewing ??= oneAtATime(async () => {
     try {
-      return await readMe();
+      return await auth.readMe();
     } catch (error) {
       if (!unauthorized(error)) throw error;
     }
     try {
-      return await refreshSession();
+      return await auth.refresh();
     } catch (error) {
       if (unauthorized(error)) return null;
       throw error;

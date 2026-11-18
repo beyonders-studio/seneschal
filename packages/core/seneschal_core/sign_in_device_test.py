@@ -245,3 +245,9 @@ async def test_a_phone_sign_in_cancelled_at_initiative_goes_back_to_the_app_sayi
     url = URL(back.headers["location"])
     assert str(url).startswith(CALLBACK)
     assert (url.params["error"], url.params["state"]) == ("SIGN_IN_CANCELLED", app.state)
+
+
+async def test_a_phone_app_reads_which_app_a_server_is_and_that_phones_may_sign_in(client):
+    offer = await client.get("/api/v1/auth/sign-in")
+
+    assert offer.json() == {"app": "core", "browser": True, "device": True}

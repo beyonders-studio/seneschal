@@ -35,3 +35,7 @@ apps/*/backend/scripts/
 # but for the role script a deployment runs from the image
 # (``registration.runtime.database.provisionSql``)
 !apps/*/backend/scripts/provision-roles.sql
+
+# The phone apps' native projects: the image serves the pages, not the apps
+apps/*/frontend/android/
+apps/*/frontend/ios/

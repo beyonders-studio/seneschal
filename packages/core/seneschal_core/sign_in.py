@@ -644,6 +644,27 @@ def _back_to_device(sign_in: SignIn, params: Mapping[str, str]) -> RedirectRespo
     return response
 
 
+class SignInOffer(BaseModel):
+    """Which sign-ins the app offers at its own address. A phone app reads it
+    to know a server is the app it is for before it signs in there."""
+
+    app: str
+    browser: bool
+    device: bool
+
+
+@router.get("/sign-in")
+async def read_sign_in_offer(plugin: PluginDep) -> SignInOffer:
+    """The app, and whether people may sign in to it in a browser and from
+    its phone app."""
+    sign_in = plugin.sign_in
+    return SignInOffer(
+        app=plugin.sessions.app,
+        browser=sign_in is not None,
+        device=sign_in is not None and sign_in.device_scheme is not None,
+    )
+
+
 @router.get(
     "/sign-in/start",
     include_in_schema=False,

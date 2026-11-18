@@ -1,0 +1,37 @@
+{
+  "session": {
+    "connecting": "Connecting to Initiative…",
+    "signingIn": "Signing you in…",
+    "failedTitle": "{{app}} couldn't open",
+    "failedBody": "Try opening {{app}} again in a moment.",
+    "notSignedInTitle": "You're not signed in to {{app}}",
+    "signIn": "Sign in with Initiative",
+    "signOut": "Sign out",
+    "switchPlace": "Switch place",
+    "pages": "{{app}}'s pages",
+    "tryAgain": "Try again"
+  },
+  "server": {
+    "title": "Where is your {{app}}?",
+    "body": "Use {{app}} on Initiative's cloud, or the address your organization runs it at.",
+    "cloud": "Use Initiative's cloud",
+    "other": "Another address",
+    "address": "Address",
+    "addressPlaceholder": "https://hoard.example.com",
+    "connect": "Connect",
+    "notApp": "That address doesn't answer as {{app}}.",
+    "unreachable": "That address can't be reached. Check it and your connection.",
+    "change": "Change server"
+  },
+  "errors": {
+    "SIGN_IN_FAILED": "{{app}} couldn't sign you in. Try again.",
+    "SIGN_IN_CANCELLED": "You didn't finish signing in with Initiative.",
+    "SIGN_IN_EXPIRED": "Signing in took too long. Try again.",
+    "SIGN_IN_ENDED": "Your sign-in ended. Sign in again with Initiative.",
+    "SIGNED_OUT": "You signed out of {{app}}. You're still signed in to Initiative.",
+    "COMMUNITY_PAGE_ADMIN_ONLY": "Only the community's admins can open {{app}} for the whole community. Choose an initiative instead.",
+    "COMMUNITY_UNAVAILABLE": "This community can't use {{app}} right now.",
+    "INITIATIVE_UNAVAILABLE": "Initiative can't be reached right now. Try again in a moment.",
+    "SIGN_IN_NOT_OFFERED": "This {{app}} doesn't let people sign in outside Initiative yet."
+  }
+}

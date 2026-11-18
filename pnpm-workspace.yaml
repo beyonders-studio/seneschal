@@ -1,5 +1,7 @@
 packages:
   - packages/ui
+  - packages/app
+  - packages/native
   - apps/*/frontend
 
 # Dependencies whose install scripts may run. esbuild links its native binary

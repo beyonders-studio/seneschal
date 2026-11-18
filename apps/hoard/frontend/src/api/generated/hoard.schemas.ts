@@ -3023,6 +3023,16 @@ export interface ShipmentUpdate {
 }
 
 /**
+ * Which sign-ins the app offers at its own address. A phone app reads it
+ * to know a server is the app it is for before it signs in there.
+ */
+export interface SignInOffer {
+  app: string;
+  browser: boolean;
+  device: boolean;
+}
+
+/**
  * What a step of a trace is.
  */
 export type StepKind = (typeof StepKind)[keyof typeof StepKind];

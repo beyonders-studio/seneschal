@@ -27,6 +27,7 @@ import type {
   HTTPValidationError,
   HandoffExchange,
   Me,
+  SignInOffer,
 } from "../hoard.schemas";
 
 import { apiMutator } from "../../mutator";
@@ -238,6 +239,131 @@ export function useReadMe<TData = Awaited<ReturnType<typeof readMe>>, TError = E
   queryClient?: QueryClient
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
   const queryOptions = getReadMeQueryOptions(options);
+
+  const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
+    queryKey: DataTag<QueryKey, TData, TError>;
+  };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+/**
+ * The app, and whether people may sign in to it in a browser and from
+ * its phone app.
+ * @summary Read Sign In Offer
+ */
+export const readSignInOffer = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<SignInOffer>({ url: `/api/v1/auth/sign-in`, method: "GET", signal }, options);
+};
+
+export const getReadSignInOfferQueryKey = () => {
+  return [`/api/v1/auth/sign-in`] as const;
+};
+
+export const getReadSignInOfferQueryOptions = <
+  TData = Awaited<ReturnType<typeof readSignInOffer>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readSignInOffer>>, TError, TData>>;
+  request?: SecondParameter<typeof apiMutator>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getReadSignInOfferQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof readSignInOffer>>> = ({ signal }) =>
+    readSignInOffer(requestOptions, signal);
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof readSignInOffer>>,
+    TError,
+    TData
+  > & { queryKey: DataTag<QueryKey, TData, TError> };
+};
+
+export type ReadSignInOfferQueryResult = NonNullable<Awaited<ReturnType<typeof readSignInOffer>>>;
+export type ReadSignInOfferQueryError = ErrorType<unknown>;
+
+/**
+ * The app, and whether people may sign in to it in a browser and from
+ * its phone app.
+ * @summary Read Sign In Offer
+ */
+export function useReadSignInOffer<
+  TData = Awaited<ReturnType<typeof readSignInOffer>>,
+  TError = ErrorType<unknown>,
+>(
+  options: {
+    query: Partial<UseQueryOptions<Awaited<ReturnType<typeof readSignInOffer>>, TError, TData>> &
+      Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readSignInOffer>>,
+          TError,
+          Awaited<ReturnType<typeof readSignInOffer>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The app, and whether people may sign in to it in a browser and from
+ * its phone app.
+ * @summary Read Sign In Offer
+ */
+export function useReadSignInOffer<
+  TData = Awaited<ReturnType<typeof readSignInOffer>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readSignInOffer>>, TError, TData>> &
+      Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof readSignInOffer>>,
+          TError,
+          Awaited<ReturnType<typeof readSignInOffer>>
+        >,
+        "initialData"
+      >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The app, and whether people may sign in to it in a browser and from
+ * its phone app.
+ * @summary Read Sign In Offer
+ */
+export function useReadSignInOffer<
+  TData = Awaited<ReturnType<typeof readSignInOffer>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readSignInOffer>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+/**
+ * The app, and whether people may sign in to it in a browser and from
+ * its phone app.
+ * @summary Read Sign In Offer
+ */
+export function useReadSignInOffer<
+  TData = Awaited<ReturnType<typeof readSignInOffer>>,
+  TError = ErrorType<unknown>,
+>(
+  options?: {
+    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof readSignInOffer>>, TError, TData>>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+  const queryOptions = getReadSignInOfferQueryOptions(options);
 
   const query = useQuery(queryOptions, queryClient) as UseQueryResult<TData, TError> & {
     queryKey: DataTag<QueryKey, TData, TError>;

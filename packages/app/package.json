@@ -1,0 +1,22 @@
+{
+  "name": "@seneschal/app",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/preferences": "^8.0.1"
+  },
+  "peerDependencies": {
+    "axios": "^1.21.0",
+    "i18next": "^26.5.7",
+    "lucide-react": "^1.66.0",
+    "react": "^19.3.1",
+    "react-i18next": "^17.1.11"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
+  }
+}

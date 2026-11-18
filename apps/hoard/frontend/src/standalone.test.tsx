@@ -1,9 +1,9 @@
+import { browser } from "@seneschal/app/browser";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { AxiosError, type AxiosResponse } from "axios";
 import { describe, expect, it } from "vitest";
 
 import { apiClient } from "@/api/mutator";
-import { browser } from "@/lib/browser";
 import { answerApi, openPageAt, signedIn } from "@/testing";
 
 const ME = "GET /api/v1/auth/me";

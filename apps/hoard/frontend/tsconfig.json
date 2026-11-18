@@ -20,6 +20,7 @@
       "@/api/generated/initiativeAPI.schemas": [
         "../../../packages/ui/src/api/generated/initiativeAPI.schemas.ts"
       ],
+      "@seneschal/app/*": ["../../../packages/app/src/*"],
       "@/*": ["./src/*"]
     }
   },

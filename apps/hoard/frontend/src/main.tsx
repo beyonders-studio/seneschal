@@ -5,11 +5,15 @@ import { createRoot } from "react-dom/client";
 
 import "@/styles.css";
 import "@/i18n";
+
+import { prepareApp } from "@seneschal/app/boot";
+
 import { connectKit } from "@/lib/kitHost";
 import { createQueryClient } from "@/queryClient";
 import { createAppRouter } from "@/router";
 
 connectKit();
+await prepareApp();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
