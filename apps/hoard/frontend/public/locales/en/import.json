@@ -1,0 +1,76 @@
+{
+  "title": "Import from Stocksmith",
+  "description": "Bring your catalogue over from Stocksmith's CSV exports: materials, bases, products and their recipes, with suppliers, categories and bins. Hoard checks the files first, and makes only what it doesn't have yet.",
+  "back": "Back to Settings",
+  "adminOnly": "Only the community's admins can import.",
+  "section": {
+    "title": "Import",
+    "description": "Bring records over from another program's exports.",
+    "stocksmith": "Import from Stocksmith"
+  },
+  "files": {
+    "materials": "Materials export",
+    "materialsHint": "Stocksmith's materials export.",
+    "recipes": "Recipes export",
+    "recipesHint": "Optional. Every item its lines name must be in the materials export or already in Hoard.",
+    "manufactures": "Manufactures export",
+    "manufacturesHint": "Optional. Read to tell products from bases, and which bases Stocksmith made when a run was short: no runs are imported.",
+    "prompt": "Drop the CSV file here",
+    "chosen": "Chosen: {{name}}"
+  },
+  "stock": {
+    "label": "Bring stock on hand, dated",
+    "hint": "Each material's stock on hand starts at the main location on this day, at its actual unit cost, wherever it holds none there yet.",
+    "date": "Dated"
+  },
+  "check": "Check",
+  "start": "Import",
+  "checkFailed": "Hoard couldn't check those files.",
+  "startFailed": "Hoard couldn't start the import.",
+  "counts": {
+    "title": "What the import makes",
+    "kind": "Kind",
+    "new": "New",
+    "existing": "Already in Hoard",
+    "note": "What's already in Hoard is left as it is.",
+    "kinds": {
+      "materials": "Materials",
+      "categories": "Categories",
+      "suppliers": "Suppliers",
+      "stock": "Starting stock",
+      "bases": "Bases",
+      "products": "Products",
+      "variations": "Variations",
+      "recipes": "Recipes"
+    }
+  },
+  "problems": {
+    "title": "Fix these first, then check again",
+    "none": "No problems found: the files are ready to import.",
+    "where": "{{file}}, row {{row}}",
+    "codes": {
+      "COLUMN_MISSING": "This isn't the export it was chosen as: it has no “{{name}}” column.",
+      "FILE_UNREADABLE": "This file can't be read as a CSV export.",
+      "UNIT_UNKNOWN": "Hoard doesn't know the unit “{{name}}”. Add it in Settings › Units.",
+      "LINE_NAMES_NOTHING": "“{{name}}” isn't a material, base or product in either file or in Hoard.",
+      "LINE_REPEATED": "This recipe names “{{name}}” on two lines.",
+      "RECIPE_REPEATED": "A second recipe for “{{name}}”. Delete one of them from the file.",
+      "RECIPE_CONTAINS_ITSELF": "The recipe for “{{name}}” would contain itself.",
+      "unknown": "Hoard can't import this row."
+    }
+  },
+  "made": {
+    "title": "Imported",
+    "nothing": "Everything in the files was in Hoard already.",
+    "count": "{{kind}}: {{count}}"
+  },
+  "errors": {
+    "IMPORT_ADMIN_ONLY": "Only the community's admins can import.",
+    "IMPORTER_UNKNOWN": "Hoard can't import these files.",
+    "IMPORT_FILE_MISSING": "Choose the materials export first.",
+    "IMPORT_FILE_TOO_LARGE": "That file is too large to import.",
+    "IMPORT_OPTIONS_INVALID": "Choose the day the stock is dated.",
+    "IMPORT_PROBLEMS": "The files have problems. Check them again and fix what's listed.",
+    "UNIT_UNKNOWN": "A unit the files name isn't in Hoard any more. Check the files again."
+  }
+}

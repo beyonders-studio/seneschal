@@ -18,6 +18,7 @@ import { Route as StockRouteRouteImport } from './routes/stock/route'
 import { Route as OrdersIndexRouteImport } from './routes/orders/index'
 import { Route as OrdersOrderIdRouteImport } from './routes/orders/$orderId'
 import { Route as ProductionIndexRouteImport } from './routes/production/index'
+import { Route as SettingsImportRouteImport } from './routes/settings_.import'
 import { Route as StockIndexRouteImport } from './routes/stock/index'
 import { Route as StockRecallRouteImport } from './routes/stock/recall'
 import { Route as OrdersListingsIndexRouteImport } from './routes/orders/listings/index'
@@ -81,6 +82,11 @@ const ProductionIndexRoute = ProductionIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ProductionRouteRoute,
+} as any)
+const SettingsImportRoute = SettingsImportRouteImport.update({
+  id: '/settings_/import',
+  path: '/settings/import',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const StockIndexRoute = StockIndexRouteImport.update({
   id: '/',
@@ -184,6 +190,7 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/settings/import': typeof SettingsImportRoute
   '/stock/recall': typeof StockRecallRoute
   '/orders/': typeof OrdersIndexRoute
   '/production/': typeof ProductionIndexRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/settings/import': typeof SettingsImportRoute
   '/stock/recall': typeof StockRecallRoute
   '/orders': typeof OrdersIndexRoute
   '/production': typeof ProductionIndexRoute
@@ -240,6 +248,7 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
   '/orders/$orderId': typeof OrdersOrderIdRoute
+  '/settings_/import': typeof SettingsImportRoute
   '/stock/recall': typeof StockRecallRoute
   '/orders/': typeof OrdersIndexRoute
   '/production/': typeof ProductionIndexRoute
@@ -271,6 +280,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/orders/$orderId'
+    | '/settings/import'
     | '/stock/recall'
     | '/orders/'
     | '/production/'
@@ -297,6 +307,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/orders/$orderId'
+    | '/settings/import'
     | '/stock/recall'
     | '/orders'
     | '/production'
@@ -326,6 +337,7 @@ export interface FileRouteTypes {
     | '/search'
     | '/settings'
     | '/orders/$orderId'
+    | '/settings_/import'
     | '/stock/recall'
     | '/orders/'
     | '/production/'
@@ -355,6 +367,7 @@ export interface RootRouteChildren {
   ReportsRoute: typeof ReportsRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
+  SettingsImportRoute: typeof SettingsImportRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -421,6 +434,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/production/'
       preLoaderRoute: typeof ProductionIndexRouteImport
       parentRoute: typeof ProductionRouteRoute
+    }
+    '/settings_/import': {
+      id: '/settings_/import'
+      path: '/settings/import'
+      fullPath: '/settings/import'
+      preLoaderRoute: typeof SettingsImportRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/stock/': {
       id: '/stock/'
@@ -630,6 +650,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsRoute: ReportsRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
+  SettingsImportRoute: SettingsImportRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

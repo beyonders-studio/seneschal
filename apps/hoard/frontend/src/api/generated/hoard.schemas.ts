@@ -1338,6 +1338,50 @@ export interface HoldRelease {
   ended_on?: string | null;
 }
 
+/**
+ * What a plan holds of one kind of record: how many it makes, and how
+ * many already exist and are left as they are.
+ */
+export interface ImportCount {
+  kind: string;
+  new: number;
+  existing: number;
+}
+
+/**
+ * Something a check found that stops the import: a code pages translate,
+ * the file and row it is on (a row counted as a spreadsheet shows it, its
+ * header the first), and what the row names, when that is the problem.
+ */
+export interface ImportProblem {
+  code: string;
+  file?: string | null;
+  row?: number | null;
+  name?: string | null;
+}
+
+/**
+ * What a check found: what the import makes and what exists already, by
+ * kind, and the problems that stop it.
+ */
+export interface ImportCheckRead {
+  counts: ImportCount[];
+  problems: ImportProblem[];
+}
+
+export interface ImportFileRead {
+  name: string;
+  required: boolean;
+}
+
+/**
+ * An importer, and the files it takes.
+ */
+export interface ImporterRead {
+  id: string;
+  files: ImportFileRead[];
+}
+
 export interface ItemPictureRead {
   id: number;
   content_type: string;
@@ -3563,4 +3607,18 @@ export type ListDocumentsParams = {
 export type SearchFilesParams = {
   /** @maxLength 200 */
   search?: string;
+};
+
+export type CheckImportBody = {
+  materials?: Blob | File;
+  recipes?: Blob | File;
+  manufactures?: Blob | File;
+  options?: string;
+};
+
+export type StartImportBody = {
+  materials?: Blob | File;
+  recipes?: Blob | File;
+  manufactures?: Blob | File;
+  options?: string;
 };

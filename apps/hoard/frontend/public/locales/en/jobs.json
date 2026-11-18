@@ -6,6 +6,7 @@
   "count": "{{step}}: {{done}} of {{total}}",
   "steps": {
     "reading": "Reading the records",
+    "import": "Importing",
     "store_locations": "Locations",
     "store_products": "Products",
     "store_fields": "Fields",

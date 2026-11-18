@@ -48,6 +48,13 @@ export function SearchField() {
       location.pathname === "/search" ? String((location.search as { q?: string }).q ?? "") : "",
   });
   const [text, setText] = useState(searched);
+  // Following the results page's query as it changes, during render rather
+  // than in an effect, so what was typed before an effect ran is kept.
+  const [following, setFollowing] = useState(searched);
+  if (following !== searched) {
+    setFollowing(searched);
+    setText(searched);
+  }
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const query = useDebouncedValue(text.trim(), SUGGEST_AFTER_MS);
@@ -55,8 +62,6 @@ export function SearchField() {
     { q: query },
     { query: { enabled: query.length > 0, placeholderData: keepPreviousData } }
   );
-
-  useEffect(() => setText(searched), [searched]);
 
   useEffect(() => {
     const focus = (event: globalThis.KeyboardEvent) => {

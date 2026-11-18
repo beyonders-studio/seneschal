@@ -416,8 +416,16 @@ class ItemStart(BaseModel):
     bin: ItemBin | None = None
 
 
-async def start(db: WriteSession, item_id: int, body: ItemStart, sees_costs: bool) -> None:
-    """Give a new item its bin and starting stock, refusing (409
+async def start(
+    db: WriteSession,
+    item_id: int,
+    body: ItemStart,
+    sees_costs: bool,
+    *,
+    dated_on: date | None = None,
+) -> None:
+    """Give a new item its bin and starting stock, its starting adjustment
+    dated ``dated_on`` (today when not given), refusing (409
     ``NOT_INVENTORIABLE``) stock for a material that carries none."""
     location_id = await location_or_main(db, body.location_id)
     if body.bin is not None:
@@ -428,7 +436,7 @@ async def start(db: WriteSession, item_id: int, body: ItemStart, sees_costs: boo
         item_id=item_id,
         location_id=location_id,
         kind=AdjustmentKind.STARTING,
-        dated_on=date.today(),
+        dated_on=dated_on or date.today(),
         change=body.quantity,
         unit_cost=(body.unit_cost or Decimal(0)) if sees_costs else Decimal(0),
     )

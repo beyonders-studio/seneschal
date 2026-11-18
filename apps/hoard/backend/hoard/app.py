@@ -17,7 +17,8 @@ from hoard.api import router as api_router
 from hoard.channels import hooks as store_hooks
 from hoard.core.config import BACKEND_ROOT, Settings, get_settings
 from hoard.endpoints import ENDPOINTS
-from seneschal_core import jobs
+from hoard.imports import IMPORTERS
+from seneschal_core import imports, jobs
 from seneschal_core.api import Plugin, install
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
@@ -47,6 +48,7 @@ def frame_ancestors(parent: str | None) -> str | None:
 #: The handler of each kind of job Hoard runs, by kind.
 JOB_HANDLERS: dict[str, jobs.Handler] = {
     export.EXPORT_JOB: export.export,
+    imports.IMPORT_JOB: imports.handler(IMPORTERS),
     store_sync.STORE_SYNC_JOB: store_sync.run,
     store_fields.STORE_FIELDS_JOB: store_sync.run_fields,
 }
@@ -139,6 +141,7 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
             return response
 
     app.include_router(api_router)
+    app.include_router(imports.router(IMPORTERS), prefix="/api/v1")
     app.include_router(
         platform_router(
             hooks={
