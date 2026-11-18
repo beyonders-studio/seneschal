@@ -14,7 +14,7 @@
     "recipes": "Recipes export",
     "recipesHint": "Optional. Every item its lines name must be in the materials export or already in Hoard.",
     "manufactures": "Manufactures export",
-    "manufacturesHint": "Optional. Read only to tell products from bases: no runs are imported.",
+    "manufacturesHint": "Optional. Read to tell products from bases, and which bases Stocksmith made when a run was short: no runs are imported.",
     "prompt": "Drop the CSV file here",
     "chosen": "Chosen: {{name}}"
   },

@@ -19,7 +19,9 @@ Made product named by ``Product Name``, its variations gathered by that name,
 each with its SKU and its options read from ``Size: Full Size``. Any other
 recipe is a base's, written by ratio: each line's amount its parts, adding up
 to the ingredients total, and ``Batch Quantity`` what the batch makes. A base
-is measured in grams when every line is weighed, and in each otherwise.
+is measured in grams when every line is weighed, and in each otherwise. A
+base the manufactures export shows Stocksmith made by itself is made when a
+run is short of it.
 
 **Running it again** matches what exists before it makes anything: materials,
 bases and products by name ignoring case, variations by SKU, suppliers by
@@ -53,6 +55,7 @@ from hoard.api.deps import HoardError
 from hoard.recipes import RecipeRefused
 from hoard.records import (
     PLACES,
+    AutoManufacture,
     Base,
     Category,
     CategoryKind,
@@ -110,7 +113,7 @@ RECIPE_COLUMNS = (
     "Material Quantity",
     "Variation ID",
 )
-MANUFACTURE_COLUMNS = ("Product", "Variation", "SKU")
+MANUFACTURE_COLUMNS = ("Product", "Variation", "SKU", "Auto Manufactured?")
 
 #: Stocksmith's names of units that ``hoard.units`` doesn't find them by.
 UNIT_NAMES = {"item": "each", "items": "each"}
@@ -449,8 +452,9 @@ def _output(recipe: _Recipe) -> tuple[str, ...]:
     )
 
 
-def _plan_recipes(plan: _Plan, found: list[_Recipe]) -> None:
-    """A step per base, per product with its variations, and per recipe."""
+def _plan_recipes(plan: _Plan, found: list[_Recipe], auto_made: set[str]) -> None:
+    """A step per base, per product with its variations, and per recipe. A
+    base ``auto_made`` names is made when a run is short of it."""
     kept: list[_Recipe] = []
     seen: set[tuple[str, ...]] = set()
     for recipe in found:
@@ -560,6 +564,9 @@ def _plan_recipes(plan: _Plan, found: list[_Recipe]) -> None:
                     "step": "base",
                     "name": recipe.name,
                     "unit": "gram" if by_weight(recipe.name) else "each",
+                    "auto_manufacture": AutoManufacture.OUT_OF_STOCK
+                    if _key(recipe.name) in auto_made
+                    else None,
                 }
             )
             output: dict[str, Any] = {"base": recipe.name}
@@ -646,12 +653,16 @@ async def check(request: ImportCheck) -> Checked:
         plan.steps.append({"step": "category", "name": name})
     plan.steps.extend(material_plan)
     manufactured: dict[str, list[tuple[str, str]]] = {}
+    # What Stocksmith made by itself, for a run that needed it.
+    auto_made: set[str] = set()
     for _, record in manufacture_rows or []:
+        if record["Auto Manufactured?"].lower() == "yes":
+            auto_made.add(_key(record["Product"]))
         if record["SKU"]:
             made = manufactured.setdefault(_key(record["Product"]), [])
             if (record["Variation"], record["SKU"]) not in made:
                 made.append((record["Variation"], record["SKU"]))
-    _plan_recipes(plan, _recipes(recipe_rows or [], manufactured))
+    _plan_recipes(plan, _recipes(recipe_rows or [], manufactured), auto_made)
     return Checked(
         plan=plan.steps,
         counts=[
@@ -805,7 +816,9 @@ async def _base(run: ImportStep, step: dict[str, Any]) -> Mapping[str, int]:
     await bases.add_base(
         run.db,
         bases.BaseCreate(
-            name=step["name"], tracking_unit_id=await _unit_of(run.db, {"standard": step["unit"]})
+            name=step["name"],
+            tracking_unit_id=await _unit_of(run.db, {"standard": step["unit"]}),
+            auto_manufacture=step.get("auto_manufacture"),
         ),
         sees_costs=False,
     )

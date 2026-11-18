@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { getReadBaseQueryKey } from "@/api/generated/bases/bases";
 import type { BaseDetail, BaseRead } from "@/api/generated/hoard.schemas";
+import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
 import { DocumentsSection } from "@/features/documents/DocumentsSection";
 import { builtin, type HoardKind, shapeSpecs, typeField } from "@/features/fields/records";
 import { CureDays } from "@/features/items/CureDaysField";
@@ -130,15 +131,16 @@ const BASE = {
     at(3, field("picture")),
     at(4, field("notes")),
     at(5, field("recipe")),
-    at(6, field("stock")),
-    at(7, field("lots")),
-    at(8, field("usage")),
-    at(9, field("used_in")),
-    at(10, field("runs")),
-    at(11, field("adjustments")),
-    at(12, field("stocktakes")),
-    at(13, field("documents")),
-    at(14, { type: "byline" }),
+    at(6, field("auto_manufacture")),
+    at(7, field("stock")),
+    at(8, field("lots")),
+    at(9, field("usage")),
+    at(10, field("used_in")),
+    at(11, field("runs")),
+    at(12, field("adjustments")),
+    at(13, field("stocktakes")),
+    at(14, field("documents")),
+    at(15, { type: "byline" }),
   ],
   side: [at(2, { type: "section", children: [{ type: "properties" }] })],
 };
@@ -214,6 +216,12 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       "recipes:section.title",
       (base) => base.id,
       ({ item }) => <BaseRecipe base={item} />
+    ),
+    builtin(
+      "auto_manufacture",
+      "sync:autoManufacture.title",
+      (base) => base.id,
+      ({ item }) => <AutoManufactureField base={item} />
     ),
     builtin("stock", "catalog:items.stock", (base) => base.id, Stock),
     builtin(

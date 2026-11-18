@@ -18,6 +18,7 @@ from hoard.app import JOB_HANDLERS
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    AutoManufacture,
     Base,
     Bin,
     Category,
@@ -230,6 +231,11 @@ async def test_an_import_makes_the_catalogue_through_hoards_own_paths(
     blend = (await db.exec(select(Base).where(Base.name == "Garden Blend"))).one()
     packaging = (await db.exec(select(Base).where(Base.name == "Tea Packaging"))).one()
     assert (units[blend.tracking_unit_id], units[packaging.tracking_unit_id]) == ("gram", "each")
+    # Stocksmith made the packaging by itself when a run needed it.
+    assert (blend.auto_manufacture, packaging.auto_manufacture) == (
+        None,
+        AutoManufacture.OUT_OF_STOCK,
+    )
     by_ratio = (await db.exec(select(Recipe).where(Recipe.base_id == blend.id))).one()
     assert (
         by_ratio.by_ratio,
@@ -345,6 +351,7 @@ async def test_the_check_names_each_problem_with_its_row(client, sign_in, suppli
         (problem["code"], problem["file"], problem["row"], problem["name"])
         for problem in checked.json()["problems"]
     ) == [
+        ("COLUMN_MISSING", "manufactures", 1, "Auto Manufactured?"),
         ("COLUMN_MISSING", "manufactures", 1, "Variation"),
         ("LINE_NAMES_NOTHING", "recipes", 3, "Ghost Leaf"),
         ("LINE_REPEATED", "recipes", 7, "Mint Leaf"),
