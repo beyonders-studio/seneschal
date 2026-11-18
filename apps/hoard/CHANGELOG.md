@@ -6,6 +6,10 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Import from Stocksmith,** in Settings › Import. Choose Stocksmith's materials and recipes exports, check what they would make and fix any problems the check lists, then import. Materials, bases, products, recipes, suppliers, categories and bins come over, and optionally each material's stock on hand, dated on a day you pick. Importing again makes only what's missing.
+
 ## [0.3.0] - 2026-11-17
 
 ### Added

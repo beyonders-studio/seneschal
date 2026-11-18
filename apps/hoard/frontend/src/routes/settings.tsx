@@ -8,6 +8,7 @@ import { CategoriesSection } from "@/features/settings/CategoriesSection";
 import { CostSettingSection } from "@/features/settings/CostSettingSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { HoldReasonsSection } from "@/features/settings/HoldReasonsSection";
+import { ImportSection } from "@/features/settings/ImportSection";
 import { LocationsSection } from "@/features/settings/LocationsSection";
 import { PropertiesSection } from "@/features/settings/PropertiesSection";
 import { ReasonsSection } from "@/features/settings/ReasonsSection";
@@ -41,6 +42,7 @@ function SettingsPage() {
         <StoresSection />
         <AutoManufactureField />
         <BackupSection />
+        <ImportSection />
       </div>
     </HoardPage>
   );

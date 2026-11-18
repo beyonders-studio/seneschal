@@ -207,6 +207,7 @@ describe("Hoard's pages", () => {
       "Stores",
       "Auto-manufacture",
       "Backups",
+      "Import",
     ]) {
       await screen.findByRole("heading", { level: 2, name: section });
     }
