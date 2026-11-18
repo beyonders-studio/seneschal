@@ -12,7 +12,7 @@
 set -euo pipefail
 
 #: The plug-in SDK whose contract the build checks against.
-SDK_VERSION="10.2.0"
+SDK_VERSION="11.0.0"
 
 app="$1"
 image="$2"
