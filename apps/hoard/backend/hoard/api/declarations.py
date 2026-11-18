@@ -25,6 +25,7 @@ from hoard.declarations import (
 )
 from hoard.records import Allergen, Lot, Material, Product
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
+from seneschal_core.db import WriteSession
 
 router = APIRouter(prefix="/declarations", tags=["declarations"])
 
@@ -189,17 +190,23 @@ async def read_declaration(
     return _read(await declarations.lot(lot), bought, lot.allergens, lot.fragrance_allergens)
 
 
+async def declare(
+    db: WriteSession, record: Material | Product, body: DeclarationMaterialWrite
+) -> None:
+    """Record what a material or a product declares of its own."""
+    record.ingredient_name = body.ingredient_name
+    record.allergens = _keys(body.allergens)
+    record.fragrance_allergens = _shares(body.fragrance_allergens)
+    db.add(record)
+    await store_fields.queue_changed(db)
+
+
 @router.put("/material/{material_id}", responses=_CHANGE)
 async def update_material_declaration(
     material_id: int, body: DeclarationMaterialWrite, db: WriteSessionDep
 ) -> DeclarationRead:
     """Record what a material's supplier declares."""
-    material = await found(db, Material, material_id)
-    material.ingredient_name = body.ingredient_name
-    material.allergens = _keys(body.allergens)
-    material.fragrance_allergens = _shares(body.fragrance_allergens)
-    db.add(material)
-    await store_fields.queue_changed(db)
+    await declare(db, await found(db, Material, material_id), body)
     await db.commit()
     return await read_declaration("material", material_id, db)
 
@@ -210,12 +217,7 @@ async def update_product_declaration(
 ) -> DeclarationRead:
     """Record what a product declares of its own, which it declares while it
     has no recipe."""
-    product = await found(db, Product, product_id)
-    product.ingredient_name = body.ingredient_name
-    product.allergens = _keys(body.allergens)
-    product.fragrance_allergens = _shares(body.fragrance_allergens)
-    db.add(product)
-    await store_fields.queue_changed(db)
+    await declare(db, await found(db, Product, product_id), body)
     await db.commit()
     return await read_declaration("product", product_id, db)
 

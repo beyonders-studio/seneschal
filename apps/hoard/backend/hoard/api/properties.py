@@ -428,8 +428,26 @@ async def set_property_values(
     """Set, take off and step a record's values, answering with every value
     it then holds. A product's value a store's field holds is written to the
     store first, and kept as the store answers it."""
-    model, column = RECORDS[kind]
-    await found(db, model, record_id)
+    await found(db, RECORDS[kind][0], record_id)
+    await set_values(db, plugin, session.community_ref, session.member_ref, kind, record_id, body)
+    await db.commit()
+    return (await values_of(db, kind, [record_id]))[record_id]
+
+
+async def set_values(
+    db: WriteSession,
+    plugin: Plugin,
+    community_ref: str,
+    member_ref: str,
+    kind: RecordKind,
+    record_id: int,
+    body: HoardPropertyValuesSet,
+) -> None:
+    """Set, take off and step a record's values as ``body`` says, for
+    ``member_ref``, who signs what a signature property takes. A product's
+    value a store's field holds is written to the store first, and kept as
+    the store answers it."""
+    column = RECORDS[kind][1]
     named = {
         *(each.property_id for each in body.values),
         *body.removed,
@@ -453,9 +471,7 @@ async def set_property_values(
     }
     changes: dict[int, Any] = dict.fromkeys(body.removed)
     for each in body.values:
-        changes[each.property_id] = _held(
-            definitions[each.property_id], each.value, session.member_ref
-        )
+        changes[each.property_id] = _held(definitions[each.property_id], each.value, member_ref)
     for step in body.steps:
         definition = definitions[step.property_id]
         if definition.type is not PropertyType.COUNTER:
@@ -467,7 +483,7 @@ async def set_property_values(
             settings, count + (settings.step if step.up else -settings.step)
         )
     if kind is RecordKind.PRODUCT and changes:
-        changes = await _sent(db, plugin, session.community_ref, record_id, changes)
+        changes = await _sent(db, plugin, community_ref, record_id, changes)
     for property_id, value in changes.items():
         row = held.get(property_id)
         if value is None:
@@ -482,5 +498,3 @@ async def set_property_values(
             )
             setattr(row, column, record_id)
             db.add(row)
-    await db.commit()
-    return (await values_of(db, kind, [record_id]))[record_id]

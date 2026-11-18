@@ -145,7 +145,8 @@ async def _detail(db: AsyncSession, base_id: int, sees_costs: bool) -> BaseDetai
     )
 
 
-async def _write(db: AsyncSession, base: Base, body: BaseWrite) -> None:
+async def write_base(db: AsyncSession, base: Base, body: BaseWrite) -> None:
+    """Write ``base`` as ``body`` leaves it, as an edit does."""
     await require_references(db, kind=CategoryKind.BASE, units=(body.tracking_unit_id,))
     if base.id is not None:
         await items.require_tracking_unit(db, base.id, base.tracking_unit_id, body.tracking_unit_id)
@@ -229,7 +230,7 @@ async def add_base(db: WriteSession, body: BaseCreate, sees_costs: bool) -> Base
     """Add a base as ``body`` writes it, with its bin and starting stock where
     it starts."""
     base = Base(name=body.name, tracking_unit_id=body.tracking_unit_id)
-    await _write(db, base, body)
+    await write_base(db, base, body)
     await stock.add_base(db, base)
     if body.start is not None:
         await items.start(db, base.id, body.start, sees_costs)
@@ -241,7 +242,7 @@ async def update_base(
     base_id: int, body: BaseWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> BaseDetail:
     base = await found(db, Base, base_id)
-    await _write(db, base, body)
+    await write_base(db, base, body)
     db.add(base)
     await db.commit()
     return await _detail(db, base_id, sees_costs)
