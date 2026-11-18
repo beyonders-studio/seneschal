@@ -27,7 +27,24 @@ RUN pnpm install --frozen-lockfile
 COPY packages/ui packages/ui
 COPY packages/app packages/app
 COPY apps/hoard/frontend apps/hoard/frontend
-RUN pnpm --filter @seneschal/hoard build
+# The pages' version, which the phone app compares with its server's bundle:
+# a dev image's carries its suffix, -dev.<commit> (publish.yml).
+ARG OTA_VERSION_SUFFIX=""
+COPY apps/hoard/VERSION apps/hoard/MIN_NATIVE_VERSION apps/hoard/
+RUN VITE_APP_VERSION="$(cat apps/hoard/VERSION)${OTA_VERSION_SUFFIX}" \
+    pnpm --filter @seneschal/hoard build
+# The phone app's web bundle: the same pages, zipped, with a statement of them
+# signed with the project's update key when the build is handed one
+# (publish.yml), for the phone app to take over the air (seneschal_core.native).
+RUN apk add --no-cache zip \
+    && mkdir -p /ota \
+    && cd apps/hoard/frontend/dist \
+    && zip -qrX /ota/bundle.zip .
+RUN --mount=type=secret,id=ota_signing_key,required=false \
+    node packages/native/bin/sign-ota.mjs /ota hoard \
+        "$(cat apps/hoard/VERSION)${OTA_VERSION_SUFFIX}" \
+        "$(cat apps/hoard/MIN_NATIVE_VERSION)" \
+        /run/secrets/ota_signing_key
 
 # uv builds the environment, and stays in this stage: the runtime runs alembic
 # and uvicorn from the environment and never calls uv. Both stages share the
@@ -70,6 +87,8 @@ COPY LICENSE /app/
 COPY apps/hoard/VERSION apps/hoard/CHANGELOG.md /app/apps/hoard/
 # The built pages, at static/ beside the hoard package.
 COPY --from=frontend /src/apps/hoard/frontend/dist /app/apps/hoard/backend/static
+# The phone app's bundle, at apps/hoard/ota (Settings.ota_dir).
+COPY --from=frontend /ota /app/apps/hoard/ota
 WORKDIR /app/apps/hoard/backend
 # The app only reads its files, so they stay root's.
 USER hoard

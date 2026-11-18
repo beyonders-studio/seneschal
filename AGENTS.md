@@ -55,6 +55,19 @@ its environment (`<app>-android-<kind>`) on that ref, as the infra
 repository's `docs/runbooks/android-signing.md` sets up. A new phone app needs
 that setup, and its tag pattern in `native.yml`, before its first release.
 
+**Over the air.** An app's image carries its phone app's pages as a bundle,
+with a statement of it (the app, version, SHA-256 and the oldest phone app it
+runs on) signed with the project's update key: the release key on a release
+tag, the dev key on `dev`, read from Secret Manager in `publish.yml` once the
+repository's `OTA_SIGNING` variable is `on`. A phone app takes a newer bundle
+from its server (`seneschal_core.native`) when a key it trusts signed it for
+that app (`packages/app/src/native/otaTrust.ts`: release apps trust the
+release key and its backup, `.dev` apps the dev key), and asks for a newer app
+instead when the bundle needs native code it lacks. `apps/<app>/MIN_NATIVE_VERSION`
+is that oldest phone app: a release whose native code changed since the app's
+last release tag raises it to the release's version, which
+`scripts/ci/check native` checks on the release pull request.
+
 The listing's runtime (how a deployment runs the image, in the backend's
 `scripts/export_plugin.py`) names only variables the app reads. A change to it,
 a new setting or secret, needs the deployments' infrastructure to agree before

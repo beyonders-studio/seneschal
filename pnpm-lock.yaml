@@ -199,6 +199,9 @@ importers:
       '@capacitor/share':
         specifier: ^8.0.0
         version: 8.0.3(@capacitor/core@8.6.0)
+      '@capgo/capacitor-updater':
+        specifier: ^8.54.2
+        version: 8.54.2(@capacitor/core@8.6.0)
       '@fontsource-variable/outfit':
         specifier: ^5.3.0
         version: 5.3.0
@@ -302,6 +305,9 @@ importers:
       '@capacitor/share':
         specifier: ^8.0.0
         version: 8.0.3(@capacitor/core@8.6.0)
+      '@capgo/capacitor-updater':
+        specifier: ^8.54.2
+        version: 8.54.2(@capacitor/core@8.6.0)
       axios:
         specifier: ^1.21.0
         version: 1.21.1(debug@4.4.3)
@@ -760,6 +766,11 @@ packages:
 
   '@capacitor/synapse@1.0.4':
     resolution: {integrity: sha512-/C1FUo8/OkKuAT4nCIu/34ny9siNHr9qtFezu4kxm6GY1wNFxrCFWjfYx5C1tUhVGz3fxBABegupkpjXvjCHrw==}
+
+  '@capgo/capacitor-updater@8.54.2':
+    resolution: {integrity: sha512-Tuy9xeaJeudIzz3Dp/oenvhjtC2C3+E2OcZy+zW7w5/0RieTedyI7QRX/hxI3uXsb/94G5HT4ueN3pIb9pbtRA==}
+    peerDependencies:
+      '@capacitor/core': ^8.0.0
 
   '@chevrotain/cst-dts-gen@11.0.3':
     resolution: {integrity: sha512-BvIKpRLeS/8UbfxXxgC33xOumsacaeCKAjAeLyOn7Pcp95HiRbrpl14S+9vaZLolnbssPIUuiUd8IvgkRyt6NQ==}
@@ -5463,6 +5474,10 @@ snapshots:
       '@capacitor/core': 8.6.0
 
   '@capacitor/synapse@1.0.4': {}
+
+  '@capgo/capacitor-updater@8.54.2(@capacitor/core@8.6.0)':
+    dependencies:
+      '@capacitor/core': 8.6.0
 
   '@chevrotain/cst-dts-gen@11.0.3':
     dependencies:

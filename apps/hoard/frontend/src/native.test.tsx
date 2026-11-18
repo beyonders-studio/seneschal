@@ -101,7 +101,8 @@ describe("Hoard as its phone app", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Use Initiative's cloud" }));
 
     await screen.findByText("You're not signed in to Hoard");
-    expect(asked).toEqual([`${CLOUD}/api/v1/auth/sign-in`]);
+    // The server is asked whether it is Hoard first; then for its bundle.
+    expect(asked[0]).toBe(`${CLOUD}/api/v1/auth/sign-in`);
     expect(phone.groups.get("CapacitorStorage")?.get("seneschal-server")).toBe(CLOUD);
   });
 

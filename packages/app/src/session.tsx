@@ -38,6 +38,7 @@ import {
 } from "./native/server";
 import * as device from "./native/session";
 import { beginSignIn, finishSignIn, isCallback, SignInFailure } from "./native/signIn";
+import { UpdateBanner } from "./native/UpdateBanner";
 import {
   awaitHandoff,
   reportError,
@@ -62,11 +63,18 @@ export interface AppIdentity {
   id: string;
   /** Its name as people read it (`Hoard`). */
   name: string;
+  /** The version of the pages running: its VERSION, with a dev build's suffix. */
+  version: string;
   /** The axios instance its calls go through. */
   client: AxiosInstance;
   /** Its phone app: the URL scheme the browser hands sign-ins back by, and
    *  its address on Initiative's cloud. */
-  phone?: { scheme: string; cloudOrigin: string };
+  phone?: {
+    scheme: string;
+    cloudOrigin: string;
+    /** Where a newer phone app is got, when a bundle needs one. */
+    appsUrl: string;
+  };
 }
 
 /**
@@ -320,18 +328,21 @@ function NativeSession({ app, children }: { app: AppIdentity; children: ReactNod
     switchPlace: () => void beginSignIn(server),
   };
   return (
-    <Session
-      state={state}
-      own={own}
-      signIn={() => void beginSignIn(server)}
-      changeServer={async () => {
-        await forgetServer();
-        setServer(null);
-        setState({ status: "chooseServer" });
-      }}
-    >
-      {children}
-    </Session>
+    <>
+      <UpdateBanner app={app} server={server} />
+      <Session
+        state={state}
+        own={own}
+        signIn={() => void beginSignIn(server)}
+        changeServer={async () => {
+          await forgetServer();
+          setServer(null);
+          setState({ status: "chooseServer" });
+        }}
+      >
+        {children}
+      </Session>
+    </>
   );
 }
 

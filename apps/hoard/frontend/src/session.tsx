@@ -11,8 +11,13 @@ export { useSession } from "@seneschal/app/session";
 export const HOARD: AppIdentity = {
   id: "hoard",
   name: "Hoard",
+  version: import.meta.env.VITE_APP_VERSION,
   client: apiClient,
-  phone: { scheme: "hoard", cloudOrigin: "https://hoard.initiativetasks.com" },
+  phone: {
+    scheme: "hoard",
+    cloudOrigin: "https://hoard.initiativetasks.com",
+    appsUrl: "https://github.com/beyonders-studio/seneschal/releases",
+  },
 };
 
 /** Starts Hoard's session, then shows the page (`@seneschal/app/session`). */
