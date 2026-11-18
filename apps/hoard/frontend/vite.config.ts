@@ -45,5 +45,8 @@ export default defineConfig({
     restoreMocks: true,
     unstubGlobals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // Many tests open the whole app, which takes longer than the default
+    // five seconds when CI runs every file at once.
+    testTimeout: 15_000,
   },
 });
