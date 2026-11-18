@@ -242,6 +242,12 @@
       "hint": "Leave it blank to add no overhead.",
       "unset": "Not set",
       "saved": "Overhead saved."
+    },
+    "purchaseTax": {
+      "title": "Purchase tax",
+      "description": "For a business that can't claim back the tax it pays on supplies. Each purchase's tax is then spread over its lines with the shipping, and what everything bought cost is worked out again.",
+      "field": "Purchase tax counts in cost",
+      "saved": "Purchase tax setting saved."
     }
   },
   "errors": {

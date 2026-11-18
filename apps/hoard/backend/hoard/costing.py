@@ -2,7 +2,8 @@
 
 An item's average is derived from its adjustments, in date order:
 
-* stock coming in at a cost, a purchase's landed cost, a starting
+* stock coming in at a cost, a purchase's landed cost (with its share of the
+  purchase's tax where the organization counts that in cost), a starting
   adjustment's, a production run's output, or a return at what its shipment
   went out at, moves the average toward that cost by quantity;
 * stock coming in by any other adjustment, a stocktake's included, comes in at
@@ -20,7 +21,8 @@ A run that consumed an item with no cost on its date, such as one out of stock,
 is flagged ``uncosted``.
 
 A cost is never typed in except on a starting adjustment. Editing a purchase or
-a starting adjustment re-derives everything after it, what comes back of a
+a starting adjustment, or starting or stopping counting purchase tax in cost,
+re-derives everything after it, what comes back of a
 shipment following what the shipment now went out at, and on through the runs
 that consumed the item to what they made, so any service that changes an
 item's adjustments ends with :func:`rederive`, which also notes that the

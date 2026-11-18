@@ -6,8 +6,8 @@ both days included.
   entered and purchases received during the period, less stock taken for
   personal use, less the stock's value at the end. Stock is valued at each
   item's moving average cost on the day (``hoard.costing``): materials, and the
-  material cost of bases and products not yet shipped. Labour and purchase tax
-  stay out. Beside it, what the goods shipped over the period cost, less what
+  material cost of bases and products not yet shipped. Labour stays out, and
+  purchase tax unless the organization counts it in cost. Beside it, what the goods shipped over the period cost, less what
   came back, and how many runs completed in it were uncosted.
 * :func:`mass_balance`: each item's quantities over the period: what it had at
   the start, what was received, made, used in production, sold and lost, and

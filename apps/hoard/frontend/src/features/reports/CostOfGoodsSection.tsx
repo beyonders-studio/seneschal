@@ -12,6 +12,7 @@ import {
   useReadCostOfGoodsReport,
   useReadMassBalanceReport,
 } from "@/api/generated/reports/reports";
+import { useReadSettings } from "@/api/generated/settings/settings";
 import { today } from "@/features/adjustments/labels";
 import { useQuantity } from "@/features/items/format";
 import { errorMessage } from "@/lib/errors";
@@ -102,6 +103,7 @@ function Report({
 function CostOfGoodsReport({ start, end }: Period) {
   const { t } = useTranslation("reports");
   const money = useMoney();
+  const taxed = useReadSettings().data?.purchase_tax_in_cost;
   const { data, error, isError, refetch } = useReadCostOfGoodsReport({ start, end });
 
   let body: ReactNode;
@@ -149,7 +151,10 @@ function CostOfGoodsReport({ start, end }: Period) {
     );
   }
   return (
-    <Report title={t("costOfGoods.title")} description={t("costOfGoods.description")}>
+    <Report
+      title={t("costOfGoods.title")}
+      description={t(taxed ? "costOfGoods.descriptionTaxed" : "costOfGoods.description")}
+    >
       {body}
     </Report>
   );

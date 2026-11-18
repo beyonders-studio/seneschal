@@ -161,7 +161,8 @@ async def read_cost_of_goods_report(
     start: date, end: date, db: OrganizationSessionDep, sees_costs: SeesCostsDep
 ) -> ReportCostOfGoods:
     """What the goods cost from ``start`` to ``end``, both days included, at
-    moving average cost: materials only, without labour or purchase tax."""
+    moving average cost: materials only, without labour, and without purchase
+    tax unless the organization counts it in cost."""
     if not sees_costs:
         raise refuse(status.HTTP_403_FORBIDDEN, ReportError.COSTS_ONLY)
     _period(start, end)

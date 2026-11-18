@@ -53,6 +53,7 @@
   "costOfGoods": {
     "title": "Cost of goods",
     "description": "What the goods cost over the period, as a tax return asks for it: stock valued at each item's average cost on the day, counting materials only, without labour or purchase tax.",
+    "descriptionTaxed": "What the goods cost over the period, as a tax return asks for it: stock valued at each item's average cost on the day, counting materials and the tax paid on them, without labour.",
     "opening": "Stock value at the start",
     "starting": "Plus starting stock entered",
     "purchases": "Plus purchases received",

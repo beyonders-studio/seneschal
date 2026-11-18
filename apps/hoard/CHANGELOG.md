@@ -10,6 +10,7 @@ All notable changes to Hoard are recorded here. The format follows
 
 - **Import from Stocksmith,** in Settings › Import. Choose Stocksmith's materials and recipes exports, check what they would make and fix any problems the check lists, then import. Materials, bases, products, recipes, suppliers, categories and bins come over, and optionally each material's stock on hand, dated on a day you pick. A base Stocksmith made when a run was short is set to auto-manufacture what's short. Importing again makes only what's missing.
 - **Make a base when a run needs it.** Set a base to auto-manufacture, on its page beside its recipe, and a run that uses it makes it first: always, or only what is short at the run's location. A base with a cure time can't be set.
+- **Count purchase tax in cost,** in Settings beside overhead, for a business that can't claim back the tax it pays on supplies. A purchase's tax is spread over its lines with the shipping, and turning it on or off works out again what everything bought, and everything made from it, cost.
 
 ### Fixed
 

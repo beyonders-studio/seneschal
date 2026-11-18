@@ -5,7 +5,7 @@ import { HoardPage } from "@/components/HoardPage";
 import { AutoManufactureField } from "@/features/automanufacture/AutoManufactureField";
 import { BackupSection } from "@/features/settings/BackupSection";
 import { CategoriesSection } from "@/features/settings/CategoriesSection";
-import { CostSettingSection } from "@/features/settings/CostSettingSection";
+import { CostSettingSection, PurchaseTaxSection } from "@/features/settings/CostSettingSection";
 import { CurrencySection } from "@/features/settings/CurrencySection";
 import { HoldReasonsSection } from "@/features/settings/HoldReasonsSection";
 import { ImportSection } from "@/features/settings/ImportSection";
@@ -31,6 +31,7 @@ function SettingsPage() {
         <WordsSection />
         <CostSettingSection setting="labour_rate" />
         <CostSettingSection setting="overhead" />
+        <PurchaseTaxSection />
         <UnitsSection />
         <CategoriesSection />
         <TypesSection />
