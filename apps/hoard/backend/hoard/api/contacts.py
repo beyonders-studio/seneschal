@@ -17,7 +17,7 @@ from pydantic import BaseModel, StringConstraints
 
 from hoard.api.adjustments import Responses
 from hoard.api.deps import HoardError
-from seneschal_core.api import OrganizationDep, PluginDep, WriteSessionDep, refuse
+from seneschal_core.api import OrganizationDep, Plugin, PluginDep, WriteSessionDep, refuse
 from seneschal_core.initiative_api import InitiativeRefused, InitiativeUnavailable
 
 router = APIRouter(prefix="/contacts", tags=["contacts"])
@@ -64,12 +64,18 @@ def _unavailable() -> Exception:
 @router.get("", responses=UNAVAILABLE)
 async def list_contacts(organization: OrganizationDep, plugin: PluginDep) -> list[ContactRead]:
     """Every one of the community's own contacts, by name."""
+    return await community_contacts(plugin, organization.community_ref)
+
+
+async def community_contacts(plugin: Plugin, community_ref: str) -> list[ContactRead]:
+    """Every one of the community's own contacts, by name, or 503
+    ``INITIATIVE_UNAVAILABLE``."""
     found: list[ContactRead] = []
     page = 1
     while True:
         try:
             answer = await plugin.api.call(
-                organization.community_ref,
+                community_ref,
                 "GET",
                 "/contacts/",
                 params={"scope": "community", "page": page, "page_size": CONTACTS_PER_PAGE},
@@ -104,9 +110,14 @@ async def create_contact(
     body: ContactCreate,
 ) -> ContactRead:
     """Add one of the community's contacts, a supplier by default."""
+    return await add_contact(plugin, organization.community_ref, body)
+
+
+async def add_contact(plugin: Plugin, community_ref: str, body: ContactCreate) -> ContactRead:
+    """Add one of the community's contacts, or refuse as :func:`create_contact` does."""
     try:
         answer = await plugin.api.call(
-            organization.community_ref,
+            community_ref,
             "POST",
             "/contacts/",
             body={"name": body.name, "is_organization": body.is_organization},

@@ -606,12 +606,31 @@ async def create_product(
     body: ProductWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> ProductDetail:
     """Add a product with its default variation."""
+    product, _ = await add_product(db, body, sees_costs)
+    await db.commit()
+    return await _detail(db, product.id, sees_costs)
+
+
+async def add_product(
+    db: WriteSession, body: ProductWrite, sees_costs: bool
+) -> tuple[Product, Variation]:
+    """Add a product as ``body`` writes it, with its default variation."""
     product = Product(name=body.name)
     type_id = await type_of(db, CategoryKind.PRODUCT, body.type_id, body.category_id, None)
     product.sqlmodel_update(_written(body, sees_costs, "default_price") | {"type_id": type_id})
-    product, _ = await stock.add_product(db, product)
-    await db.commit()
-    return await _detail(db, product.id, sees_costs)
+    return await stock.add_product(db, product)
+
+
+async def write_variation(
+    db: WriteSession, variation: Variation, body: ProductVariationWrite, sees_costs: bool
+) -> Variation:
+    """Write ``variation`` as ``body`` leaves it, adding it to its product when
+    it is new. Nothing reaches the stores that list it."""
+    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
+    if variation.id is None:
+        return await stock.add_variation(db, variation)
+    db.add(variation)
+    return variation
 
 
 @router.put("/{product_id}", responses=_CHANGE_LIVE)
@@ -664,9 +683,7 @@ async def create_product_variation(
     product_id: int, body: ProductVariationWrite, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> ProductDetail:
     await found(db, Product, product_id)
-    variation = Variation(product_id=product_id)
-    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
-    await stock.add_variation(db, variation)
+    await write_variation(db, Variation(product_id=product_id), body, sees_costs)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
 
@@ -705,8 +722,7 @@ async def update_product_variation(
             return replace(held, variants=[edited(held, variant) for variant in held.variants])
 
         await _write_through(db, plugin, session.community_ref, listed, body.store_versions, edit)
-    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
-    db.add(variation)
+    await write_variation(db, variation, body, sees_costs)
     await db.commit()
     return await _detail(db, product_id, sees_costs)
 

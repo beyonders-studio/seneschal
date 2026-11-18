@@ -29,6 +29,7 @@ from hoard.api.shapes import Page, PageDep
 from hoard.records import CategoryKind, Item, ItemStatus, Material, RecordKind, Unit
 from hoard.units import UnitRefused
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
+from seneschal_core.db import WriteSession
 
 router = APIRouter(prefix="/materials", tags=["materials"])
 
@@ -242,13 +243,20 @@ async def create_material(
     body: MaterialCreate, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> MaterialDetail:
     """Add a material, with its bin and starting stock where it starts."""
+    material = await add_material(db, body, sees_costs)
+    await db.commit()
+    return await _detail(db, material.id, sees_costs)
+
+
+async def add_material(db: WriteSession, body: MaterialCreate, sees_costs: bool) -> Material:
+    """Add a material as ``body`` writes it, with its bin and starting stock
+    where it starts."""
     material = Material(name=body.name, tracking_unit_id=body.tracking_unit_id)
     await _write(db, material, body)
     await stock.add_material(db, material)
     if body.start is not None:
         await items.start(db, material.id, body.start, sees_costs)
-    await db.commit()
-    return await _detail(db, material.id, sees_costs)
+    return material
 
 
 @router.put("/{material_id}", responses=_CHANGE)

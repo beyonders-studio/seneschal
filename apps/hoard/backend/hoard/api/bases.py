@@ -28,6 +28,7 @@ from hoard.api.settings import SettingsError, found, refused_as, require_referen
 from hoard.api.shapes import Page, PageDep
 from hoard.records import Base, CategoryKind, Item, ItemStatus, RecordKind
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
+from seneschal_core.db import WriteSession
 
 router = APIRouter(prefix="/bases", tags=["bases"])
 
@@ -200,13 +201,20 @@ async def create_base(
     body: BaseCreate, db: WriteSessionDep, sees_costs: SeesCostsDep
 ) -> BaseDetail:
     """Add a base, with its bin and starting stock where it starts."""
+    base = await add_base(db, body, sees_costs)
+    await db.commit()
+    return await _detail(db, base.id, sees_costs)
+
+
+async def add_base(db: WriteSession, body: BaseCreate, sees_costs: bool) -> Base:
+    """Add a base as ``body`` writes it, with its bin and starting stock where
+    it starts."""
     base = Base(name=body.name, tracking_unit_id=body.tracking_unit_id)
     await _write(db, base, body)
     await stock.add_base(db, base)
     if body.start is not None:
         await items.start(db, base.id, body.start, sees_costs)
-    await db.commit()
-    return await _detail(db, base.id, sees_costs)
+    return base
 
 
 @router.put("/{base_id}", responses=_CHANGE)
