@@ -2,8 +2,12 @@
 /**
  * Makes a Seneschal app's phone app from what every one shares.
  *
- *   seneschal-native new <app>     add apps/<app>/frontend/android, then apply
- *   seneschal-native apply <app>   (re)apply the shared pieces; safe to repeat
+ *   seneschal-native new <app>      add apps/<app>/frontend/android, apply, and
+ *                                   make its icon and splash
+ *   seneschal-native apply <app>    (re)apply the shared pieces; safe to repeat,
+ *                                   and what CI checks the project against
+ *   seneschal-native assets <app>   make its icon and splash again, from
+ *                                   apps/<app>/frontend/assets, after they change
  *
  * An app needs apps/<app>/native.json (its id, name, URL scheme and cloud
  * address) and apps/<app>/VERSION. `new` writes its capacitor.config.ts, adds
@@ -19,7 +23,9 @@
  *   packages/app/src/native/storage.ts), so a restored phone signs in again;
  * - for an app that scans with the camera, the code scanner module Google
  *   Play services installs with it;
- * - its icon and splash, from apps/<app>/frontend/assets when they are there.
+ * - its icon and splash (`new` and `assets`, never `apply`, whose output CI
+ *   compares), from apps/<app>/frontend/assets: icon-only, icon-foreground
+ *   and icon-background at 1024 px, splash and splash-dark at 2732 px.
  */
 
 import { execFileSync } from "node:child_process";
@@ -36,8 +42,8 @@ const fail = (message) => {
 };
 
 const [command, app] = process.argv.slice(2);
-if (!["new", "apply"].includes(command) || !/^[a-z][a-z0-9-]*$/.test(app ?? "")) {
-  fail("usage: seneschal-native new|apply <app>");
+if (!["new", "apply", "assets"].includes(command) || !/^[a-z][a-z0-9-]*$/.test(app ?? "")) {
+  fail("usage: seneschal-native new|apply|assets <app>");
 }
 
 const appDir = path.join(ROOT, "apps", app);
@@ -179,10 +185,15 @@ writeFileSync(
 `
 );
 
-if (existsSync(path.join(frontend, "assets/icon-only.png"))) {
-  run(["capacitor-assets", "generate", "--android"]);
-} else {
-  console.log(`no apps/${app}/frontend/assets/icon-only.png: Capacitor's default icon stays`);
+// The icon and splash, made from the app's images. Never on `apply`: the
+// generator rewrites the manifest's spacing and its images may not come out
+// byte for byte the same elsewhere, and CI compares what `apply` makes.
+if (command !== "apply") {
+  if (existsSync(path.join(frontend, "assets/icon-only.png"))) {
+    run(["capacitor-assets", "generate", "--android"]);
+  } else {
+    console.log(`no apps/${app}/frontend/assets/icon-only.png: Capacitor's default icon stays`);
+  }
 }
 
 console.log(`apps/${app}: the phone app has what every Seneschal app shares.`);
