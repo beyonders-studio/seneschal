@@ -70,7 +70,10 @@ pages the image serves.
 - **Making one:** write `native.json`, then `node packages/native/bin/seneschal-native.mjs new <app>`.
   It adds `apps/<app>/frontend/android` and applies what every phone app
   shares. `apply <app>` reapplies it; CI fails when the committed project
-  differs from what `apply` makes.
+  differs from what `apply` makes. Its icon and splash come from
+  `apps/<app>/frontend/assets` (icon-only, icon-foreground, icon-background
+  at 1024 px; splash, splash-dark at 2732 px): `assets <app>` makes them again
+  after the images change.
 - **Its version** is the app's `VERSION`: versionCode is
   `major*10000 + minor*100 + patch`.
 - **The app's pages** wrap `SessionGate` from `@seneschal/app/session`, with
