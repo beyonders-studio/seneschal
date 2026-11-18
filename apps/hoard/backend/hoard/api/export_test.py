@@ -64,7 +64,9 @@ async def test_records_export_as_csv_and_json(
         assert (refused.status_code, refused.json()["detail"]) == (422, "CSV_ONLY"), kind
 
 
-async def test_an_export_downloads_only_for_the_member_who_asked(client, sign_in, export):
+async def test_an_export_downloads_only_for_the_member_who_asked(
+    client, sign_in, export, suppliers
+):
     await sign_in(client, (plugin_manifest.SEE_COSTS,))
     exported = await export("products")
     assert exported.status_code == 200

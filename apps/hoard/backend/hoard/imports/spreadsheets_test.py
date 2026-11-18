@@ -228,9 +228,9 @@ async def test_an_export_imports_back_as_no_change(
         + (row["item"], row["item_options"], row["amount"], row["unit"])
         for row in _rows(files["recipes"])
     ] == [
-        ("Breakfast Blend", "", "true", "700", "g", "Assam Leaf", "", "5", ""),
-        ("Chai", "Size: Large", "false", "", "", "Breakfast Blend", "", "60", ""),
-        ("Chai", "Size: Large", "false", "", "", "Tin", "", "1", ""),
+        ("Breakfast Blend", "", "true", "700", "g", "Assam Leaf", "", "5", "g"),
+        ("Chai", "Size: Large", "false", "", "", "Breakfast Blend", "", "60", "g"),
+        ("Chai", "Size: Large", "false", "", "", "Tin", "", "1", "g"),
     ]
 
     checked = (await client.post("/api/v1/imports/spreadsheets/check", **_files(**files))).json()
