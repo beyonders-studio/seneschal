@@ -20,11 +20,13 @@ from hoard.endpoints import ENDPOINTS
 from hoard.imports import IMPORTERS
 from seneschal_core import imports, jobs
 from seneschal_core.api import Plugin, install
+from seneschal_core.csrf import SameOriginOnly
 from seneschal_core.db import Database
 from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.platform import ORGANIZATION_HOOKS, platform_router
 from seneschal_core.sessions import Sessions
+from seneschal_core.sign_in import SignIn
 
 #: The first path segments that are never a page.
 _NOT_PAGES = frozenset({"api", "v1", ".well-known"})
@@ -74,6 +76,21 @@ def plugin_for(settings: Settings) -> Plugin:
             private_key_pem=settings.session_private_key_pem,
             cookie_secure=settings.cookie_secure,
         ),
+        sign_in=sign_in_for(settings),
+    )
+
+
+def sign_in_for(settings: Settings) -> SignIn | None:
+    """Sign in with Initiative at Hoard's own address, when Hoard has a key to
+    seal its renewals with."""
+    if settings.sealing_key is None:
+        return None
+    return SignIn(
+        app="hoard",
+        issuer=settings.initiative_origin,
+        app_origin=settings.app_origin,
+        sealing_key=settings.sealing_key,
+        cookie_secure=settings.cookie_secure,
     )
 
 
@@ -125,6 +142,15 @@ def create_app(settings: Settings | None = None, plugin: Plugin | None = None) -
         generate_unique_id_function=_operation_id,
     )
     install(app, plugin)
+    # A change that carries Hoard's cookies comes from Hoard's own pages.
+    app.add_middleware(
+        SameOriginOnly,
+        cookie_names=[
+            plugin.sessions.cookie_name,
+            *([plugin.sign_in.renewal_cookie] if plugin.sign_in else []),
+        ],
+        origins=[settings.app_origin],
+    )
     webhook_address = store_hooks.webhook_address(settings.public_api_url)
     # The address a store's sync subscribes its webhooks to.
     app.state.webhook_address = webhook_address

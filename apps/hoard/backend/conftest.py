@@ -16,7 +16,7 @@ from httpx2 import ASGITransport, AsyncClient, Response
 from sqlmodel import select
 
 from hoard import plugin_manifest
-from hoard.app import JOB_HANDLERS, create_app
+from hoard.app import JOB_HANDLERS, create_app, sign_in_for
 from hoard.core.config import Settings
 from hoard.db import upgrade
 from hoard.purchases import receive_line
@@ -299,6 +299,7 @@ def settings(
         session_private_key_pem=new_key_pem(),
         entitlement_issuer_key_pem=public_key_pem(initiative_stand_in.billing_key),
         static_dir=static_dir,
+        sealing_key=secrets.token_urlsafe(32),
     )
 
 
@@ -314,6 +315,7 @@ async def app(
         sessions=Sessions(
             app="hoard", private_key_pem=settings.session_private_key_pem, cookie_secure=False
         ),
+        sign_in=sign_in_for(settings),
     )
     yield create_app(settings, plugin)
     await plugin.initiative.aclose()
@@ -322,7 +324,12 @@ async def app(
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[AsyncClient]:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    # As Hoard's own pages call it: from its origin.
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers={"Origin": "http://test"},
+    ) as client:
         yield client
 
 

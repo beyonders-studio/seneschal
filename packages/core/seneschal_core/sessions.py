@@ -19,6 +19,7 @@ from typing import Any, Literal
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
+from fastapi import Response
 
 from seneschal_core.initiative import ALGORITHM, HandoffClaims
 
@@ -73,13 +74,20 @@ class Sessions:
         organization_id: int,
         theme: Theme | None,
         locale: str | None,
+        not_after: datetime | None = None,
     ) -> str:
+        """A session for what ``handoff`` says, for :data:`SESSION_LIFETIME`
+        or until ``not_after``, whichever comes first: a session made from a
+        sign-in never outlives the ID token it was made from."""
         now = datetime.now(UTC)
+        expires = now + SESSION_LIFETIME
+        if not_after is not None:
+            expires = min(expires, not_after)
         payload: dict[str, Any] = {
             "iss": self._issuer,
             "aud": self._audience,
             "iat": int(now.timestamp()),
-            "exp": now + SESSION_LIFETIME,
+            "exp": expires,
             "sub": handoff.member_ref,
             "organization_id": organization_id,
             "community_ref": handoff.community_ref,
@@ -91,6 +99,27 @@ class Sessions:
             "locale": locale,
         }
         return jwt.encode(payload, self._private_key, algorithm=ALGORITHM)
+
+    def set_cookie(self, response: Response, token: str, *, framed: bool) -> None:
+        """Send the session in its cookie, kept as long as the session lasts.
+
+        A page Initiative frames is on another site in production, where only
+        a secure cookie marked ``None`` is sent. A page opened at the app's own
+        address is the top-level site, and its cookie is ``Lax``: it goes with
+        the page's own calls and never with another site's."""
+        expires = jwt.decode(token, options={"verify_signature": False})["exp"]
+        response.set_cookie(
+            self.cookie_name,
+            token,
+            max_age=max(0, int(expires - datetime.now(UTC).timestamp())),
+            httponly=True,
+            secure=self.cookie_secure,
+            samesite="none" if framed and self.cookie_secure else "lax",
+            path="/",
+        )
+
+    def clear_cookie(self, response: Response) -> None:
+        response.delete_cookie(self.cookie_name, httponly=True, secure=self.cookie_secure, path="/")
 
     def verify(self, token: str) -> SessionClaims:
         try:

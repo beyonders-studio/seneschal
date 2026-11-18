@@ -25,6 +25,8 @@ whatever a test adds to :attr:`routes`.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
 import secrets
@@ -51,6 +53,7 @@ from seneschal_core.initiative import (
     ALGORITHM,
     CONTEXT_TYPE,
     HANDOFF_TYPE,
+    ID_TOKEN_TYPE,
     ISSUER,
     JWKS_PATH,
     STATEMENT_ISSUER,
@@ -174,6 +177,23 @@ def new_key_pem() -> str:
     return private_key_pem(ed25519.Ed25519PrivateKey.generate())
 
 
+@dataclass(frozen=True)
+class _SignInGrant:
+    """A place a person chose when signing in with Initiative."""
+
+    #: One per sign-in, kept across its renewals.
+    sign_in: str
+    redirect_uri: str
+    challenge: str
+    nonce: str
+    claims: dict[str, Any]
+
+
+def _s256(verifier: str) -> str:
+    digest = hashlib.sha256(verifier.encode()).digest()
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
 #: A route of the community's plug-in API: the request, answered.
 Route = Callable[[httpx2.Request], httpx2.Response]
 
@@ -182,6 +202,8 @@ class InitiativeStandIn:
     """Initiative's plug-in platform and its billing, as far as an app's tests need them."""
 
     API_URL = "http://initiative.test/api/v1"
+    #: The deployment's own address: Sign in with Initiative's issuer.
+    ORIGIN = "http://initiative.test"
     KID = "platform-key"
     #: How long an installation token lives.
     TOKEN_LIFETIME_SECONDS = 3600
@@ -224,6 +246,15 @@ class InitiativeStandIn:
         #: Each static connection's values, by community and connection id, as
         #: the install's configuration hands them over.
         self.connections: dict[str, dict[str, dict[str, Any]]] = {}
+        #: Sign in with Initiative: each code not yet spent, and what it was
+        #: bound to when the person chose their place.
+        self.codes: dict[str, _SignInGrant] = {}
+        #: Each refresh token, and the place it renews. Like Initiative's, one
+        #: stays good while the sign-in stands; :meth:`end_sign_in` ends it.
+        self.refresh_tokens: dict[str, _SignInGrant] = {}
+        #: How many ID tokens each sign-in was answered with: its first, then
+        #: one per renewal.
+        self.renewals: dict[str, int] = {}
 
     def jwks(self) -> dict[str, Any]:
         """The key set Initiative publishes."""
@@ -265,6 +296,8 @@ class InitiativeStandIn:
         """An installation token, for an assertion the app's key signed; or a
         member token, for one naming a member who consented."""
         form = dict(parse_qsl(request.content.decode()))
+        if form.get("grant_type") in ("authorization_code", "refresh_token"):
+            return self._sign_in_grant(form)
         member = form.get("grant_type") == MEMBER_GRANT
         assertion = form.get("assertion" if member else "client_assertion", "")
         try:
@@ -313,6 +346,134 @@ class InitiativeStandIn:
                 "scope": "members:read",
             },
         )
+
+    def _client_assertion_holds(self, form: Mapping[str, str]) -> bool:
+        assertion = form.get("client_assertion", "")
+        try:
+            if jwt.get_unverified_header(assertion).get("kid") != key_id(self.plugin_key):
+                return False
+            jwt.decode(
+                assertion,
+                self.plugin_key.public_key(),
+                algorithms=[ALGORITHM],
+                audience=f"{self.API_URL}{TOKEN_PATH}",
+                issuer=self.public_id,
+                subject=self.public_id,
+                options={"require": ["iss", "sub", "aud", "jti", "iat", "exp"]},
+            )
+        except jwt.PyJWTError:
+            return False
+        return (
+            form.get("client_assertion_type") == ASSERTION_TYPE
+            and form.get("client_id", self.public_id) == self.public_id
+        )
+
+    def _sign_in_grant(self, form: Mapping[str, str]) -> httpx2.Response:
+        """A code spent, or a refresh token renewed: an ID token for the
+        place, and a refresh token."""
+        if not self._client_assertion_holds(form):
+            return httpx2.Response(401, json={"error": "invalid_client"})
+        refused = httpx2.Response(400, json={"error": "invalid_grant"})
+        nonce: str | None = None
+        if form["grant_type"] == "refresh_token":
+            grant = self.refresh_tokens.get(form.get("refresh_token", ""))
+            if grant is None:
+                return refused
+        else:
+            grant = self.codes.pop(form.get("code", ""), None)
+            if (
+                grant is None
+                or form.get("redirect_uri") != grant.redirect_uri
+                or _s256(form.get("code_verifier", "")) != grant.challenge
+            ):
+                return refused
+            nonce = grant.nonce
+        self.renewals[grant.sign_in] = self.renewals.get(grant.sign_in, 0) + 1
+        refresh_token = f"irt_{secrets.token_hex(16)}"
+        self.refresh_tokens[refresh_token] = grant
+        return httpx2.Response(
+            200,
+            json={
+                "access_token": f"ipt_{secrets.token_hex(16)}",
+                "token_type": "Bearer",
+                "expires_in": 600,
+                "id_token": self.id_token(grant, nonce=nonce),
+                "refresh_token": refresh_token,
+            },
+        )
+
+    def authorize(
+        self,
+        authorize_url: str,
+        *,
+        community_ref: str,
+        member_ref: str = "member-ref",
+        page: str = "stock",
+        initiative_id: int | None = 1,
+        admin: bool = False,
+        permissions: tuple[str, ...] = ("use",),
+        community_status: str = "active",
+    ) -> str:
+        """The address Initiative sends the person back to, once they signed
+        in and chose a place, for the authorize request ``authorize_url``."""
+        url = httpx2.URL(authorize_url)
+        params = url.params
+        assert f"{url.scheme}://{url.host}" == self.ORIGIN, url
+        assert url.path == "/oauth/authorize", url
+        assert params["client_id"] == self.public_id
+        assert params["response_type"] == "code" and params["scope"] == "openid"
+        assert params["code_challenge_method"] == "S256"
+        code = f"icd_{secrets.token_hex(16)}"
+        self.codes[code] = _SignInGrant(
+            sign_in=secrets.token_hex(8),
+            redirect_uri=params["redirect_uri"],
+            challenge=params["code_challenge"],
+            nonce=params["nonce"],
+            claims={
+                "sub": member_ref,
+                "community_ref": community_ref,
+                "community_status": community_status,
+                "surface_id": page,
+                "community_admin": admin,
+                "permissions": list(permissions),
+                **(
+                    {"initiative_id": initiative_id, "initiative_moderator": False}
+                    if initiative_id is not None
+                    else {}
+                ),
+            },
+        )
+        back = httpx2.URL(params["redirect_uri"]).copy_merge_params(
+            {"code": code, "state": params["state"], "iss": self.ORIGIN}
+        )
+        return str(back)
+
+    def id_token(self, grant: _SignInGrant, *, nonce: str | None = None, **claims: Any) -> str:
+        """An ID token for the grant's place, as Initiative signs one."""
+        now = datetime.now(UTC)
+        payload: dict[str, Any] = {
+            "jti": secrets.token_hex(16),
+            "iss": self.ORIGIN,
+            "aud": self.public_id,
+            "iat": int(now.timestamp()),
+            "exp": int((now + timedelta(seconds=600)).timestamp()),
+            "plugin_install_id": 1,
+            **grant.claims,
+            **claims,
+        }
+        if nonce is not None:
+            payload["nonce"] = nonce
+        return jwt.encode(
+            payload,
+            self.platform_key,
+            algorithm=ALGORITHM,
+            headers={"kid": self.KID, "typ": ID_TOKEN_TYPE},
+        )
+
+    def end_sign_in(self) -> None:
+        """Every sign-in ends, as signing out of Initiative ends one: no
+        refresh token renews any more."""
+        self.refresh_tokens.clear()
 
     def _community(self, request: httpx2.Request) -> str:
         return self.tokens[request.headers["authorization"].partition(" ")[2]]

@@ -21,7 +21,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 
@@ -31,6 +31,9 @@ from seneschal_core.initiative import Initiative
 from seneschal_core.initiative_api import InitiativeApi
 from seneschal_core.organizations import Organization
 from seneschal_core.sessions import SessionClaims, SessionRefused, Sessions
+
+if TYPE_CHECKING:
+    from seneschal_core.sign_in import SignIn
 
 
 class ErrorCode(StrEnum):
@@ -52,6 +55,13 @@ class ErrorCode(StrEnum):
     JOB_NOT_FOUND = "JOB_NOT_FOUND"
     JOB_RESULT_NOT_FOUND = "JOB_RESULT_NOT_FOUND"
     JOB_STARTER_ONLY = "JOB_STARTER_ONLY"
+    SIGN_IN_NOT_OFFERED = "SIGN_IN_NOT_OFFERED"
+    SIGN_IN_ENDED = "SIGN_IN_ENDED"
+    SIGN_IN_EXPIRED = "SIGN_IN_EXPIRED"
+    SIGN_IN_FAILED = "SIGN_IN_FAILED"
+    SIGN_IN_CANCELLED = "SIGN_IN_CANCELLED"
+    INITIATIVE_UNAVAILABLE = "INITIATIVE_UNAVAILABLE"
+    CROSS_SITE_REQUEST = "CROSS_SITE_REQUEST"
 
 
 def refuse(status_code: int, code: StrEnum) -> HTTPException:
@@ -69,6 +79,9 @@ class Plugin:
     initiative: Initiative
     api: InitiativeApi
     sessions: Sessions
+    #: Sign in with Initiative at the app's own address; None when the app
+    #: has no sealing key, and its pages open only inside Initiative.
+    sign_in: SignIn | None = None
 
     async def start(self) -> None:
         """Before serving: refuse a serving login the organization policy does not bind."""

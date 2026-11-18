@@ -86,6 +86,17 @@ class InitiativeUnavailable(Exception):
     answer, or it gave no token."""
 
 
+class GrantRefused(Exception):
+    """Initiative's token endpoint refused a grant. ``error`` is the protocol's
+    own code: ``invalid_grant`` for a code or refresh token it no longer
+    honours, so the person signs in again."""
+
+    def __init__(self, error: str, description: str | None = None) -> None:
+        super().__init__(f"{error}: {description}" if description else error)
+        self.error = error
+        self.description = description
+
+
 class ConsentRequired(Exception):
     """The member a call would act for has not consented to the app acting
     for them, or no longer does."""
@@ -290,6 +301,40 @@ class InitiativeApi:
             detail = answer.get("detail") if isinstance(answer, dict) else None
             raise InitiativeRefused(response.status_code, detail)
         return answer
+
+    async def grant(self, form: Mapping[str, str]) -> dict[str, Any]:
+        """Ask the token endpoint for ``form``'s grant (``authorization_code``
+        or ``refresh_token``, for Sign in with Initiative), authenticating as
+        the app with its key, and answer the response's body. Raises
+        :class:`GrantRefused` when Initiative refuses the grant and
+        :class:`InitiativeUnavailable` when there is no answer."""
+        if self._key is None:
+            raise InitiativeUnavailable("the app has no key to call Initiative with")
+        try:
+            response = await self._http.post(
+                f"{self.api_url}{TOKEN_PATH}",
+                data={
+                    **form,
+                    "client_id": self.public_id,
+                    "client_assertion_type": ASSERTION_TYPE,
+                    "client_assertion": self._assertion(self._key),
+                },
+                headers={"Accept": "application/json"},
+            )
+        except httpx2.HTTPError as exc:
+            logger.warning("could not reach Initiative's token endpoint: %s", exc)
+            raise InitiativeUnavailable(str(exc)) from exc
+        body = _json(response)
+        if response.status_code >= 500 or not isinstance(body, dict):
+            raise InitiativeUnavailable(f"Initiative answered {response.status_code}")
+        if response.is_error:
+            error = body.get("error")
+            description = body.get("error_description")
+            raise GrantRefused(
+                error if isinstance(error, str) and error else "invalid_request",
+                description if isinstance(description, str) else None,
+            )
+        return body
 
     async def people(self, community_ref: str, member_refs: Collection[str]) -> dict[str, Person]:
         """The members ``member_refs`` name, by reference. A reference that no

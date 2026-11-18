@@ -62,15 +62,20 @@ export function answerApi(answers: Record<string, Answer>): InternalAxiosRequest
   return asked;
 }
 
-/** Opens Hoard at `path`, framed in Initiative, and waits until it asks for the handoff.
- *  Each opening has a cache of its own, and a failed read is not tried again. */
-export async function openPage(path: string) {
+/** Opens Hoard at `path`. Each opening has a cache of its own, and a failed
+ *  read is not tried again. */
+export function openPageAt(path: string) {
   const queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queries}>
       <RouterProvider router={createAppRouter(createMemoryHistory({ initialEntries: [path] }))} />
     </QueryClientProvider>
   );
+}
+
+/** Opens Hoard at `path`, framed in Initiative, and waits until it asks for the handoff. */
+export async function openPage(path: string) {
+  openPageAt(path);
   await screen.findByText("Connecting to Initiative…");
 }
 

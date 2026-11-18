@@ -21,6 +21,11 @@ from the set it publishes at ``<api>/plugin-platform/jwks.json``, issued by
 
 Every token names one community and its install, and where the community stands.
 
+For a person who opens the app at its own address, Initiative also signs an
+**ID token** (Sign in with Initiative, OpenID Connect): the handoff's claims for
+the place they chose, under the same keys, but issued by the deployment's own
+address to the bare public id, with ``typ`` ``JWT``.
+
 Billing signs its statement of what a community holds, and Initiative hands it
 on unchanged in the ``entitlement`` hook. It is checked against billing's own
 key, which reaches the app from the deployment, never from Initiative.
@@ -52,6 +57,8 @@ ISSUER = "initiative"
 HANDOFF_TYPE = "initiative-handoff+jwt"
 #: The header ``typ`` of a context or lifecycle token.
 CONTEXT_TYPE = "initiative-context+jwt"
+#: The header ``typ`` of a Sign in with Initiative ID token.
+ID_TOKEN_TYPE = "JWT"
 #: Where Initiative publishes its keys, under its API.
 JWKS_PATH = "/plugin-platform/jwks.json"
 #: How long a fetched key set is used before it is fetched again.
@@ -68,6 +75,9 @@ STATEMENT_ISSUER = "initiative-billing"
 def audience(public_id: str) -> str:
     """The audience of every token Initiative signs for the plug-in ``public_id``."""
     return f"initiative-plugin:{public_id}"
+
+
+_audience = audience
 
 
 class TokenRefused(Exception):
@@ -227,26 +237,26 @@ class Initiative:
         header, payload = await self._decode(token, required=["sub", "surface_id"])
         if header.get("typ") != HANDOFF_TYPE:
             raise TokenRefused("not a page handoff")
-        member_ref = _text(payload, "sub")
-        page = _text(payload, "surface_id")
-        permissions = payload.get("permissions", [])
-        if not isinstance(permissions, list) or not all(
-            isinstance(permission, str) and permission for permission in permissions
-        ):
-            raise TokenRefused("permissions is not a list of names")
-        return HandoffClaims(
-            jti=str(payload["jti"]),
-            member_ref=member_ref,
-            community_ref=_text(payload, "community_ref"),
-            community_status=_status(payload),
-            plugin_install_id=_install(payload),
-            page=page,
-            initiative_id=_initiative(payload),
-            # Only a literal true: an absent or malformed claim is a member's.
-            admin=payload.get("community_admin") is True,
-            permissions=tuple(permissions),
-            expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+        return _handoff_claims(payload)
+
+    async def verify_id_token(self, token: str, *, issuer: str, nonce: str | None) -> HandoffClaims:
+        """A Sign in with Initiative ID token's claims, or :class:`TokenRefused`.
+
+        It carries a handoff's claims for the place the person chose, but is
+        issued by the deployment's own address (``issuer``) to the bare public
+        id, with ``typ`` ``JWT``: never taken for a handoff, nor a handoff for
+        it. ``nonce`` is the sign-in's own; a renewed token carries none."""
+        header, payload = await self._decode(
+            token,
+            required=["sub", "surface_id"],
+            issuer=issuer,
+            audience=self.public_id,
         )
+        if header.get("typ") != ID_TOKEN_TYPE:
+            raise TokenRefused("not an ID token")
+        if payload.get("nonce") != nonce:
+            raise TokenRefused("not this sign-in's nonce")
+        return _handoff_claims(payload)
 
     async def verify_context(
         self, token: str, *, public: Collection[str] = frozenset()
@@ -327,17 +337,24 @@ class Initiative:
         return _statement(claims)
 
     async def _decode(
-        self, token: str, *, required: list[str]
+        self,
+        token: str,
+        *,
+        required: list[str],
+        issuer: str = ISSUER,
+        audience: str | None = None,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """The header and payload of a token Initiative signed for this app:
         its signature under one of Initiative's keys, its issuer, audience and
-        expiry, and the claims every token carries."""
+        expiry, and the claims every token carries. The issuer and audience are
+        the plug-in platform's unless given."""
         try:
             header = jwt.get_unverified_header(token)
         except jwt.PyJWTError as exc:
             raise TokenRefused("unreadable token") from exc
         if header.get("alg") != ALGORITHM:
             raise TokenRefused("not signed with EdDSA")
+        expected_audience = audience if audience is not None else _audience(self.public_id)
         keys = await self._keys.for_kid(header.get("kid"))
         first_error: jwt.PyJWTError | None = None
         for key in keys:
@@ -346,8 +363,8 @@ class Initiative:
                     token,
                     key,
                     algorithms=[ALGORITHM],
-                    audience=audience(self.public_id),
-                    issuer=ISSUER,
+                    audience=expected_audience,
+                    issuer=issuer,
                     options={
                         "require": [
                             "exp",
@@ -391,6 +408,28 @@ class Initiative:
             subject=_subject(payload["subject"]) if "subject" in payload else None,
             initiative_id=_initiative(payload),
         )
+
+
+def _handoff_claims(payload: Mapping[str, Any]) -> HandoffClaims:
+    """The handoff's claims, which a handoff and an ID token both carry."""
+    permissions = payload.get("permissions", [])
+    if not isinstance(permissions, list) or not all(
+        isinstance(permission, str) and permission for permission in permissions
+    ):
+        raise TokenRefused("permissions is not a list of names")
+    return HandoffClaims(
+        jti=str(payload["jti"]),
+        member_ref=_text(payload, "sub"),
+        community_ref=_text(payload, "community_ref"),
+        community_status=_status(payload),
+        plugin_install_id=_install(payload),
+        page=_text(payload, "surface_id"),
+        initiative_id=_initiative(payload),
+        # Only a literal true: an absent or malformed claim is a member's.
+        admin=payload.get("community_admin") is True,
+        permissions=tuple(permissions),
+        expires_at=datetime.fromtimestamp(payload["exp"], tz=UTC),
+    )
 
 
 def _text(payload: Mapping[str, Any], claim: str) -> str:

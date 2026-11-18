@@ -70,6 +70,11 @@ PAGES = [
     ("settings", "/settings", "community", "Settings"),
 ]
 
+#: The page somebody lands in after signing in at Hoard's own address.
+SIGN_IN_PAGE = "stock"
+#: Where Initiative sends them back, on Hoard's origin: the backend's route.
+SIGN_IN_RETURN_PATH = "/api/v1/auth/sign-in/return"
+
 #: What to reorder: the materials and products at or below their low-stock
 #: limit. Every member who uses Hoard reads it.
 REORDER = f"plugin.{PUBLIC_ID}.reorder"
@@ -801,6 +806,9 @@ def definition() -> dict[str, Any]:
             {"id": page, "path": path, "scopes": [scope], "name": {"en": name}}
             for page, path, scope, name in PAGES
         ],
+        # People may also open Hoard at its own address, signing in with their
+        # Initiative account, and land in Stock in the initiative they choose.
+        "sign_in": {"page": SIGN_IN_PAGE, "return_path": SIGN_IN_RETURN_PATH},
         "endpoints": ENDPOINTS,
         "fields": FIELDS,
         "parts": PARTS,

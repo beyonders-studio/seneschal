@@ -6,6 +6,14 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Open Hoard at its own address.** Go to Hoard's address in any browser and sign in with your Initiative account, then choose the initiative to open it in. A bar along the top lists Hoard's pages and lets you switch place or sign out. Signing out of Initiative, or losing access there, signs you out of Hoard too. Deployments set a new secret, `HOARD_SEALING_KEY`; without it, Hoard opens only inside Initiative, as before.
+
+### Security
+
+- **Hoard refuses a change that carries its cookies but didn't come from its own pages.**
+
 ## [0.4.0] - 2026-11-17
 
 ### Added

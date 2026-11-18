@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 from fastapi import FastAPI
-from httpx2 import ASGITransport, AsyncClient
+from httpx2 import URL, ASGITransport, AsyncClient
 
 from hoard import plugin_manifest
-from hoard.app import create_app, frame_ancestors
+from hoard.app import create_app, frame_ancestors, sign_in_for
 from hoard.core.config import Settings
 from seneschal_core.db import ServingLoginRefused
 
@@ -117,3 +117,31 @@ async def test_its_answers_carry_the_framing_policy(app: FastAPI, settings: Sett
     assert answer.headers["content-security-policy"] == frame_ancestors(
         "https://initiative.example"
     )
+
+
+async def test_a_person_may_sign_in_at_hoards_own_address(client, settings: Settings):
+    started = await client.get("/api/v1/auth/sign-in/start")
+
+    location = URL(started.headers["location"])
+    assert (started.status_code, str(location.copy_with(query=None))) == (
+        303,
+        "http://initiative.test/oauth/authorize",
+    )
+    assert location.params["client_id"] == plugin_manifest.PUBLIC_ID
+    assert location.params["redirect_uri"] == (
+        f"{settings.app_origin}{plugin_manifest.SIGN_IN_RETURN_PATH}"
+    )
+
+
+async def test_without_a_sealing_key_hoard_opens_only_inside_initiative(settings: Settings):
+    assert sign_in_for(settings.model_copy(update={"sealing_key": None})) is None
+
+
+async def test_a_change_carrying_hoards_cookie_from_another_site_is_refused(client):
+    client.cookies.set("hoard_session", "anything")
+
+    refused = await client.post(
+        "/api/v1/auth/refresh", headers={"Origin": "https://elsewhere.example"}
+    )
+
+    assert (refused.status_code, refused.json()) == (403, {"detail": "CROSS_SITE_REQUEST"})
