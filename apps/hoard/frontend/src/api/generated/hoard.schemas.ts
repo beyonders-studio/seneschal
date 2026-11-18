@@ -171,6 +171,7 @@ export interface BaseCreate {
   name: string;
   status?: ItemStatus;
   sku?: string | null;
+  gtin?: string | null;
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
@@ -527,6 +528,7 @@ export interface BaseDetail {
   name: string;
   status: ItemStatus;
   sku: string | null;
+  gtin: string | null;
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
@@ -544,6 +546,7 @@ export interface BaseRead {
   name: string;
   status: ItemStatus;
   sku: string | null;
+  gtin: string | null;
   tracking_unit_id: number;
   low_stock_limit: string | null;
   category_id: number | null;
@@ -567,6 +570,7 @@ export interface BaseWrite {
   name: string;
   status?: ItemStatus;
   sku?: string | null;
+  gtin?: string | null;
   tracking_unit_id: number;
   low_stock_limit?: number | string | null;
   category_id?: number | null;
@@ -1608,6 +1612,7 @@ export interface MaterialCreate {
   name: string;
   status?: ItemStatus;
   sku?: string | null;
+  gtin?: string | null;
   inventoriable?: boolean;
   tracking_unit_id: number;
   purchase_unit_id?: number | null;
@@ -1647,6 +1652,7 @@ export interface MaterialDetail {
   name: string;
   status: ItemStatus;
   sku: string | null;
+  gtin: string | null;
   inventoriable: boolean;
   tracking_unit_id: number;
   purchase_unit_id: number | null;
@@ -1668,6 +1674,7 @@ export interface MaterialRead {
   name: string;
   status: ItemStatus;
   sku: string | null;
+  gtin: string | null;
   inventoriable: boolean;
   tracking_unit_id: number;
   purchase_unit_id: number | null;
@@ -1695,6 +1702,7 @@ export interface MaterialWrite {
   name: string;
   status?: ItemStatus;
   sku?: string | null;
+  gtin?: string | null;
   inventoriable?: boolean;
   tracking_unit_id: number;
   purchase_unit_id?: number | null;
@@ -2203,6 +2211,7 @@ export interface ProductVariationRead {
   id: number;
   attributes: ProductVariationReadAttributes;
   sku: string | null;
+  gtin: string | null;
   is_default: boolean;
   price: string | null;
   average_cost: string | null;
@@ -2290,6 +2299,7 @@ export interface StoreVersion {
 export interface ProductVariationWrite {
   attributes?: ProductVariationWriteAttributes;
   sku?: string | null;
+  gtin?: string | null;
   price?: number | string | null;
   auto_manufacture?: AutoManufacture | null;
   supplier_contact_id?: number | null;

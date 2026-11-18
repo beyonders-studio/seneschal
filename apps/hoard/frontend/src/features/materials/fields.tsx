@@ -144,6 +144,7 @@ const INGREDIENT = {
         "last_stocktake",
         "low_stock_limit",
         "sku",
+        "gtin",
         "category",
         "type",
         "tracking_unit",
@@ -210,6 +211,12 @@ export const MATERIALS: HoardKind<MaterialRead, MaterialDetail> = {
       "hoard:common.sku",
       (material) => material.sku,
       ({ item }) => item.sku
+    ),
+    builtin(
+      "gtin",
+      "catalog:items.gtin",
+      (material) => material.gtin,
+      ({ item }) => item.gtin
     ),
     builtin("category", "hoard:common.category", (material) => material.category_id, Category),
     typeField(),

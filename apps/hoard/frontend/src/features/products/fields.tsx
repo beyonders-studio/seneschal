@@ -211,6 +211,7 @@ const EVERYTHING = {
         "low_stock_limit",
         "category",
         "type",
+        "gtins",
         "default_price",
         "cure_days",
         "traceability_list",
@@ -332,6 +333,12 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
       ({ item }) => <Variations product={item} />
     ),
     builtin(
+      "gtins",
+      "catalog:products.gtins",
+      (product) => product.variations.flatMap((variation) => variation.gtin ?? []),
+      ({ item }) => <Gtins product={item} />
+    ),
+    builtin(
       "glance",
       "catalog:products.glance.title",
       (product) => product.id,
@@ -418,8 +425,29 @@ export const PRODUCTS: HoardKind<ProductRead, ProductDetail> = {
 
 /** A product's variations, each with what is on hand and, for a member who
  *  sees costs, its price and average cost. */
+/** Each variation's GTIN, by the variation's name; the field is left out
+ *  while none has one. */
+function Gtins({ product }: { product: ProductDetail }) {
+  const variationName = useVariationName();
+  const held = product.variations.filter((variation) => variation.gtin);
+  if (held.length === 1 && product.variations.length === 1) {
+    return <span className="tabular-nums">{held[0].gtin}</span>;
+  }
+  return (
+    <ul className="flex flex-col gap-0.5 text-sm">
+      {held.map((variation) => (
+        <li key={variation.id}>
+          {variationName(variation)}: <span className="tabular-nums">{variation.gtin}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Variations({ product }: { product: ProductDetail }) {
   const { id: productId, variations } = product;
+  // GTINs are a column only once one of its variations has one.
+  const withGtins = variations.some((variation) => variation.gtin);
   const { t } = useTranslation("catalog");
   const { read_only } = useSession();
   const queryClient = useQueryClient();
@@ -442,6 +470,7 @@ function Variations({ product }: { product: ProductDetail }) {
           <TableRow>
             <TableHead>{t("products.variation")}</TableHead>
             <TableHead>{t("hoard:common.sku")}</TableHead>
+            {withGtins && <TableHead>{t("items.gtin")}</TableHead>}
             <TableHead className="text-right">{t("hoard:common.onHand")}</TableHead>
             <TableHead className="text-right">{t("products.glance.available")}</TableHead>
             {seesCosts && <TableHead className="text-right">{t("hoard:common.price")}</TableHead>}
@@ -454,6 +483,7 @@ function Variations({ product }: { product: ProductDetail }) {
             <TableRow key={variation.id}>
               <TableCell>{variationName(variation)}</TableCell>
               <TableCell>{variation.sku}</TableCell>
+              {withGtins && <TableCell className="tabular-nums">{variation.gtin}</TableCell>}
               <TableCell className="text-right tabular-nums">
                 {quantity(variation.on_hand)}
               </TableCell>

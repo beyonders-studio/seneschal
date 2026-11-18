@@ -53,9 +53,9 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     409: {
         "description": "IN_USE, TRACKING_UNIT_IN_STOCK, TRACKING_UNIT_IN_PURCHASES, "
         "TRACKING_UNIT_IN_STOCKTAKES, TRACKING_UNIT_IN_RECIPES, TRACKING_UNIT_IN_OWN_RECIPE, "
-        "TRACKING_UNIT_IN_RUNS, AUTO_MANUFACTURE_CURES"
+        "TRACKING_UNIT_IN_RUNS, AUTO_MANUFACTURE_CURES, GTIN_TAKEN"
     },
-    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN"},
+    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN, GTIN_INVALID"},
 }
 
 
@@ -64,6 +64,8 @@ class BaseRead(BaseModel):
     name: str
     status: ItemStatus
     sku: str | None
+    #: Its GTIN, as 14 digits: the barcode number on it.
+    gtin: str | None
     #: The unit stock is counted in.
     tracking_unit_id: int
     low_stock_limit: Decimal | None
@@ -96,6 +98,8 @@ class BaseWrite(BaseModel):
     name: items.Text
     status: ItemStatus = ItemStatus.ACTIVE
     sku: items.OptionalText = None
+    #: Its GTIN: 8, 12, 13 or 14 digits, kept as 14. Left as it is unless sent.
+    gtin: items.OptionalText = None
     tracking_unit_id: int
     low_stock_limit: items.Amount | None = None
     category_id: int | None = None
@@ -154,8 +158,10 @@ async def write_base(db: AsyncSession, base: Base, body: BaseWrite) -> None:
     made = body.auto_manufacture if not unsent else base.auto_manufacture
     if body.cure_days and made not in (None, AutoManufacture.OFF):
         raise refuse(status.HTTP_409_CONFLICT, BaseError.AUTO_MANUFACTURE_CURES)
+    gtin = await items.gtin_written(db, body, base)
     base.sqlmodel_update(
-        body.model_dump(exclude={"start", "type_id"} | unsent)
+        body.model_dump(exclude={"start", "type_id", "gtin"} | unsent)
+        | gtin
         | {
             "type_id": await type_of(
                 db, CategoryKind.BASE, body.type_id, body.category_id, base.type_id

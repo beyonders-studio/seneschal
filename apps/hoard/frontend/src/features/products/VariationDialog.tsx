@@ -15,8 +15,10 @@ import {
 } from "@/api/generated/products/products";
 import { useReadUnitConversion } from "@/api/generated/settings/settings";
 import { SupplierPicker } from "@/features/contacts/SupplierPicker";
+import { usePagePlaces } from "@/features/fields/records";
 import { orNull } from "@/features/items/format";
 import { UnitPicker } from "@/features/items/UnitPicker";
+import { PRODUCTS } from "@/features/products/fields";
 import {
   changedInStore,
   storeVersions,
@@ -88,6 +90,10 @@ function VariationForm({
     Object.entries(variation?.attributes ?? {}).concat(variation ? [] : [["", ""]])
   );
   const [sku, setSku] = useState(variation?.sku ?? "");
+  // Asked for only where the product's page shows its GTINs, or once it has one.
+  const places = usePagePlaces(PRODUCTS);
+  const [gtin, setGtin] = useState(variation?.gtin ?? "");
+  const asksGtin = Boolean(variation?.gtin) || places(product.type_id, "gtins");
   const [price, setPrice] = useState(variation?.price ?? "");
   const [supplierId, setSupplierId] = useState(variation?.supplier_contact_id ?? null);
   const [supplierCode, setSupplierCode] = useState(variation?.supplier_code ?? "");
@@ -128,6 +134,7 @@ function VariationForm({
           .filter(([name, value]) => name && value)
       ),
       sku: orNull(sku),
+      ...(asksGtin ? { gtin: orNull(gtin) } : {}),
       ...(seesCosts ? { price: orNull(price) } : {}),
       supplier_contact_id: supplierId,
       supplier_code: orNull(supplierCode),
@@ -189,6 +196,16 @@ function VariationForm({
           <Field label={t("hoard:common.sku")}>
             <Input value={sku} onChange={(event) => setSku(event.target.value)} />
           </Field>
+          {asksGtin && (
+            <Field label={t("items.gtin")} hint={t("items.gtinHint")}>
+              <Input
+                value={gtin}
+                inputMode="numeric"
+                autoComplete="off"
+                onChange={(event) => setGtin(event.target.value)}
+              />
+            </Field>
+          )}
           {seesCosts && (
             <Field label={t("hoard:common.price")} hint={t("products.priceHint")}>
               <Input

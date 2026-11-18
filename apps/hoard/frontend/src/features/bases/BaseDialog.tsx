@@ -16,7 +16,7 @@ import {
   ItemStatus,
 } from "@/api/generated/hoard.schemas";
 import { BASES } from "@/features/bases/fields";
-import { saveMoved, useTypeChoice } from "@/features/fields/records";
+import { saveMoved, usePagePlaces, useTypeChoice } from "@/features/fields/records";
 import { CureDaysField, days } from "@/features/items/CureDaysField";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
@@ -88,6 +88,10 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
   const [lowStockLimit, setLowStockLimit] = useState(base?.low_stock_limit ?? "");
   const [cureDays, setCureDays] = useState(base?.cure_days?.toString() ?? "");
   const type = useTypeChoice(BASES, base);
+  // Asked for only where the base's page shows it, or once it has one.
+  const places = usePagePlaces(BASES);
+  const [gtin, setGtin] = useState(base?.gtin ?? "");
+  const asksGtin = Boolean(base?.gtin) || places(type.typeId ?? undefined, "gtin");
   const save = useMutation({
     mutationFn: async ({ body, moved }: { body: BaseCreate; moved: HoardPropertyValueInput[] }) => {
       if (base) {
@@ -113,6 +117,7 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
       status,
       notes: orNull(notes),
       sku: orNull(sku),
+      ...(asksGtin ? { gtin: orNull(gtin) } : {}),
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
       low_stock_limit: orNull(lowStockLimit),
@@ -136,6 +141,16 @@ function BaseForm({ base, onSaved }: { base?: BaseDetail; onSaved: (base: BaseDe
           <Field label={t("hoard:common.sku")}>
             <Input value={sku} onChange={(event) => setSku(event.target.value)} />
           </Field>
+          {asksGtin && (
+            <Field label={t("items.gtin")} hint={t("items.gtinHint")}>
+              <Input
+                value={gtin}
+                inputMode="numeric"
+                autoComplete="off"
+                onChange={(event) => setGtin(event.target.value)}
+              />
+            </Field>
+          )}
           <Field label={t("hoard:common.category")}>
             <IdSelect
               value={categoryId}

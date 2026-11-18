@@ -83,7 +83,9 @@
     "TYPE_UNKNOWN": "Pick one of the types of this kind of record.",
     "COSTS_HIDDEN": "Only members who see costs can set them.",
     "COMMUNITY_PAGE_ADMIN_ONLY": "Only the community's admins can open Hoard for the whole community. Choose an initiative instead.",
-    "CROSS_SITE_REQUEST": "That request didn't come from Hoard's own pages."
+    "CROSS_SITE_REQUEST": "That request didn't come from Hoard's own pages.",
+    "GTIN_INVALID": "That isn't a GTIN: it's 8, 12, 13 or 14 digits, and the last is a check digit. Check it against the barcode.",
+    "GTIN_TAKEN": "Another material, base or product already has that GTIN."
   },
   "units": {
     "short": {

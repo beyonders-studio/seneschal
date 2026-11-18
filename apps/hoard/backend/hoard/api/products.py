@@ -95,8 +95,11 @@ _READ: dict[int | str, dict[str, Any]] = {
 _CHANGE: dict[int | str, dict[str, Any]] = {
     **_READ,
     403: {"description": "READ_ONLY"},
-    409: {"description": "LAST_VARIATION, LISTED_IN_STORE, IN_USE"},
-    422: {"description": "CATEGORY_UNKNOWN, TYPE_UNKNOWN, UNIT_UNKNOWN, AMOUNT_TOO_SMALL"},
+    409: {"description": "LAST_VARIATION, LISTED_IN_STORE, IN_USE, GTIN_TAKEN"},
+    422: {
+        "description": "CATEGORY_UNKNOWN, TYPE_UNKNOWN, UNIT_UNKNOWN, AMOUNT_TOO_SMALL, "
+        "GTIN_INVALID"
+    },
 }
 #: A change written to the stores that list the product first.
 _CHANGE_LIVE: dict[int | str, dict[str, Any]] = {
@@ -205,6 +208,8 @@ class ProductVariationRead(items.ItemHoldings):
     #: simple product's default.
     attributes: dict[str, str]
     sku: str | None
+    #: Its GTIN, as 14 digits: the barcode number on it.
+    gtin: str | None
     is_default: bool
     #: Its own price, when not the product's default; null without ``costs``.
     price: Decimal | None
@@ -301,6 +306,8 @@ class ProductVariationWrite(BaseModel):
 
     attributes: dict[items.Text, items.Text] = Field(default_factory=dict)
     sku: items.OptionalText = None
+    #: Its GTIN: 8, 12, 13 or 14 digits, kept as 14. Left as it is unless sent.
+    gtin: items.OptionalText = None
     price: items.Amount | None = None
     #: Left as it is unless sent; null takes its product's.
     auto_manufacture: AutoManufacture | None = None
@@ -334,7 +341,7 @@ def _written(body: ProductWrite | ProductVariationWrite, sees_costs: bool, price
     auto-manufacture only when it is sent."""
     unsent = {"auto_manufacture"} - body.model_fields_set
     return body.model_dump(
-        exclude=_hidden(sees_costs, price) | unsent | {"store_versions", "type_id"}
+        exclude=_hidden(sees_costs, price) | unsent | {"store_versions", "type_id", "gtin"}
     )
 
 
@@ -633,7 +640,10 @@ async def write_variation(
 ) -> Variation:
     """Write ``variation`` as ``body`` leaves it, adding it to its product when
     it is new. Nothing reaches the stores that list it."""
-    variation.sqlmodel_update(await _variation_written(db, body, sees_costs))
+    variation.sqlmodel_update(
+        await _variation_written(db, body, sees_costs)
+        | await items.gtin_written(db, body, variation)
+    )
     if variation.id is None:
         return await stock.add_variation(db, variation)
     db.add(variation)

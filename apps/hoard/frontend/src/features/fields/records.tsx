@@ -41,13 +41,14 @@ import { type DetailKind, DetailLayoutView, type ItemHome } from "@/ui/layouts/D
 import {
   type DetailLayoutSpec,
   detailLayoutSpec,
+  LAYOUT_REGIONS,
   missingRequired,
   propertyFilled,
   type Region,
   requiredKeys,
   type StoredRegions,
 } from "@/ui/layouts/detailLayout";
-import { columnsOf } from "@/ui/layouts/draft";
+import { columnsOf, namedFields } from "@/ui/layouts/draft";
 import {
   type FieldSaveState,
   ItemDraftContext,
@@ -531,6 +532,25 @@ export function RecordDetail<R extends HoardRecord, I extends R>({
   return (
     <DetailLayoutView detail={detail} item={item} context={home} layout={page(item.type_id)} />
   );
+}
+
+/**
+ * Whether a record's page, for a record of the type `typeId`, places the
+ * field `id`: the type's layout as it was changed, region by region, else as
+ * its shape ships. A dialog asks only for a field the reader's layout shows,
+ * so a field hidden from the page is not asked for either.
+ */
+export function usePagePlaces<R extends HoardRecord, I extends R>(
+  of: HoardKind<R, I>
+): (typeId: number | undefined, id: string) => boolean {
+  const shapeOf = useShapeOf(of);
+  const { page } = useStoredLayouts(of.kind);
+  return (typeId, id) => {
+    const stored = page(typeId);
+    const { shipped } = shapeOf(typeId);
+    const nodes = LAYOUT_REGIONS.flatMap((region) => stored?.[region] ?? shipped[region]);
+    return namedFields({ type: "section", children: nodes }).has(id);
+  };
 }
 
 /**
