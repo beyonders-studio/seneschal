@@ -176,7 +176,7 @@ async def _read(db: OrganizationSession, purchase: Purchase, sees_costs: bool) -
             )
         ).all()
     }
-    landed = purchases.landed_costs(purchase, lines)
+    landed = purchases.landed_costs(purchase, lines, tax_in_cost=await purchases.tax_in_cost(db))
     value = sum((line.purchase_quantity * line.unit_cost for line in lines), Decimal(0))
     return PurchaseRead(
         id=purchase.id,

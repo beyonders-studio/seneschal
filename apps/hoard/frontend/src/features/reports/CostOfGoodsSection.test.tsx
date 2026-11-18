@@ -86,6 +86,19 @@ describe("CostOfGoodsSection", () => {
     const year = String(new Date().getFullYear());
     const params = asked.find((request) => request.url === "/api/v1/reports/cost-of-goods")?.params;
     expect(params.start).toBe(`${year}-01-01`);
+    expect(screen.getByText(/without labour or purchase tax/)).toBeTruthy();
+  });
+
+  it("says purchase tax counts where the organization counts it in cost", async () => {
+    await openSignedIn("/reports", signedIn({ page: "reports", permissions: ["use", SEE_COSTS] }), {
+      ...answers([row({})]),
+      "GET /api/v1/settings": {
+        status: 200,
+        data: { currency: "EUR", purchase_tax_in_cost: true },
+      },
+    });
+
+    expect(await screen.findByText(/counting materials and the tax paid on them/)).toBeTruthy();
   });
 
   it("shows the mass balance to every member, but not what the goods cost", async () => {

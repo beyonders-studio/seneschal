@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pytest
 from sqlmodel import select
 
@@ -9,6 +11,7 @@ from hoard import units
 from hoard.records import (
     AdjustmentReason,
     DefaultReason,
+    Item,
     ItemType,
     OrganizationSettings,
     Unit,
@@ -26,6 +29,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
         "regimes": [],
         "labour_rate": None,
         "overhead": None,
+        "purchase_tax_in_cost": False,
     }
 
     db.add(OrganizationSettings(organization_id=db.organization_id, currency="EUR"))
@@ -43,6 +47,7 @@ async def test_settings_read_as_their_defaults_until_changed(client, sign_in, db
         "regimes": [],
         "labour_rate": None,
         "overhead": None,
+        "purchase_tax_in_cost": False,
     }
     # Regimes are kept once each, in their own order.
     ticked = await client.put(
@@ -105,6 +110,37 @@ async def test_the_labour_rate_and_overhead_are_costs_an_admin_sets(client, sign
     await sign_in(client, ("costs",), admin=True)
     cleared = await client.put("/api/v1/settings", json={setting: None})
     assert cleared.json()[setting] is None
+
+
+async def test_counting_purchase_tax_in_cost_re_derives_what_purchases_cost(
+    client, sign_in, db: WriteSession, material, buy
+):
+    flour = await material("Flour")
+    await buy((flour, "10", "2"), tax=Decimal(5))
+    await db.commit()
+
+    await sign_in(client, ("costs",))
+    refused = await client.put("/api/v1/settings", json={"purchase_tax_in_cost": True})
+    assert (refused.status_code, refused.json()) == (403, {"detail": "ADMIN_ONLY"})
+    await sign_in(client, admin=True)
+    unseen = await client.put("/api/v1/settings", json={"purchase_tax_in_cost": True})
+    assert (unseen.status_code, unseen.json()) == (403, {"detail": "COSTS_HIDDEN"})
+
+    async def average() -> Decimal:
+        item = await db.get_one(Item, flour.id, populate_existing=True)
+        return item.average_cost
+
+    await sign_in(client, ("costs",), admin=True)
+    counted = await client.put("/api/v1/settings", json={"purchase_tax_in_cost": True})
+    assert counted.json()["purchase_tax_in_cost"] is True
+    assert await average() == Decimal("2.5")
+    kept = await client.put("/api/v1/settings", json={"currency": "CAD"})
+    assert kept.json()["purchase_tax_in_cost"] is True
+    assert (await client.get("/api/v1/settings")).json()["purchase_tax_in_cost"] is True
+
+    left_out = await client.put("/api/v1/settings", json={"purchase_tax_in_cost": False})
+    assert left_out.json()["purchase_tax_in_cost"] is False
+    assert await average() == 2
 
 
 #: A change to each kind of setting, as a method, path and body.

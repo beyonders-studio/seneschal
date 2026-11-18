@@ -2774,6 +2774,7 @@ export interface SettingsRead {
   regimes: Regime[];
   labour_rate: string | null;
   overhead: string | null;
+  purchase_tax_in_cost: boolean;
 }
 
 export interface SettingsReasonRead {
@@ -2851,8 +2852,8 @@ export interface SettingsUnitWrite {
 /**
  * The settings to change: each left as it is unless sent. The words for
  * a base and a recipe, the labour rate and the overhead may be cleared with
- * null; the labour rate and the overhead are refused from a member who
- * doesn't see costs.
+ * null; the labour rate, the overhead and whether purchase tax counts in
+ * cost are refused from a member who doesn't see costs.
  */
 export interface SettingsUpdate {
   currency?: string | null;
@@ -2862,6 +2863,7 @@ export interface SettingsUpdate {
   regimes?: Regime[] | null;
   labour_rate?: number | string | null;
   overhead?: number | string | null;
+  purchase_tax_in_cost?: boolean | null;
 }
 
 export type SetupAddWords = { [key: string]: string };

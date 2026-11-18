@@ -311,7 +311,8 @@ export function useReadValuationReport<
 
 /**
  * What the goods cost from ``start`` to ``end``, both days included, at
- * moving average cost: materials only, without labour or purchase tax.
+ * moving average cost: materials only, without labour, and without purchase
+ * tax unless the organization counts it in cost.
  * @summary Read Cost Of Goods Report
  */
 export const readCostOfGoodsReport = (
@@ -362,7 +363,8 @@ export type ReadCostOfGoodsReportQueryError = ErrorType<void>;
 
 /**
  * What the goods cost from ``start`` to ``end``, both days included, at
- * moving average cost: materials only, without labour or purchase tax.
+ * moving average cost: materials only, without labour, and without purchase
+ * tax unless the organization counts it in cost.
  * @summary Read Cost Of Goods Report
  */
 export function useReadCostOfGoodsReport<
@@ -388,7 +390,8 @@ export function useReadCostOfGoodsReport<
 ): DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * What the goods cost from ``start`` to ``end``, both days included, at
- * moving average cost: materials only, without labour or purchase tax.
+ * moving average cost: materials only, without labour, and without purchase
+ * tax unless the organization counts it in cost.
  * @summary Read Cost Of Goods Report
  */
 export function useReadCostOfGoodsReport<
@@ -414,7 +417,8 @@ export function useReadCostOfGoodsReport<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * What the goods cost from ``start`` to ``end``, both days included, at
- * moving average cost: materials only, without labour or purchase tax.
+ * moving average cost: materials only, without labour, and without purchase
+ * tax unless the organization counts it in cost.
  * @summary Read Cost Of Goods Report
  */
 export function useReadCostOfGoodsReport<
@@ -432,7 +436,8 @@ export function useReadCostOfGoodsReport<
 ): UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 /**
  * What the goods cost from ``start`` to ``end``, both days included, at
- * moving average cost: materials only, without labour or purchase tax.
+ * moving average cost: materials only, without labour, and without purchase
+ * tax unless the organization counts it in cost.
  * @summary Read Cost Of Goods Report
  */
 export function useReadCostOfGoodsReport<

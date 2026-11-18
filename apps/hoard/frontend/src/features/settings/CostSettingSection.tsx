@@ -17,6 +17,8 @@ import { useSeesCosts } from "@/lib/permissions";
 import { Button } from "@/ui/button";
 import { Field } from "@/ui/field";
 import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
+import { Switch } from "@/ui/switch";
 
 /** The settings that are costs, each with its words under `settings.<words>`
  *  in the catalog namespace. */
@@ -88,5 +90,40 @@ function CostSettingForm({ setting, current }: { setting: CostSetting; current: 
         {t("hoard:common.save")}
       </Button>
     </form>
+  );
+}
+
+/** Whether the tax paid on a purchase counts in what its lines cost, for a
+ *  business that can't claim it back: shown, like the costs beside it, only
+ *  to a member who sees costs, and switched by an admin. */
+export function PurchaseTaxSection() {
+  const { t } = useTranslation("catalog");
+  const queryClient = useQueryClient();
+  const settings = useReadSettings().data;
+  const changes = useChangesSettings();
+  const save = useMutation({
+    mutationFn: (counted: boolean) => updateSettings({ purchase_tax_in_cost: counted }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: getReadSettingsQueryKey() });
+      toast.success(t("settings.purchaseTax.saved"));
+    },
+    onError: (error) => toast.error(errorMessage(error, t, "settings.saveFailed")),
+  });
+  if (!useSeesCosts() || !settings) return null;
+  return (
+    <SettingsSection id="purchaseTax" title={t("settings.purchaseTax.title")}>
+      <p className="text-sm text-muted-foreground">{t("settings.purchaseTax.description")}</p>
+      <span className="inline-flex items-center gap-2">
+        <Switch
+          id="purchase-tax-in-cost"
+          checked={settings.purchase_tax_in_cost}
+          disabled={!changes || save.isPending}
+          onCheckedChange={(counted) => save.mutate(counted)}
+        />
+        <Label htmlFor="purchase-tax-in-cost" className="text-sm font-normal">
+          {t("settings.purchaseTax.field")}
+        </Label>
+      </span>
+    </SettingsSection>
   );
 }

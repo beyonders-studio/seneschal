@@ -87,7 +87,7 @@ async def _received(db: WriteSession, line: PurchaseLine) -> tuple[Lot, Adjustme
     return lot, adjustment
 
 
-async def test_discount_and_shipping_spread_by_value_and_tax_stays_out(
+async def test_discount_and_shipping_spread_by_value_and_tax_only_where_it_counts(
     db: WriteSession, material, buy
 ):
     flour, sugar = await material("Flour"), await material("Sugar")
@@ -116,6 +116,12 @@ async def test_discount_and_shipping_spread_by_value_and_tax_stays_out(
         lot.id,
         Decimal("2.2"),
     )
+
+    # Counted in cost, the tax spreads with them: 8.5 of 50, so flour's 20 takes 3.4.
+    lines = await _lines(db, purchase.id)
+    assert [
+        landed_costs(purchase, lines, tax_in_cost=taxed)[flour_line.id] for taxed in (False, True)
+    ] == [Decimal("2.2"), Decimal("2.34")]
 
 
 async def test_editing_a_purchase_rederives_the_cost_of_what_followed(
@@ -208,7 +214,7 @@ async def test_receiving_part_of_a_line_splits_it_and_taking_it_back_merges_them
     purchase, [pound, other] = await _order(
         db, main, (flour, "1", "453.592", "9"), (sugar, "1", "1", "1"), shipping=Decimal(10)
     )
-    whole = landed_costs(purchase, [pound, other])
+    whole = landed_costs(purchase, [pound, other], tax_in_cost=False)
 
     with pytest.raises(PurchaseRefused) as refused:
         await receive_line(db, pound, quantity=Decimal("453.593"))
@@ -224,7 +230,7 @@ async def test_receiving_part_of_a_line_splits_it_and_taking_it_back_merges_them
         (Decimal("0.440925"), Decimal(200), 9, date(2026, 11, 15)),
     ]
     # Their values add up to the line's, so the spread is as it was.
-    split = landed_costs(purchase, await _lines(db, purchase.id))
+    split = landed_costs(purchase, await _lines(db, purchase.id), tax_in_cost=False)
     assert (split[pound.id], split[part.id], split[other.id]) == (
         whole[pound.id],
         whole[pound.id],

@@ -122,6 +122,7 @@ describe("Settings", () => {
     expect(screen.queryByRole("heading", { name: "Properties" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Labour rate" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "Overhead" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Purchase tax" })).toBeNull();
   });
 
   it("shows the labour rate to a member who sees costs", async () => {
@@ -174,6 +175,48 @@ describe("Settings", () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText("Percent")).toHaveProperty("value", "12.5"));
+  });
+
+  it("shows a member who sees costs whether purchase tax counts in cost", async () => {
+    await openSignedIn("/settings", signedIn({ page: "settings", permissions: ["use", "costs"] }), {
+      ...SETTINGS,
+      "GET /api/v1/settings": {
+        status: 200,
+        data: { currency: "EUR", purchase_tax_in_cost: true },
+      },
+    });
+
+    const counted = await screen.findByRole("switch", { name: "Purchase tax counts in cost" });
+    expect(counted.getAttribute("aria-checked")).toBe("true");
+    expect(counted).toHaveProperty("disabled", true);
+  });
+
+  it("lets an admin who sees costs count purchase tax in cost", async () => {
+    const asked = await openSignedIn(
+      "/settings",
+      signedIn({ page: "settings", admin: true, permissions: ["use", "costs"] }),
+      {
+        ...SETTINGS,
+        "GET /api/v1/settings": {
+          status: 200,
+          data: { currency: "EUR", purchase_tax_in_cost: false },
+        },
+        "PUT /api/v1/settings": {
+          status: 200,
+          data: { currency: "EUR", purchase_tax_in_cost: true },
+        },
+      }
+    );
+
+    const counted = await screen.findByRole("switch", { name: "Purchase tax counts in cost" });
+    expect(counted.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(counted);
+    await waitFor(() =>
+      expect(
+        asked.find((request) => request.method === "put" && request.url === "/api/v1/settings")
+          ?.data
+      ).toBe(JSON.stringify({ purchase_tax_in_cost: true }))
+    );
   });
 
   it("lets an admin keep each kind's types and name a category's default type", async () => {

@@ -1,8 +1,11 @@
 """Purchases: receiving their lines, and what each line cost landed.
 
 A purchase's discount and shipping are spread over its lines by value
-(quantity times unit cost); its tax stays out of every cost. A line's landed
-cost is its value and its share, per tracking unit.
+(quantity times unit cost). Its tax stays out of every cost, for a business
+that claims back the tax it pays on what it buys; one that can't counts it in
+cost (``OrganizationSettings.purchase_tax_in_cost``), and its tax is spread
+with the shipping. A line's landed cost is its value and its share, per
+tracking unit.
 
 A line buys a material or a product's variation, never a base or a bundle's
 variation, which has no stock of its own (:func:`bought`). Receiving it makes
@@ -16,7 +19,9 @@ proportion (``hoard.units.split``), so their values add up to the line's and
 the discount and shipping spread as before. Taking the part back puts it back
 into the rest while that is still on order as it was. After a purchase or its
 lines are edited, :func:`rederive_purchase` carries the edit into their
-adjustments and lots and re-derives each item's cost.
+adjustments and lots and re-derives each item's cost; after the organization
+starts or stops counting tax in cost, :func:`rederive_taxed_purchases` does so
+for every purchase that paid tax.
 """
 
 from __future__ import annotations
@@ -35,13 +40,14 @@ from hoard.records import (
     AdjustmentKind,
     Lot,
     Material,
+    OrganizationSettings,
     Product,
     Purchase,
     PurchaseLine,
     Variation,
 )
 from hoard.stock import StockError, StockRefused
-from seneschal_core.db import WriteSession
+from seneschal_core.db import OrganizationSession, WriteSession
 
 
 class PurchaseError(StrEnum):
@@ -81,10 +87,14 @@ def _spread(amount: Decimal, weights: list[Decimal]) -> list[Decimal]:
     return [*shares, amount - sum(shares, Decimal(0))]
 
 
-def landed_costs(purchase: Purchase, lines: list[PurchaseLine]) -> dict[int, Decimal]:
-    """What one tracking unit of each of ``lines`` cost, by line id."""
+def landed_costs(
+    purchase: Purchase, lines: list[PurchaseLine], *, tax_in_cost: bool
+) -> dict[int, Decimal]:
+    """What one tracking unit of each of ``lines`` cost, by line id: with a
+    share of the purchase's tax when ``tax_in_cost``."""
     values = [line.purchase_quantity * line.unit_cost for line in lines]
-    shares = _spread(purchase.shipping - purchase.discount, values)
+    spread = purchase.shipping - purchase.discount + (purchase.tax if tax_in_cost else 0)
+    shares = _spread(spread, values)
     return {
         line.id: ((value + share) / line.tracking_quantity).quantize(PLACES)
         for line, value, share in zip(lines, values, shares, strict=True)
@@ -112,14 +122,20 @@ async def _lines(db: WriteSession, purchase_id: int) -> list[PurchaseLine]:
     return list(lines.all())
 
 
-async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
+async def tax_in_cost(db: OrganizationSession) -> bool:
+    """Whether the organization counts the tax it pays on a purchase in what
+    the purchase cost."""
+    return bool((await db.exec(select(OrganizationSettings.purchase_tax_in_cost))).first())
+
+
+async def _land(db: WriteSession, purchase: Purchase, taxed: bool) -> set[int]:
     """Carry a purchase's location and lines into its received lines'
-    adjustments and lots, at their landed costs and on the days they arrived,
-    and re-derive the cost of every item it buys. Refused when a line
-    arrived before the purchase's date."""
+    adjustments and lots, at their landed costs and on the days they arrived.
+    Answers the items it buys. Refused when a line arrived before the
+    purchase's date."""
     await db.flush()
     lines = await _lines(db, purchase.id)
-    costs = landed_costs(purchase, lines)
+    costs = landed_costs(purchase, lines, tax_in_cost=taxed)
     for line in lines:
         if line.received_on is None:
             continue
@@ -137,7 +153,29 @@ async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
         if lot is not None:
             lot.dated_on = line.received_on
             lot.location_id = purchase.location_id
-    for item_id in sorted({line.item_id for line in lines}):
+    return {line.item_id for line in lines}
+
+
+async def rederive_purchase(db: WriteSession, purchase: Purchase) -> None:
+    """Carry a purchase's location and lines into its received lines'
+    adjustments and lots, at their landed costs and on the days they arrived,
+    and re-derive the cost of every item it buys. Refused when a line
+    arrived before the purchase's date."""
+    for item_id in sorted(await _land(db, purchase, await tax_in_cost(db))):
+        await costing.rederive(db, item_id)
+
+
+async def rederive_taxed_purchases(db: WriteSession) -> None:
+    """Land every purchase that paid tax again, as the organization now counts
+    tax in cost or not, and re-derive the cost of every item they buy, on
+    through the runs that consumed it."""
+    await db.flush()
+    taxed = await tax_in_cost(db)
+    found = await db.exec(select(Purchase).where(Purchase.tax > 0).order_by(col(Purchase.id)))
+    items: set[int] = set()
+    for purchase in found.all():
+        items |= await _land(db, purchase, taxed)
+    for item_id in sorted(items):
         await costing.rederive(db, item_id)
 
 

@@ -1,11 +1,13 @@
 """The organization's settings: its currency, the rules it keeps records for,
-what it calls a base and a recipe, what an hour of work costs and the overhead
-on what goods cost, units,
+what it calls a base and a recipe, what an hour of work costs, the overhead
+on what goods cost and whether purchase tax counts in it, units,
 categories with their picking rules and default types, the types of
 material, base and product, locations and adjustment reasons. Every member
 reads them, but for the labour rate and the overhead, which only a member who
 sees costs reads; only a community admin changes them
-(:data:`~hoard.api.deps.AdminDep`), and those only one who sees costs.
+(:data:`~hoard.api.deps.AdminDep`), and those, and whether purchase tax counts
+in cost, only one who sees costs. Changing whether purchase tax counts in cost
+re-derives what every purchase that paid tax cost (``hoard.purchases``).
 
 An organization starts with its main location, the default adjustment reasons,
 Hoard's standard units (``hoard.units``) and each kind's default type, which
@@ -32,7 +34,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlmodel import SQLModel, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from hoard import stock, units
+from hoard import purchases, stock, units
 from hoard.api.adjustments import AdjustmentError
 from hoard.api.deps import AdminDep, HoardError, SeesCostsDep
 from hoard.records import (
@@ -137,6 +139,8 @@ class SettingsRead(BaseModel):
     #: The percentage added to what goods cost for overhead; null until it is
     #: set, and without ``costs``.
     overhead: Decimal | None
+    #: Whether the tax paid on a purchase counts in what its lines cost.
+    purchase_tax_in_cost: bool
 
 
 #: An amount of money or a percentage, never below zero.
@@ -154,8 +158,8 @@ Word = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max
 class SettingsUpdate(BaseModel):
     """The settings to change: each left as it is unless sent. The words for
     a base and a recipe, the labour rate and the overhead may be cleared with
-    null; the labour rate and the overhead are refused from a member who
-    doesn't see costs."""
+    null; the labour rate, the overhead and whether purchase tax counts in
+    cost are refused from a member who doesn't see costs."""
 
     currency: Annotated[str, Field(pattern=r"^[A-Z]{3}$")] | None = None
     base_word: Word | None = None
@@ -164,6 +168,7 @@ class SettingsUpdate(BaseModel):
     regimes: list[Regime] | None = None
     labour_rate: NonNegative | None = None
     overhead: NonNegative | None = None
+    purchase_tax_in_cost: bool | None = None
 
 
 class SettingsUnitRead(BaseModel):
@@ -396,8 +401,14 @@ async def update_settings(
         changes[name] = getattr(body, name)
     for name in body.model_fields_set & set(WORDS):
         changes[name] = getattr(body, name)
+    taxed = body.purchase_tax_in_cost
+    if taxed is not None:
+        _sees_costs(sees_costs)
+    retaxed = taxed is not None and taxed != settings.purchase_tax_in_cost
     settings.sqlmodel_update(changes)
     db.add(settings)
+    if retaxed:
+        await purchases.rederive_taxed_purchases(db)
     await db.commit()
     await db.refresh(settings)
     return _settings(settings, sees_costs)

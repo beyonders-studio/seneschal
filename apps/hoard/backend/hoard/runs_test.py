@@ -24,6 +24,7 @@ from hoard.records import (
     Item,
     Location,
     Lot,
+    OrganizationSettings,
     OutboxEvent,
     Picking,
     Product,
@@ -296,6 +297,42 @@ async def test_a_purchase_corrected_flows_through_runs_to_what_they_made(
     assert await _average(db, flour.id) == 3
     # Flour at 3: dough costs 12 over 4, and bread two of those.
     assert (await _average(db, dough.id), await _average(db, bread.id)) == (3, 6)
+
+
+async def test_counting_purchase_tax_in_cost_flows_through_runs_to_what_they_made(
+    db: WriteSession, main: Location, material, base, buy
+):
+    flour = await material("Flour")
+    await buy((flour, "10", "2"), tax=Decimal(10))
+    await buy((flour, "10", "2"))
+    dough = await base("Dough")
+    await _recipe(db, (flour, "4"), base_id=dough.id)
+    run = await _complete(db, await _open(db, dough.id, main), "4", 3)
+    output = (
+        await db.exec(
+            select(Adjustment).where(
+                Adjustment.production_run_id == run.id,
+                col(Adjustment.production_run_line_id).is_(None),
+            )
+        )
+    ).one()
+
+    async def costs() -> tuple[Decimal, Decimal, Decimal]:
+        await db.refresh(output)
+        return await _average(db, flour.id), await _average(db, dough.id), output.unit_cost
+
+    assert await costs() == (2, 2, 2)
+
+    settings = OrganizationSettings(organization_id=db.organization_id, purchase_tax_in_cost=True)
+    db.add(settings)
+    await purchases.rederive_taxed_purchases(db)
+    # The 10 of tax lands on the first 10 flour at 3, so 20 average 2.5, and
+    # dough costs 10 over 4.
+    assert await costs() == (Decimal("2.5"), Decimal("2.5"), Decimal("2.5"))
+
+    settings.purchase_tax_in_cost = False
+    await purchases.rederive_taxed_purchases(db)
+    assert await costs() == (2, 2, 2)
 
 
 async def test_a_run_consuming_what_cost_nothing_is_uncosted_until_it_does(

@@ -773,7 +773,8 @@ class AdjustmentReason(OrganizationRow, Stamped, table=True):
 
 class Purchase(OrganizationRow, Stamped, table=True):
     """Materials and products bought from a supplier, received at a location. Its discount
-    and shipping are spread over its lines by value; its tax is not a cost."""
+    and shipping are spread over its lines by value, and its tax with them where the
+    organization counts purchase tax in cost (``hoard.purchases``)."""
 
     __tablename__ = "purchases"
     __table_args__ = (
@@ -1101,6 +1102,9 @@ class OrganizationSettings(OrganizationRow, Stamped, table=True):
     labour_rate: Decimal | None = amount(None)
     #: The share of what goods cost added for overhead, in percent; None until set.
     overhead: Decimal | None = amount(None)
+    #: Whether the tax paid on a purchase counts in what its lines cost, for a
+    #: business that can't claim it back.
+    purchase_tax_in_cost: bool = False
 
 
 class Image(OrganizationRow, Stamped, table=True):
