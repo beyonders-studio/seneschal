@@ -97,6 +97,60 @@ async def test_a_base_is_added_edited_and_removed_and_holds_its_properties(
     assert (kept.status_code, kept.json()) == (409, {"detail": "IN_USE"})
 
 
+async def test_a_base_set_to_auto_manufacture_never_cures(
+    client, sign_in, db: WriteSession, unit: Unit
+):
+    await db.commit()
+    await sign_in(client)
+    kit = (
+        await client.post(
+            "/api/v1/bases",
+            json={
+                "name": "Packaging kit",
+                "tracking_unit_id": unit.id,
+                "auto_manufacture": "always",
+            },
+        )
+    ).json()
+    assert kit["auto_manufacture"] == "always"
+    url = f"/api/v1/bases/{kit['id']}"
+
+    # An edit that doesn't send it leaves it as it was, and keeps it from curing.
+    cured = await client.put(
+        url, json={"name": "Packaging kit", "tracking_unit_id": unit.id, "cure_days": 3}
+    )
+    assert (cured.status_code, cured.json()) == (409, {"detail": "AUTO_MANUFACTURE_CURES"})
+    renamed = await client.put(url, json={"name": "Tea kit", "tracking_unit_id": unit.id})
+    assert renamed.json()["auto_manufacture"] == "always"
+
+    # Off, it may cure; curing, it may not be set again.
+    cured = await client.put(
+        url,
+        json={
+            "name": "Tea kit",
+            "tracking_unit_id": unit.id,
+            "cure_days": 3,
+            "auto_manufacture": None,
+        },
+    )
+    assert (cured.json()["cure_days"], cured.json()["auto_manufacture"]) == (3, None)
+    for answer in ("out_of_stock", "always"):
+        set_again = await client.put(
+            url,
+            json={
+                "name": "Tea kit",
+                "tracking_unit_id": unit.id,
+                "cure_days": 3,
+                "auto_manufacture": answer,
+            },
+        )
+        assert set_again.status_code == 409
+    made = await client.put(
+        url, json={"name": "Tea kit", "tracking_unit_id": unit.id, "auto_manufacture": "off"}
+    )
+    assert (made.json()["cure_days"], made.json()["auto_manufacture"]) == (None, "off")
+
+
 async def test_bases_are_moved_counted_reported_and_exported_beside_materials(
     client, sign_in, db: WriteSession, main: Location, base, export
 ):

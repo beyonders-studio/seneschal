@@ -115,9 +115,10 @@ export const Allergen = {
 } as const;
 
 /**
- * Whether a store order makes what it sells: never, always, or only what
- * is out of stock. A product or variation with none takes its product's,
- * then the organization's.
+ * Whether a store order makes what it sells, or a run the bases it uses:
+ * never, always, or only what is out of stock. A product or variation with
+ * none takes its product's, then the organization's; a base with none is
+ * never made so (``hoard.runs``).
  */
 export type AutoManufacture = (typeof AutoManufacture)[keyof typeof AutoManufacture];
 
@@ -175,6 +176,7 @@ export interface BaseCreate {
   category_id?: number | null;
   type_id?: number | null;
   cure_days?: number | null;
+  auto_manufacture?: AutoManufacture | null;
   notes?: string | null;
   start?: ItemStart | null;
 }
@@ -530,6 +532,7 @@ export interface BaseDetail {
   category_id: number | null;
   type_id: number;
   cure_days: number | null;
+  auto_manufacture: AutoManufacture | null;
   average_cost: string | null;
   notes: string | null;
   properties: HoardPropertySummary[];
@@ -546,6 +549,7 @@ export interface BaseRead {
   category_id: number | null;
   type_id: number;
   cure_days: number | null;
+  auto_manufacture: AutoManufacture | null;
   on_hand: string;
   average_cost: string | null;
   notes: string | null;
@@ -568,6 +572,7 @@ export interface BaseWrite {
   category_id?: number | null;
   type_id?: number | null;
   cure_days?: number | null;
+  auto_manufacture?: AutoManufacture | null;
   notes?: string | null;
 }
 

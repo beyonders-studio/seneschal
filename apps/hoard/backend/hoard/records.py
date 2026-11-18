@@ -272,9 +272,10 @@ class Channel(StrEnum):
 
 
 class AutoManufacture(StrEnum):
-    """Whether a store order makes what it sells: never, always, or only what
-    is out of stock. A product or variation with none takes its product's,
-    then the organization's."""
+    """Whether a store order makes what it sells, or a run the bases it uses:
+    never, always, or only what is out of stock. A product or variation with
+    none takes its product's, then the organization's; a base with none is
+    never made so (``hoard.runs``)."""
 
     OFF = "off"
     ALWAYS = "always"
@@ -368,8 +369,8 @@ ALLERGENS_CHECK = "allergens <@ ARRAY[{}]::text[]".format(
 
 
 def auto_manufacture() -> Any:
-    """Whether a store order makes what it sells, or None to take what the
-    level above says."""
+    """Whether it is made when it is needed (:class:`AutoManufacture`), or None
+    to take what the level above says, or, for a base, never."""
     return Field(
         default=None, sa_column=enum_column(AutoManufacture, "auto_manufacture", nullable=True)
     )
@@ -634,6 +635,8 @@ class Base(OrganizationRow, Stamped, table=True):
     low_stock_limit: Decimal | None = amount(None)
     #: How many days what a run makes of it cures before it is used; None for none.
     cure_days: int | None = None
+    #: Whether a run that uses it makes it first; never while it cures.
+    auto_manufacture: AutoManufacture | None = auto_manufacture()
     notes: str | None = None
 
 

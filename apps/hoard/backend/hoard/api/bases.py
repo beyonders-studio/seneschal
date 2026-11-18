@@ -5,13 +5,15 @@ A base's average cost is sent only to a member who sees costs; none is taken,
 since the runs that make it set it (``hoard.costing``), but for the unit cost
 of the stock a new base starts with. Its recipe is kept under ``/recipes``,
 and its bins and picture under ``/items``. Its tracking unit is fixed once
-anything records a number in it. An archived base is listed only when asked
-for.
+anything records a number in it. A base that cures is not made by the runs
+that use it (``hoard.runs``), so it is never set to be. An archived base is
+listed only when asked for.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Query, status
@@ -26,10 +28,19 @@ from hoard.api.deps import SeesCostsDep
 from hoard.api.properties import HoardPropertySummary, values_of
 from hoard.api.settings import SettingsError, found, refused_as, require_references, type_of
 from hoard.api.shapes import Page, PageDep
-from hoard.records import Base, CategoryKind, Item, ItemStatus, RecordKind
-from seneschal_core.api import OrganizationSessionDep, WriteSessionDep
+from hoard.records import AutoManufacture, Base, CategoryKind, Item, ItemStatus, RecordKind
+from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 
 router = APIRouter(prefix="/bases", tags=["bases"])
+
+
+class BaseError(StrEnum):
+    """Why a change to a base was refused."""
+
+    #: A base that cures is never set to auto-manufacture, nor given a cure
+    #: time while it is.
+    AUTO_MANUFACTURE_CURES = "AUTO_MANUFACTURE_CURES"
+
 
 _READ: dict[int | str, dict[str, Any]] = {
     401: {"description": "NOT_AUTHENTICATED"},
@@ -41,7 +52,7 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     409: {
         "description": "IN_USE, TRACKING_UNIT_IN_STOCK, TRACKING_UNIT_IN_PURCHASES, "
         "TRACKING_UNIT_IN_STOCKTAKES, TRACKING_UNIT_IN_RECIPES, TRACKING_UNIT_IN_OWN_RECIPE, "
-        "TRACKING_UNIT_IN_RUNS"
+        "TRACKING_UNIT_IN_RUNS, AUTO_MANUFACTURE_CURES"
     },
     422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN"},
 }
@@ -60,6 +71,8 @@ class BaseRead(BaseModel):
     type_id: int
     #: How many days what a run makes cures before it is used; null for none.
     cure_days: int | None
+    #: Whether a run that uses it makes it first; null for never.
+    auto_manufacture: AutoManufacture | None
     #: What is on hand at every location.
     on_hand: Decimal
     #: The moving average cost of one tracking unit; null without ``costs``.
@@ -89,6 +102,8 @@ class BaseWrite(BaseModel):
     #: its kind's default without one; left as it is unless sent.
     type_id: int | None = None
     cure_days: items.CureDays | None = None
+    #: Left as it is unless sent; null for never.
+    auto_manufacture: AutoManufacture | None = None
     notes: items.Notes | None = None
 
 
@@ -133,8 +148,12 @@ async def _write(db: AsyncSession, base: Base, body: BaseWrite) -> None:
     await require_references(db, kind=CategoryKind.BASE, units=(body.tracking_unit_id,))
     if base.id is not None:
         await items.require_tracking_unit(db, base.id, base.tracking_unit_id, body.tracking_unit_id)
+    unsent = {"auto_manufacture"} - body.model_fields_set
+    made = body.auto_manufacture if not unsent else base.auto_manufacture
+    if body.cure_days and made not in (None, AutoManufacture.OFF):
+        raise refuse(status.HTTP_409_CONFLICT, BaseError.AUTO_MANUFACTURE_CURES)
     base.sqlmodel_update(
-        body.model_dump(exclude={"start", "type_id"})
+        body.model_dump(exclude={"start", "type_id"} | unsent)
         | {
             "type_id": await type_of(
                 db, CategoryKind.BASE, body.type_id, body.category_id, base.type_id

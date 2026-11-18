@@ -6,6 +6,14 @@ All notable changes to Hoard are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Make a base when a run needs it.** Set a base to auto-manufacture, on its page beside its recipe, and a run that uses it makes it first: always, or only what is short at the run's location. A base with a cure time can't be set.
+
+### Fixed
+
+- **A product that takes your settings' auto-manufacture shows the choice on its page** again.
+
 ## [0.3.0] - 2026-11-17
 
 ### Added

@@ -1,8 +1,10 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
+import { getListBasesQueryKey, getReadBaseQueryKey, updateBase } from "@/api/generated/bases/bases";
 import {
   AutoManufacture,
+  type BaseDetail,
   type ProductDetail,
   type ProductVariationRead,
 } from "@/api/generated/hoard.schemas";
@@ -38,8 +40,16 @@ const chosen = (value: string): AutoManufacture | null =>
 
 /** Whether a store order makes what it sells: a product's own choice, and
  *  each of its variations', on its page; or, with no product, the
- *  organization's in Settings. */
-export function AutoManufactureField({ product }: { product?: ProductDetail }) {
+ *  organization's in Settings. Or, on a base's page, whether a run that uses
+ *  it makes it first. */
+export function AutoManufactureField({
+  product,
+  base,
+}: {
+  product?: ProductDetail;
+  base?: BaseDetail;
+}) {
+  if (base) return <BaseChoice base={base} />;
   return product === undefined ? <OrganizationChoice /> : <ProductChoice product={product} />;
 }
 
@@ -55,12 +65,15 @@ function Choice({
   label,
   value,
   inherits,
+  choices = "autoManufacture.choices",
   disabled,
   onChange,
 }: {
   label: string;
   value: AutoManufacture | null;
   inherits?: Inherits;
+  /** Where each choice's words are. */
+  choices?: string;
   disabled: boolean;
   onChange: (value: AutoManufacture | null) => void;
 }) {
@@ -85,7 +98,7 @@ function Choice({
           )}
           {CHOICES.map((choice) => (
             <SelectItem key={choice} value={choice}>
-              {t(`autoManufacture.choices.${choice}`)}
+              {t(`${choices}.${choice}`)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -182,6 +195,48 @@ function ProductChoice({ product }: { product: ProductDetail }) {
             onChange={(value) => saveVariation.mutate({ variation, value })}
           />
         ))}
+    </div>
+  );
+}
+
+/** A base's choice: none is to make nothing, and one that cures is refused. */
+function BaseChoice({ base }: { base: BaseDetail }) {
+  const { t } = useTranslation("sync");
+  const { t: catalog } = useTranslation("catalog");
+  const queryClient = useQueryClient();
+  const { read_only } = useSession();
+  const save = useMutation({
+    mutationFn: (value: AutoManufacture) =>
+      updateBase(base.id, {
+        name: base.name,
+        status: base.status,
+        sku: base.sku,
+        tracking_unit_id: base.tracking_unit_id,
+        low_stock_limit: base.low_stock_limit,
+        category_id: base.category_id,
+        type_id: base.type_id,
+        cure_days: base.cure_days,
+        notes: base.notes,
+        auto_manufacture: value,
+      }),
+    onSuccess: async (detail) => {
+      queryClient.setQueryData(getReadBaseQueryKey(detail.id), detail);
+      await queryClient.invalidateQueries({ queryKey: getListBasesQueryKey() });
+      toast.success(t("autoManufacture.saved"));
+    },
+    onError: (error) =>
+      toast.error(errorMessage(error, catalog, "sync:autoManufacture.saveFailed")),
+  });
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-sm text-muted-foreground">{t("autoManufacture.base.description")}</p>
+      <Choice
+        label={t("autoManufacture.base.runs")}
+        value={base.auto_manufacture ?? AutoManufacture.off}
+        choices="autoManufacture.base.choices"
+        disabled={read_only || save.isPending}
+        onChange={(value) => value && save.mutate(value)}
+      />
     </div>
   );
 }

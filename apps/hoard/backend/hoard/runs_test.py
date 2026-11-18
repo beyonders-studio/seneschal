@@ -15,6 +15,7 @@ from hoard.holds import HoldError
 from hoard.records import (
     Adjustment,
     AdjustmentKind,
+    AutoManufacture,
     Category,
     CategoryKind,
     DefaultHoldReason,
@@ -451,3 +452,113 @@ async def test_what_cures_goes_on_hold_until_its_cure_time_has_passed(
     # Reopening the run takes its lot, and its hold, back.
     await runs.reopen(db, run)
     assert (await db.exec(select(Hold))).all() == []
+
+
+async def _made(db: WriteSession, item_id: int) -> list[ProductionRun]:
+    """The runs that made ``item_id``."""
+    found = await db.exec(
+        select(ProductionRun)
+        .where(ProductionRun.item_id == item_id)
+        .order_by(col(ProductionRun.id))
+        .execution_options(populate_existing=True)
+    )
+    return list(found.all())
+
+
+async def test_a_run_makes_first_what_it_is_short_of_a_base_set_to_make(
+    db: WriteSession, main: Location, material, base, product, buy
+):
+    flour = await material("Flour")
+    await buy((flour, "20", "2"))
+    dough = await base("Dough", auto_manufacture=AutoManufacture.OUT_OF_STOCK)
+    await _recipe(db, (flour, "2"), base_id=dough.id)
+    kept = await _lot(db, dough.id, main, "D-1", "1", date(2026, 11, 1))
+    bread = await product("Bread")
+    await _recipe(db, (dough, "3"), variation_id=bread.id)
+
+    run = await _open(db, bread.id, main, initiative_id=12)
+    run = await _complete(db, run, "1", 5)
+
+    # What the dough on hand doesn't cover, made on the day, in the run's initiative.
+    [made] = await _made(db, dough.id)
+    assert (
+        made.status,
+        made.actual_quantity,
+        made.completed_on,
+        made.location_id,
+        made.initiative_id,
+    ) == (RunStatus.COMPLETED, 2, date(2026, 11, 5), main.id, 12)
+    assert await on_hand(db, flour.id) == 16
+    # The line drew what was on hand, then what was made.
+    assert await _lines(db, run) == [
+        (dough.id, 1, kept.id, True),
+        (dough.id, 2, made.output_lot_id, True),
+    ]
+    assert await on_hand(db, dough.id) == 0
+
+    # Reopening the run leaves what made the dough completed, and the dough on hand.
+    await runs.reopen(db, run)
+    [made] = await _made(db, dough.id)
+    assert made.status is RunStatus.COMPLETED
+    assert await on_hand(db, dough.id) == 3
+
+
+async def test_stock_on_hold_or_expired_is_not_counted_against_what_is_short(
+    db: WriteSession, main: Location, material, base, product, hold
+):
+    flour = await material("Flour")
+    dough = await base("Dough", auto_manufacture=AutoManufacture.OUT_OF_STOCK)
+    await _recipe(db, (flour, "1"), base_id=dough.id)
+    await hold(await _lot(db, dough.id, main, "D-1", "4", date(2026, 11, 1)))
+    await _lot(db, dough.id, main, "D-2", "2", date(2026, 10, 1), date(2026, 11, 2))
+    await _lot(db, dough.id, main, "D-3", "1", date(2026, 11, 1))
+    bread = await product("Bread")
+    await _recipe(db, (dough, "3"), variation_id=bread.id)
+
+    await _complete(db, await _open(db, bread.id, main), "1", 5)
+
+    assert [run.actual_quantity for run in await _made(db, dough.id)] == [2]
+
+
+async def test_a_base_set_to_always_make_is_made_inside_another(
+    db: WriteSession, main: Location, material, base, product
+):
+    sugar, flour = await material("Sugar"), await material("Flour")
+    syrup = await base("Syrup", auto_manufacture=AutoManufacture.ALWAYS)
+    await _recipe(db, (sugar, "1"), base_id=syrup.id)
+    await _lot(db, syrup.id, main, "S-1", "10", date(2026, 11, 1))
+    dough = await base("Dough", auto_manufacture=AutoManufacture.OUT_OF_STOCK)
+    await _recipe(db, (flour, "2"), (syrup, "1"), base_id=dough.id)
+    bread = await product("Bread")
+    await _recipe(db, (dough, "2"), variation_id=bread.id)
+
+    await _complete(db, await _open(db, bread.id, main, batches="2"), "2", 5)
+
+    # Bread takes four dough, which is made, and takes four syrup, which is
+    # made though ten are on hand.
+    assert [run.actual_quantity for run in await _made(db, dough.id)] == [4]
+    assert [run.actual_quantity for run in await _made(db, syrup.id)] == [4]
+    assert (await on_hand(db, dough.id), await on_hand(db, syrup.id)) == (0, 10)
+    assert (await on_hand(db, sugar.id), await on_hand(db, flour.id)) == (-4, -8)
+
+
+async def test_a_base_is_not_made_for_a_line_naming_its_lot_nor_without_a_recipe(
+    db: WriteSession, main: Location, material, base, product
+):
+    flour = await material("Flour")
+    dough = await base("Dough", auto_manufacture=AutoManufacture.ALWAYS)
+    await _recipe(db, (flour, "1"), base_id=dough.id)
+    named = await _lot(db, dough.id, main, "D-1", "5", date(2026, 11, 1))
+    glaze = await base("Glaze", auto_manufacture=AutoManufacture.ALWAYS)
+    bread = await product("Bread")
+    await _recipe(db, (dough, "3"), (glaze, "1"), variation_id=bread.id)
+
+    run = await _open(db, bread.id, main)
+    dough_line, _ = await runs.lines(db, run.id)
+    await runs.record_lot(db, run, dough_line, named.id)
+    await _complete(db, run, "1", 5)
+
+    assert await _made(db, dough.id) == []
+    # Glaze has no recipe to make it from, so the run takes it below zero.
+    assert await _made(db, glaze.id) == []
+    assert (await on_hand(db, dough.id), await on_hand(db, glaze.id)) == (2, -1)

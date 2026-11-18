@@ -271,7 +271,8 @@
     "TRANSFER_SAME_LOCATION": "Move it to another location.",
     "TRANSFER_LOT_ELSEWHERE": "That lot isn't at the location it's moving from.",
     "TRANSFER_OVER_BALANCE": "That's more than is there to move.",
-    "LOT_REQUIRED": "Name the lot to move: this category records every lot."
+    "LOT_REQUIRED": "Name the lot to move: this category records every lot.",
+    "AUTO_MANUFACTURE_CURES": "A {{base}} that cures can't be made by the runs that use it: they couldn't use it while it cures. Set auto-manufacture to make nothing, or give it no cure time."
   },
   "items": {
     "stock": "Stock by location",

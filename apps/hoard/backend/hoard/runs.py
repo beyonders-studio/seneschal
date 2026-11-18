@@ -21,6 +21,16 @@ line per lot, each marked assumed. A lot on hold is never consumed, and an
 item whose category records every lot is consumed only from a lot a line
 names (``hoard.holds``).
 
+Completing a run first makes the bases its lines take that are set to
+auto-manufacture (:class:`~hoard.records.AutoManufacture`), each by a run made
+at once (:func:`make`) at its location, on its completion day and in its
+initiative: all a line takes, or, for only what is out of stock, what it takes
+beyond what is usable there. Their lots are then what the lines are assumed to
+draw. A base inside a base is made the same way, as that run completes. A line
+naming a lot makes nothing, and a base that can't be made, with no recipe or
+too little to plan a batch, goes short: making one never refuses the run.
+Reopening the run leaves the runs that made them completed.
+
 Only completing a run moves stock: each line out, and the quantity made in,
 into its output lot, numbered with the run's code. ``hoard.costing`` costs it.
 When what it made cures, its lot goes on hold, curing, until its cure time
@@ -29,13 +39,14 @@ A completed run can be reopened, which takes those adjustments and the output
 lot back and returns its assumed lines to naming no lot.
 
 A run can also be made at once (:func:`make`), opened and completed together,
-as auto-manufacture makes what a store order sells. Such a run records no
+as auto-manufacture makes what a store order sells, or a base a run uses. Such a run records no
 events, and names no lot of what it consumes.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -50,6 +61,8 @@ from hoard.records import (
     PLACES,
     Adjustment,
     AdjustmentKind,
+    AutoManufacture,
+    Base,
     Lot,
     ProductionRun,
     ProductionRunLine,
@@ -342,6 +355,37 @@ async def _assume_lots(db: WriteSession, run: ProductionRun) -> list[ProductionR
     return picked
 
 
+async def _make_bases(db: WriteSession, run: ProductionRun, made_on: date) -> None:
+    """Make first the bases ``run``'s lines take, naming no lot, that are set
+    to auto-manufacture: all a line takes, or what it takes beyond what is
+    usable at the run's location. One that can't be made goes short."""
+    taking: dict[int, Decimal] = defaultdict(Decimal)
+    for line in await lines(db, run.id):
+        if line.lot_id is None:
+            taking[line.item_id] += line.quantity
+    found = await db.exec(
+        select(Base)
+        .where(
+            col(Base.id).in_(list(taking)),
+            col(Base.auto_manufacture).in_([AutoManufacture.ALWAYS, AutoManufacture.OUT_OF_STOCK]),
+        )
+        .order_by(col(Base.id))
+    )
+    for base in found.all():
+        wanted = taking[base.id]
+        if base.auto_manufacture is AutoManufacture.OUT_OF_STOCK:
+            held = (await summary.stock(db, [base.id], made_on))[base.id]
+            usable = held.get(run.location_id, summary.Stock()).usable
+            wanted = short(wanted, max(usable, Decimal(0))) or Decimal(0)
+        if wanted <= 0:
+            continue
+        # Refused only as it plans, before it writes anything: the line goes short.
+        with suppress(RunRefused):
+            await make(
+                db, base.id, run.location_id, wanted, made_on, initiative_id=run.initiative_id
+            )
+
+
 async def complete(
     db: WriteSession,
     run: ProductionRun,
@@ -351,15 +395,17 @@ async def complete(
     quiet: bool = False,
 ) -> None:
     """Complete ``run``, having made ``actual_quantity`` on ``completed_on``:
-    its lines out, from their lots, and what it made into its output lot,
-    on hold while it cures. Refused while a line names a lot on hold, or names
-    none of an item whose every lot is recorded. A ``quiet`` run records no
-    event, and its lines need name no lot."""
+    the bases it uses that are set to be made, made first, its lines out,
+    from their lots, and what it made into its output lot, on hold while it
+    cures. Refused while a line names a lot on hold, or names none of an item
+    whose every lot is recorded. A ``quiet`` run records no event, and its
+    lines need name no lot."""
     not_completed(run)
     draws = [(line.item_id, line.lot_id) for line in await lines(db, run.id)]
     refused = await holds.refusal(db, draws, named=not quiet)
     if refused is not None:
         raise RunRefused(refused)
+    await _make_bases(db, run, completed_on)
     for line in await _assume_lots(db, run):
         db.add(
             Adjustment(
