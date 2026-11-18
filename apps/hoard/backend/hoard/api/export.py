@@ -1,5 +1,8 @@
-"""Each kind of record, exported as CSV or JSON: every record of the kind in the
-organization, one row each, with every column but the organization's. Without
+"""Each kind of record, exported: every record of the kind in the
+organization. The catalogue's kinds (materials, bases, products with their
+variations, and recipes with their lines) export as CSV that reads as a
+spreadsheet and imports back (``hoard.imports.spreadsheets``); the others as
+CSV or JSON, one row each, with every column but the organization's. Without
 the ``costs`` permission, no column of what something cost or sells for is
 sent.
 
@@ -17,28 +20,23 @@ from decimal import Decimal
 from enum import Enum, StrEnum
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import inspect
 from sqlmodel import SQLModel, select
 
-from hoard.api.deps import SeesCostsDep
+from hoard.api.deps import HoardError, SeesCostsDep
+from hoard.imports import spreadsheets
 from hoard.records import (
     Adjustment,
-    Base,
     Lot,
-    Material,
-    Product,
     Purchase,
     PurchaseLine,
-    Recipe,
-    RecipeLine,
     Stocktake,
     StocktakeRow,
-    Variation,
 )
-from seneschal_core import jobs
-from seneschal_core.api import OrganizationSessionDep, SessionDep
-from seneschal_core.jobs import JobContext, JobFile, JobRead, JobResult
+from seneschal_core import jobs, organizations
+from seneschal_core.api import OrganizationSessionDep, SessionDep, refuse
+from seneschal_core.jobs import JobContext, JobError, JobFile, JobRead, JobResult
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -49,15 +47,13 @@ class ExportKind(StrEnum):
     MATERIALS = "materials"
     BASES = "bases"
     PRODUCTS = "products"
-    VARIATIONS = "variations"
+    RECIPES = "recipes"
     PURCHASES = "purchases"
     PURCHASE_LINES = "purchase_lines"
     LOTS = "lots"
     ADJUSTMENTS = "adjustments"
     STOCKTAKES = "stocktakes"
     STOCKTAKE_ROWS = "stocktake_rows"
-    RECIPES = "recipes"
-    RECIPE_LINES = "recipe_lines"
 
 
 class ExportFormat(StrEnum):
@@ -65,20 +61,24 @@ class ExportFormat(StrEnum):
     JSON = "json"
 
 
-#: Each kind's records, and their columns of what something cost or sells for.
+class ExportError(StrEnum):
+    """Why an export was refused."""
+
+    #: The catalogue's kinds export as CSV only.
+    CSV_ONLY = "CSV_ONLY"
+
+
+#: The catalogue's kinds, which export as spreadsheets that import back.
+CATALOGUE = (ExportKind.MATERIALS, ExportKind.BASES, ExportKind.PRODUCTS, ExportKind.RECIPES)
+
+#: Each other kind's records, and their columns of what something cost or sells for.
 KINDS: dict[ExportKind, tuple[type[SQLModel], frozenset[str]]] = {
-    ExportKind.MATERIALS: (Material, frozenset()),
-    ExportKind.BASES: (Base, frozenset()),
-    ExportKind.PRODUCTS: (Product, frozenset({"default_price"})),
-    ExportKind.VARIATIONS: (Variation, frozenset({"price"})),
     ExportKind.PURCHASES: (Purchase, frozenset({"discount", "shipping", "tax"})),
     ExportKind.PURCHASE_LINES: (PurchaseLine, frozenset({"unit_cost"})),
     ExportKind.LOTS: (Lot, frozenset()),
     ExportKind.ADJUSTMENTS: (Adjustment, frozenset({"unit_cost"})),
     ExportKind.STOCKTAKES: (Stocktake, frozenset()),
     ExportKind.STOCKTAKE_ROWS: (StocktakeRow, frozenset()),
-    ExportKind.RECIPES: (Recipe, frozenset()),
-    ExportKind.RECIPE_LINES: (RecipeLine, frozenset()),
 }
 
 #: The kind of job an export is.
@@ -126,7 +126,10 @@ def _csv(columns: list[str], records: list[Any]) -> str:
 @router.post(
     "/{kind}",
     status_code=status.HTTP_202_ACCEPTED,
-    responses={401: {"description": "NOT_AUTHENTICATED"}},
+    responses={
+        401: {"description": "NOT_AUTHENTICATED"},
+        422: {"description": "CSV_ONLY"},
+    },
 )
 async def export_records(
     kind: ExportKind,
@@ -136,6 +139,8 @@ async def export_records(
     file_format: Annotated[ExportFormat, Query(alias="format")] = ExportFormat.CSV,
 ) -> JobRead:
     """Queue an export of every record of ``kind``; its job's file is the export."""
+    if kind in CATALOGUE and file_format is not ExportFormat.CSV:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ExportError.CSV_ONLY)
     job = await jobs.enqueue(
         db,
         EXPORT_JOB,
@@ -149,6 +154,8 @@ async def export_records(
 async def export(job: JobContext) -> JobResult:
     """The export a job asks for: every record of its kind, oldest first, as a file."""
     kind, file_format = ExportKind(job.args["kind"]), ExportFormat(job.args["format"])
+    if kind in CATALOGUE:
+        return await _catalogue(job, kind)
     model, costs = KINDS[kind]
     mapper = inspect(model)
     columns = [
@@ -174,3 +181,19 @@ async def export(job: JobContext) -> JobResult:
     return JobResult(
         file=JobFile(content.encode(), media_type, f"{kind.value}.{file_format.value}")
     )
+
+
+async def _catalogue(job: JobContext, kind: ExportKind) -> JobResult:
+    """One of the catalogue's spreadsheets, with its suppliers by name."""
+    await job.progress("reading")
+    async with job.plugin.database.organization_session(job.organization_id) as db:
+        organization = await organizations.get(db, job.organization_id)
+        if organization is None:
+            raise JobError(HoardError.NOT_FOUND, retry=False)
+        try:
+            content = await spreadsheets.export(
+                db, job.plugin, organization.community_ref, kind.value, job.args["sees_costs"]
+            )
+        except HTTPException as refused:
+            raise JobError(str(refused.detail)) from None
+    return JobResult(file=JobFile(content.encode(), "text/csv; charset=utf-8", f"{kind.value}.csv"))
