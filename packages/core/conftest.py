@@ -148,6 +148,7 @@ async def plugin(
             app_origin=APP_ORIGIN,
             sealing_key=secrets.token_urlsafe(32),
             cookie_secure=False,
+            device_scheme="coretest",
         ),
     )
     yield plugin

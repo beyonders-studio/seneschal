@@ -115,8 +115,11 @@ def me_for(session: SessionClaims, organization: Organization) -> Me:
     )
 
 
-async def _spend(db: AsyncSession, claims: HandoffClaims, organization_id: int) -> bool:
-    """Record the handoff's ``jti``: true the first time, false after."""
+async def spend_jti(
+    db: AsyncSession, jti: str, *, organization_id: int, expires_at: datetime
+) -> bool:
+    """Record a one-time token's ``jti``: true the first time, false after. A
+    handoff and a phone app's sign-in code are each spent through it."""
     await db.execute(
         delete(HandoffRedemption).where(
             col(HandoffRedemption.expires_at) < datetime.now(UTC) - JTI_GRACE
@@ -124,7 +127,7 @@ async def _spend(db: AsyncSession, claims: HandoffClaims, organization_id: int) 
     )
     spent = await db.execute(
         insert(HandoffRedemption)
-        .values(jti=claims.jti, organization_id=organization_id, expires_at=claims.expires_at)
+        .values(jti=jti, organization_id=organization_id, expires_at=expires_at)
         .on_conflict_do_nothing(index_elements=["jti"])
         .returning(col(HandoffRedemption.jti))
     )
@@ -146,7 +149,9 @@ async def admit(plugin: Plugin, claims: HandoffClaims, *, spend: bool) -> Organi
         )
         await db.commit()
     async with plugin.database.organization_session(organization_id) as db:
-        if spend and not await _spend(db, claims, organization_id):
+        if spend and not await spend_jti(
+            db, claims.jti, organization_id=organization_id, expires_at=claims.expires_at
+        ):
             raise refuse(status.HTTP_409_CONFLICT, ErrorCode.HANDOFF_ALREADY_REDEEMED)
         await organizations.set_status(db, organization_id, claims.community_status)
         await db.commit()
