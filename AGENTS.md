@@ -61,6 +61,13 @@ every pull request.
 - **Pages** receive Initiative's one-minute handoff over the parent bridge,
   exchange it at `POST /api/v1/auth/handoff/exchange` for the app's own signed
   session, and read who is signed in at `GET /api/v1/auth/me`.
+- **At an app's own address** nobody frames the pages, so people sign in with
+  their Initiative account (Sign in with Initiative, `seneschal_core.sign_in`,
+  the manifest's `sign_in`). The session is renewed from a renewal that is
+  spent once (`sign_ins`); one presented again ends the whole sign-in. Without
+  `<APP>_SEALING_KEY` an app opens only inside Initiative. An unsafe request
+  carrying an app's cookie must come from its own origin
+  (`seneschal_core.csrf`).
 - The plug-in contract is the plug-in SDK's
   ([initiative-plugin-sdk](https://github.com/beyonders-studio/initiative-plugin-sdk)).
 - `scripts/ci/check`: what CI runs, for what the branch changed against

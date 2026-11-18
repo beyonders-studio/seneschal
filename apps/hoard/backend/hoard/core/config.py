@@ -10,6 +10,7 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from seneschal_core.sessions import load_private_key
+from seneschal_core.sign_in import Sealer, issuer_for
 
 #: ``apps/hoard/backend``, which the image lays out the same way.
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -58,6 +59,11 @@ class Settings(DatabaseSettings):
     entitlement_issuer_key_pem: str | None = Field(
         default=None, validation_alias="INITIATIVE_ENTITLEMENT_ISSUER_KEY_PEM"
     )
+    #: The secret Hoard seals what it must read back unchanged with: a
+    #: sign-in's renewal and Initiative's refresh token beside it. At least 32
+    #: characters. Unset, nobody signs in at Hoard's own address, and its
+    #: pages open only inside Initiative.
+    sealing_key: str | None = None
     #: The built pages, served from Hoard's own origin.
     static_dir: Path = BACKEND_ROOT / "static"
 
@@ -73,11 +79,25 @@ class Settings(DatabaseSettings):
         "entitlement_issuer_key_pem",
         "initiative_public_url",
         "embed_parent_origin",
+        "sealing_key",
         mode="before",
     )
     @classmethod
     def _blank_is_unset(cls, value: object) -> object:
         return value.strip() or None if isinstance(value, str) else value
+
+    @field_validator("sealing_key")
+    @classmethod
+    def _sealing_key(cls, value: str | None) -> str | None:
+        if value is not None:
+            Sealer(value)
+        return value
+
+    @property
+    def initiative_origin(self) -> str:
+        """Initiative's own address, which issues its sign-ins' ID tokens:
+        the origin that frames Hoard's pages, else its public API's."""
+        return self.embed_parent_origin or issuer_for(self.public_api_url)
 
     @property
     def public_api_url(self) -> str:

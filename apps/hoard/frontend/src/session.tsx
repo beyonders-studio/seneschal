@@ -5,7 +5,10 @@ import { useTranslation } from "react-i18next";
 
 import { exchangeHandoff, readMe } from "@/api/generated/auth/auth";
 import type { HandoffExchange, Me } from "@/api/generated/hoard.schemas";
+import { apiClient } from "@/api/mutator";
+import { StandaloneBar } from "@/components/StandaloneBar";
 import i18n from "@/i18n";
+import { browser } from "@/lib/browser";
 import {
   awaitHandoff,
   reportError,
@@ -13,7 +16,15 @@ import {
   subscribeToLocale,
   subscribeToTheme,
 } from "@/lib/parentBridge";
+import {
+  forgetSignInError,
+  goToSignIn,
+  renewSession,
+  renewWhenEnded,
+  signInError,
+} from "@/lib/standalone";
 import { applyHostTheme } from "@/lib/theme";
+import { Button } from "@/ui/button";
 import { setClock } from "@/ui/host";
 import { StatusMessage } from "@/ui/status-message";
 
@@ -36,7 +47,12 @@ const exchange = async (request: HandoffExchange): Promise<void> => {
   }
 };
 
-type SessionState = { status: "connecting" } | { status: "failed" } | { status: "ready"; me: Me };
+type SessionState =
+  | { status: "connecting" }
+  | { status: "failed" }
+  /** At Hoard's own address: the reader couldn't sign in, for `code`. */
+  | { status: "notSignedIn"; code: string }
+  | { status: "ready"; me: Me };
 
 const SessionContext = createContext<Me | null>(null);
 
@@ -48,14 +64,28 @@ export function useSession(): Me {
 }
 
 /**
- * Starts Hoard's session, then shows the page. Waits for Initiative's handoff
- * over the parent bridge, takes the reader's language, appearance and clock
- * from it, exchanges its token for Hoard's own session, and reads who that
- * session is for. Follows the reader's language, appearance and clock as they
+ * Starts Hoard's session, then shows the page.
+ *
+ * Framed by Initiative, it waits for Initiative's handoff over the parent
+ * bridge, takes the reader's language, appearance and clock from it,
+ * exchanges its token for Hoard's own session, and reads who that session is
+ * for, then follows the reader's language, appearance and clock as they
  * change them in Initiative.
+ *
+ * At Hoard's own address, it reads the session the reader's sign-in holds,
+ * renewing it when it has ended, and sends them to sign in with Initiative
+ * when there is none; the browser's language and the OS appearance stand.
  */
 export function SessionGate({ children }: { children: ReactNode }) {
-  const { t } = useTranslation();
+  const [framed] = useState(browser.framed);
+  return framed ? (
+    <FramedSession>{children}</FramedSession>
+  ) : (
+    <StandaloneSession>{children}</StandaloneSession>
+  );
+}
+
+function FramedSession({ children }: { children: ReactNode }) {
   const [state, setState] = useState<SessionState>({ status: "connecting" });
 
   useEffect(() => {
@@ -88,9 +118,72 @@ export function SessionGate({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  return <Session state={state}>{children}</Session>;
+}
+
+function StandaloneSession({ children }: { children: ReactNode }) {
+  // Read once, before anything changes the address.
+  const [code] = useState(signInError);
+  const [state, setState] = useState<SessionState>(
+    code === null ? { status: "connecting" } : { status: "notSignedIn", code }
+  );
+
+  useEffect(() => {
+    const stop = renewWhenEnded(apiClient);
+    let cancelled = false;
+    if (code !== null) {
+      forgetSignInError();
+    } else {
+      void (async () => {
+        try {
+          const me = await renewSession();
+          if (cancelled) return;
+          if (me) setState({ status: "ready", me });
+          else goToSignIn();
+        } catch {
+          if (!cancelled) setState({ status: "failed" });
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+      stop();
+    };
+  }, [code]);
+
+  return (
+    <Session state={state} standalone>
+      {children}
+    </Session>
+  );
+}
+
+function Session({
+  state,
+  standalone = false,
+  children,
+}: {
+  state: SessionState;
+  standalone?: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
   switch (state.status) {
     case "ready":
-      return <SessionContext value={state.me}>{children}</SessionContext>;
+      return (
+        <SessionContext value={state.me}>
+          {standalone && <StandaloneBar />}
+          {children}
+        </SessionContext>
+      );
+    case "notSignedIn":
+      return (
+        <StatusMessage
+          title={t("session.notSignedInTitle")}
+          description={t([`errors.${state.code}`, "errors.SIGN_IN_FAILED"])}
+          action={<Button onClick={() => goToSignIn("/")}>{t("session.signIn")}</Button>}
+        />
+      );
     case "failed":
       return (
         <StatusMessage title={t("session.failedTitle")} description={t("session.failedBody")} />
@@ -99,7 +192,7 @@ export function SessionGate({ children }: { children: ReactNode }) {
       return (
         <StatusMessage
           icon={<Loader2 className="animate-spin" />}
-          title={t("session.connecting")}
+          title={t(standalone ? "session.signingIn" : "session.connecting")}
         />
       );
   }

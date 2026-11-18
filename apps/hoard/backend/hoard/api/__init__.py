@@ -39,10 +39,12 @@ from hoard.api import (
 )
 from seneschal_core import jobs, search
 from seneschal_core.auth import router as auth_router
+from seneschal_core.sign_in import router as sign_in_router
 
 router = APIRouter(prefix="/api/v1")
 router.include_router(health.router)
 router.include_router(auth_router)
+router.include_router(sign_in_router)
 router.include_router(jobs.router)
 router.include_router(search.router)
 for area in (

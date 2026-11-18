@@ -238,3 +238,110 @@ export function useReadMe<TData = Awaited<ReturnType<typeof readMe>>, TError = E
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+/**
+ * Renew the session of a person who signed in at the app's own address.
+ * @summary Refresh Session
+ */
+export const refreshSession = (
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<Me>({ url: `/api/v1/auth/refresh`, method: "POST", signal }, options);
+};
+
+export const getRefreshSessionMutationKey = () => ["refreshSession"] as const;
+
+export const getRefreshSessionMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext>;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext> => {
+  const mutationKey = getRefreshSessionMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof refreshSession>>, void> = () => {
+    return refreshSession(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshSessionMutationResult = NonNullable<Awaited<ReturnType<typeof refreshSession>>>;
+
+export type RefreshSessionMutationError = ErrorType<void>;
+
+/**
+ * Renew the session of a person who signed in at the app's own address.
+ * @summary Refresh Session
+ */
+export const useRefreshSession = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof refreshSession>>,
+      TError,
+      void,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<Awaited<ReturnType<typeof refreshSession>>, TError, void, TContext> => {
+  return useMutation(getRefreshSessionMutationOptions(options), queryClient);
+};
+/**
+ * End the sign-in at the app's own address, and forget its cookies. The
+ * person stays signed in to Initiative.
+ * @summary Sign Out
+ */
+export const signOut = (options?: SecondParameter<typeof apiMutator>, signal?: AbortSignal) => {
+  return apiMutator<void>({ url: `/api/v1/auth/sign-out`, method: "POST", signal }, options);
+};
+
+export const getSignOutMutationKey = () => ["signOut"] as const;
+
+export const getSignOutMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext>;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext> => {
+  const mutationKey = getSignOutMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<Awaited<ReturnType<typeof signOut>>, void> = () => {
+    return signOut(requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SignOutMutationResult = NonNullable<Awaited<ReturnType<typeof signOut>>>;
+
+export type SignOutMutationError = ErrorType<unknown>;
+
+/**
+ * End the sign-in at the app's own address, and forget its cookies. The
+ * person stays signed in to Initiative.
+ * @summary Sign Out
+ */
+export const useSignOut = <TError = ErrorType<unknown>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<Awaited<ReturnType<typeof signOut>>, TError, void, TContext>;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<Awaited<ReturnType<typeof signOut>>, TError, void, TContext> => {
+  return useMutation(getSignOutMutationOptions(options), queryClient);
+};

@@ -87,6 +87,9 @@ RUNTIME: dict[str, Any] = {
             "kind": "ed25519_private_key_pem",
             "env": "HOARD_SESSION_PRIVATE_KEY_PEM",
         },
+        # Seals a sign-in's renewal at Hoard's own address, and Initiative's
+        # refresh token beside it.
+        {"id": "sealing-key", "kind": "random_bytes_32", "env": "HOARD_SEALING_KEY"},
     ],
 }
 
