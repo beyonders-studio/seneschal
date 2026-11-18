@@ -9,6 +9,7 @@ All notable changes to Hoard are recorded here. The format follows
 ### Added
 
 - **Open Hoard at its own address.** Go to Hoard's address in any browser and sign in with your Initiative account, then choose the initiative to open it in. A bar along the top lists Hoard's pages and lets you switch place or sign out. Signing out of Initiative, or losing access there, signs you out of Hoard too. Deployments set a new secret, `HOARD_SEALING_KEY`; without it, Hoard opens only inside Initiative, as before.
+- **GTINs on materials, bases and products.** Record the barcode number on what you buy or sell (a UPC, EAN or GTIN-14) beside its SKU, and search finds it by either. A product's variations each have their own, listed on the product's page. A layout that leaves the GTIN out also leaves it out of the item's form, so a business that doesn't use GTINs never sees the field.
 - **Edit the catalogue in a spreadsheet.** Export materials, bases, products and recipes from Reports › Export, edit them, and bring them back in Settings › Import › Import Hoard spreadsheets. The check lists each change, field by field, and any problems before anything is written. A column you leave out stays as it is, and nothing is deleted.
 
 ### Changed

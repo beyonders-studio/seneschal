@@ -107,7 +107,8 @@
       "marginIs": "{{margin}} ({{share}})",
       "loss": "Loss",
       "unknown": "Unknown"
-    }
+    },
+    "gtins": "GTINs"
   },
   "settings": {
     "rename": "Rename",
@@ -368,7 +369,9 @@
       "hint": "It moves at its average cost. A lot keeps its number, and its hold, at the other location. To undo a move, move the stock back.",
       "submit": "Move",
       "failed": "The stock couldn't be moved."
-    }
+    },
+    "gtin": "GTIN",
+    "gtinHint": "The barcode number on it: 8, 12, 13 or 14 digits."
   },
   "history": {
     "runs": "Production runs",

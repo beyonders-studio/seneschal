@@ -35,12 +35,14 @@ from hoard.records import (
     MAX_IMAGE_BYTES,
     Adjustment,
     AdjustmentKind,
+    Base,
     Bin,
     Image,
     Item,
     ItemKind,
     Location,
     Lot,
+    Material,
     ProductionRun,
     ProductionRunLine,
     PurchaseLine,
@@ -53,8 +55,45 @@ from hoard.records import (
 from hoard.stock import StockRefused, adjust
 from seneschal_core.api import OrganizationSessionDep, WriteSessionDep, refuse
 from seneschal_core.db import WriteSession
+from seneschal_core.gs1 import normalize_gtin
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+
+class GtinError(StrEnum):
+    """Why a GTIN was refused."""
+
+    #: Not a GTIN: 8, 12, 13 or 14 digits whose last is their check digit.
+    GTIN_INVALID = "GTIN_INVALID"
+    #: Another material, base or variation has it.
+    GTIN_TAKEN = "GTIN_TAKEN"
+
+
+#: The records that carry a GTIN, each unique among all of them.
+_GTIN_HOLDERS = (Material, Base, Variation)
+
+
+async def gtin_written(
+    db: AsyncSession, body: BaseModel, record: Material | Base | Variation
+) -> dict[str, str | None]:
+    """The GTIN a write leaves ``record`` with, as 14 digits: ``{"gtin": …}``,
+    or nothing when the write didn't send one, which leaves it as it is.
+    Refuses one that isn't a GTIN, and one another record has."""
+    if "gtin" not in body.model_fields_set:
+        return {}
+    sent = getattr(body, "gtin", None)
+    if sent is None:
+        return {"gtin": None}
+    gtin = normalize_gtin(sent)
+    if gtin is None:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, GtinError.GTIN_INVALID)
+    for model in _GTIN_HOLDERS:
+        holder = select(model.id).where(col(model.gtin) == gtin)
+        if isinstance(record, model) and record.id is not None:
+            holder = holder.where(col(model.id) != record.id)
+        if (await db.exec(holder.limit(1))).first() is not None:
+            raise refuse(status.HTTP_409_CONFLICT, GtinError.GTIN_TAKEN)
+    return {"gtin": gtin}
 
 
 class ImageError(StrEnum):

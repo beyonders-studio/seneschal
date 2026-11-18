@@ -43,9 +43,12 @@ _CHANGE: dict[int | str, dict[str, Any]] = {
     409: {
         "description": "IN_USE, TRACKING_UNIT_IN_STOCK, TRACKING_UNIT_IN_PURCHASES, "
         "TRACKING_UNIT_IN_STOCKTAKES, TRACKING_UNIT_IN_RECIPES, TRACKING_UNIT_IN_RUNS, "
-        "NOT_INVENTORIABLE"
+        "NOT_INVENTORIABLE, GTIN_TAKEN"
     },
-    422: {"description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN, AMOUNT_TOO_SMALL"},
+    422: {
+        "description": "UNIT_UNKNOWN, CATEGORY_UNKNOWN, TYPE_UNKNOWN, AMOUNT_TOO_SMALL, "
+        "GTIN_INVALID"
+    },
 }
 
 
@@ -54,6 +57,8 @@ class MaterialRead(BaseModel):
     name: str
     status: ItemStatus
     sku: str | None
+    #: Its GTIN, as 14 digits: the barcode number on it.
+    gtin: str | None
     inventoriable: bool
     #: The unit stock is counted in.
     tracking_unit_id: int
@@ -94,6 +99,8 @@ class MaterialWrite(BaseModel):
     name: items.Text
     status: ItemStatus = ItemStatus.ACTIVE
     sku: items.OptionalText = None
+    #: Its GTIN: 8, 12, 13 or 14 digits, kept as 14. Left as it is unless sent.
+    gtin: items.OptionalText = None
     inventoriable: bool = True
     tracking_unit_id: int
     purchase_unit_id: int | None = None
@@ -165,8 +172,10 @@ async def write_material(db: AsyncSession, material: Material, body: MaterialWri
         conversion = units.purchase_conversion(bought, tracking)
     except UnitRefused as refused:
         raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, refused.code) from None
+    gtin = await items.gtin_written(db, body, material)
     material.sqlmodel_update(
-        body.model_dump(exclude={"start", "type_id"})
+        body.model_dump(exclude={"start", "type_id", "gtin"})
+        | gtin
         | {
             "type_id": await type_of(
                 db, CategoryKind.MATERIAL, body.type_id, body.category_id, material.type_id

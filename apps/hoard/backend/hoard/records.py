@@ -577,6 +577,9 @@ class Material(OrganizationRow, Stamped, table=True):
     name: str
     status: ItemStatus = item_status()
     sku: str | None = None
+    #: Its GTIN, as 14 digits (``seneschal_core.gs1``): the barcode number on
+    #: it, unique in the organization across materials, bases and variations.
+    gtin: str | None = None
     inventoriable: bool = True
     #: The unit stock is counted in.
     tracking_unit_id: int = Field(sa_type=BigInteger)
@@ -626,6 +629,9 @@ class Base(OrganizationRow, Stamped, table=True):
     name: str
     status: ItemStatus = item_status()
     sku: str | None = None
+    #: Its GTIN, as 14 digits (``seneschal_core.gs1``): the barcode number on
+    #: it, unique in the organization across materials, bases and variations.
+    gtin: str | None = None
     #: The unit stock is counted in.
     tracking_unit_id: int = Field(sa_type=BigInteger)
     category_id: int | None = Field(default=None, sa_type=BigInteger)
@@ -713,6 +719,9 @@ class Variation(OrganizationRow, Stamped, table=True):
         sa_column=Column(JSONB, nullable=False, server_default=text("'{}'::jsonb")),
     )
     sku: str | None = None
+    #: Its GTIN, as 14 digits (``seneschal_core.gs1``): the barcode number on
+    #: it, unique in the organization across materials, bases and variations.
+    gtin: str | None = None
     #: Its price, when not the product's default price.
     price: Decimal | None = amount(None)
     is_default: bool = False

@@ -121,6 +121,7 @@ const BASE = {
         "last_stocktake",
         "low_stock_limit",
         "sku",
+        "gtin",
         "category",
         "type",
         "tracking_unit",
@@ -171,6 +172,12 @@ export const BASES: HoardKind<BaseRead, BaseDetail> = {
       "hoard:common.sku",
       (base) => base.sku,
       ({ item }) => item.sku
+    ),
+    builtin(
+      "gtin",
+      "catalog:items.gtin",
+      (base) => base.gtin,
+      ({ item }) => item.gtin
     ),
     builtin("category", "hoard:common.category", (base) => base.category_id, Category),
     typeField(),

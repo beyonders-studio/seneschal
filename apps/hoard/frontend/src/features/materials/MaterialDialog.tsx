@@ -17,7 +17,7 @@ import {
 } from "@/api/generated/materials/materials";
 import { useReadUnitConversion } from "@/api/generated/settings/settings";
 import { SupplierPicker } from "@/features/contacts/SupplierPicker";
-import { saveMoved, useTypeChoice } from "@/features/fields/records";
+import { saveMoved, usePagePlaces, useTypeChoice } from "@/features/fields/records";
 import { orNull } from "@/features/items/format";
 import { IdSelect } from "@/features/items/IdSelect";
 import { StatusField } from "@/features/items/ItemList";
@@ -87,6 +87,10 @@ function MaterialForm({
   const seesCosts = useSeesCosts();
   const { units, unit, categoriesOf } = useSettingsNames();
   const type = useTypeChoice(MATERIALS, material);
+  // Asked for only where the material's page shows it, or once it has one.
+  const places = usePagePlaces(MATERIALS);
+  const [gtin, setGtin] = useState(material?.gtin ?? "");
+  const asksGtin = Boolean(material?.gtin) || places(type.typeId ?? undefined, "gtin");
   const [name, setName] = useState(material?.name ?? "");
   const [status, setStatus] = useState<ItemStatus>(material?.status ?? ItemStatus.active);
   const [notes, setNotes] = useState(material?.notes ?? "");
@@ -142,6 +146,7 @@ function MaterialForm({
       status,
       notes: orNull(notes),
       sku: orNull(sku),
+      ...(asksGtin ? { gtin: orNull(gtin) } : {}),
       category_id: categoryId,
       tracking_unit_id: trackingUnitId,
       purchase_unit_id: purchaseUnitId,
@@ -170,6 +175,16 @@ function MaterialForm({
           <Field label={t("hoard:common.sku")}>
             <Input value={sku} onChange={(event) => setSku(event.target.value)} />
           </Field>
+          {asksGtin && (
+            <Field label={t("items.gtin")} hint={t("items.gtinHint")}>
+              <Input
+                value={gtin}
+                inputMode="numeric"
+                autoComplete="off"
+                onChange={(event) => setGtin(event.target.value)}
+              />
+            </Field>
+          )}
           <Field label={t("hoard:common.category")}>
             <IdSelect
               value={categoryId}

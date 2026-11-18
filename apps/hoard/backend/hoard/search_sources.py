@@ -87,11 +87,20 @@ MATERIALS = SearchSource(
     table="materials",
     title="r.name",
     path="'/stock/materials/' || r.id",
-    codes="ARRAY[r.sku, r.supplier_code]",
+    codes="ARRAY[r.sku, r.gtin, r.supplier_code]",
     body=("r.ingredient_name", "r.notes", _text_properties("material_id")),
     subtitle=_TYPE,
     archived="r.status = 'archived'",
-    watch=("name", "sku", "supplier_code", "ingredient_name", "notes", "status", "type_id"),
+    watch=(
+        "name",
+        "sku",
+        "gtin",
+        "supplier_code",
+        "ingredient_name",
+        "notes",
+        "status",
+        "type_id",
+    ),
     dependencies=(_properties("material_id"), _type("materials")),
 )
 
@@ -100,11 +109,11 @@ BASES = SearchSource(
     table="bases",
     title="r.name",
     path="'/stock/bases/' || r.id",
-    codes="ARRAY[r.sku]",
+    codes="ARRAY[r.sku, r.gtin]",
     body=("r.notes", _text_properties("base_id")),
     subtitle=_TYPE,
     archived="r.status = 'archived'",
-    watch=("name", "sku", "notes", "status", "type_id"),
+    watch=("name", "sku", "gtin", "notes", "status", "type_id"),
     dependencies=(_properties("base_id"), _type("bases")),
 )
 
@@ -124,7 +133,8 @@ PRODUCTS = SearchSource(
     table="products",
     title="r.name",
     path="'/stock/products/' || r.id",
-    codes="ARRAY(SELECT v.sku FROM variations v WHERE v.product_id = r.id ORDER BY v.id)",
+    codes="""ARRAY(SELECT c FROM variations v, LATERAL unnest(ARRAY[v.sku, v.gtin]) c
+                    WHERE v.product_id = r.id ORDER BY v.id)""",
     body=(
         """(SELECT string_agg(a.value, ' ' ORDER BY v.id)
              FROM variations v, jsonb_each_text(v.attributes) a WHERE v.product_id = r.id)""",
@@ -136,7 +146,7 @@ PRODUCTS = SearchSource(
     watch=("name", "status", "type_id"),
     dependencies=(
         SearchDependency(
-            "variations", "SELECT d.product_id", watch=("product_id", "sku", "attributes")
+            "variations", "SELECT d.product_id", watch=("product_id", "sku", "gtin", "attributes")
         ),
         SearchDependency(
             "listings",
