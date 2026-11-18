@@ -1,6 +1,11 @@
 import { useTranslation } from "react-i18next";
 
-import { CategoryKind, Picking, type SettingsCategoryRead } from "@/api/generated/hoard.schemas";
+import {
+  CategoryKind,
+  LotScan,
+  Picking,
+  type SettingsCategoryRead,
+} from "@/api/generated/hoard.schemas";
 import {
   createSettingsCategory,
   deleteSettingsCategory,
@@ -39,6 +44,17 @@ export function CategoriesSection() {
         failed={(error) => errorMessage(error, t, "holds:picking.failed")}
       />
       <SettingChoice
+        label={t("holds:lotScan.label", { name: category.name })}
+        value={category.lot_scan}
+        choices={Object.values(LotScan).map((rule) => ({
+          value: rule,
+          label: t(`holds:lotScan.rules.${rule}`),
+        }))}
+        save={(lot_scan) => updateSettingsCategory(category.id, { lot_scan })}
+        queryKey={queryKey}
+        failed={(error) => errorMessage(error, t, "holds:lotScan.failed")}
+      />
+      <SettingChoice
         label={t("settings.categories.defaultType", { name: category.name })}
         value={category.default_type_id === null ? NO_TYPE : String(category.default_type_id)}
         choices={[
@@ -58,6 +74,7 @@ export function CategoriesSection() {
   return (
     <SettingsSection id="categories" title={t("settings.categories.title")}>
       <p className="text-sm text-muted-foreground">{t("holds:picking.hint")}</p>
+      <p className="text-sm text-muted-foreground">{t("holds:lotScan.hint")}</p>
       <p className="text-sm text-muted-foreground">{t("settings.categories.typeHint")}</p>
       {Object.values(CategoryKind).map((kind) => (
         <div key={kind} className="flex flex-col gap-2">

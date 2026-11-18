@@ -46,6 +46,7 @@ from hoard.records import (
     DefaultReason,
     ItemType,
     Location,
+    LotScan,
     OrganizationSettings,
     Picking,
     Regime,
@@ -201,6 +202,8 @@ class SettingsCategoryRead(BaseModel):
     name: str
     #: Which of its items' lots goes first.
     picking: Picking
+    #: How its items' shipment lines choose their lots.
+    lot_scan: LotScan
     #: The type a record made in it takes, unless another is chosen.
     default_type_id: int | None
 
@@ -209,6 +212,7 @@ class SettingsCategoryCreate(BaseModel):
     kind: CategoryKind
     name: Name
     picking: Picking = Picking.EARLIEST_EXPIRY
+    lot_scan: LotScan = LotScan.BY_HAND
     default_type_id: int | None = None
 
 
@@ -219,6 +223,7 @@ class SettingsCategoryUpdate(BaseModel):
 
     name: Name | None = None
     picking: Picking | None = None
+    lot_scan: LotScan | None = None
     default_type_id: int | None = None
 
 

@@ -42,6 +42,8 @@ export const shipmentLine = (
   quantity: "4.000000",
   lot: null,
   assumed: false,
+  lot_source: null,
+  lot_scan: "by_hand",
   lots: [orderLot],
   returns: [],
   ...overrides,

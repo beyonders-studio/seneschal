@@ -1602,6 +1602,31 @@ export interface LotRead {
 }
 
 /**
+ * How a category's items' shipment lines choose their lots, which an
+ * admin sets: by hand, as Hoard has always let them; with a warning for a
+ * lot chosen by hand; or only by scanning its label, an admin alone
+ * choosing one by hand.
+ */
+export type LotScan = (typeof LotScan)[keyof typeof LotScan];
+
+export const LotScan = {
+  by_hand: "by_hand",
+  warn: "warn",
+  required: "required",
+} as const;
+
+/**
+ * How a shipment line's lot was chosen; none where Hoard assumes it.
+ */
+export type LotSource = (typeof LotSource)[keyof typeof LotSource];
+
+export const LotSource = {
+  scanned: "scanned",
+  chosen: "chosen",
+  admin: "admin",
+} as const;
+
+/**
  * A material as it is added, with where it starts.
  */
 export interface MaterialCreate {
@@ -1828,6 +1853,8 @@ export interface OrderShipmentLineRead {
   quantity: string;
   lot: OrderLot | null;
   assumed: boolean;
+  lot_source: LotSource | null;
+  lot_scan: LotScan;
   lots: OrderLot[];
   returns: OrderReturnRead[];
 }
@@ -2894,6 +2921,7 @@ export interface SettingsCategoryCreate {
    */
   name: string;
   picking?: Picking;
+  lot_scan?: LotScan;
   default_type_id?: number | null;
 }
 
@@ -2902,6 +2930,7 @@ export interface SettingsCategoryRead {
   kind: CategoryKind;
   name: string;
   picking: Picking;
+  lot_scan: LotScan;
   default_type_id: number | null;
 }
 
@@ -2913,6 +2942,7 @@ export interface SettingsCategoryRead {
 export interface SettingsCategoryUpdate {
   name?: string | null;
   picking?: Picking | null;
+  lot_scan?: LotScan | null;
   default_type_id?: number | null;
 }
 
@@ -3086,6 +3116,29 @@ export interface ShipmentReturnCreate {
   quantity: number | string;
   dated_on?: string | null;
   damaged?: boolean;
+}
+
+/**
+ * A scan of a lot's label, onto a pending shipment.
+ */
+export interface ShipmentScan {
+  /**
+   * @minLength 1
+   * @maxLength 2048
+   */
+  text: string;
+  gs1?: boolean | null;
+}
+
+/**
+ * The order, with the line the scanned lot was placed on.
+ */
+export interface ShipmentScanRead {
+  order: OrderRead;
+  line_id: number;
+  lot_id: number;
+  split: boolean;
+  not_first: boolean;
 }
 
 export interface ShipmentShip {

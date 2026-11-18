@@ -16,18 +16,21 @@ what comes back of it are recorded.
 from __future__ import annotations
 
 from datetime import date
+from enum import StrEnum
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
 from hoard import shipments
+from hoard.api import scans
 from hoard.api.adjustments import NOT_FOUND, Responses, changes, known, location_or_main
 from hoard.api.deps import HoardError
 from hoard.api.orders import OrderRead, Positive, Text, describe_order, refuse_store_owned
-from hoard.records import Order, ReturnLine, Shipment, ShipmentLine
+from hoard.records import Lot, LotSource, Order, ReturnLine, Shipment, ShipmentLine
 from hoard.shipments import Pick, ShipmentError, ShipmentRefused
-from seneschal_core.api import WriteSessionDep, refuse
+from seneschal_core.api import SessionDep, WriteSessionDep, refuse
 from seneschal_core.db import WriteSession
+from seneschal_core.sessions import SessionClaims
 
 router = APIRouter(prefix="/shipments", tags=["shipments"])
 
@@ -35,11 +38,22 @@ REFUSED: Responses = {
     409: {
         "description": "SHIPMENT_SHIPPED, SHIPMENT_NOT_SHIPPED, SHIPMENT_RETURNED, "
         "SHIPMENT_CANCELLED, SHIPMENT_EMPTY, SHIPMENT_FROM_HISTORY, ORDER_CANCELLED, "
-        "MANAGED_BY_STORE"
+        "MANAGED_BY_STORE, LOT_SCAN_REQUIRED, LOT_ON_HOLD, LOT_REQUIRED"
     },
     422: {
         "description": "SHIPMENT_LINE_NOT_SHIPPABLE, SHIPMENT_OVER_ORDER, "
         "SHIPMENT_LOT_MISMATCH, RETURN_OVER_SHIPPED"
+    },
+}
+#: What a scan onto a shipment may be refused for besides.
+SCAN_REFUSED: Responses = {
+    409: {
+        "description": "SHIPMENT_SHIPPED, SHIPMENT_CANCELLED, LOT_ON_HOLD, SCAN_LOT_SHORT, "
+        "SCAN_ITEM_DONE"
+    },
+    422: {
+        "description": "SCAN_AMBIGUOUS, SCAN_NAMES_NO_LOT, SCAN_LOT_NOT_FOUND, "
+        "SCAN_NOT_ON_SHIPMENT, SHIPMENT_LOT_MISMATCH"
     },
 }
 #: What was asked of a shipment that no state of it allows.
@@ -49,8 +63,20 @@ _INVALID = frozenset(
         ShipmentError.SHIPMENT_OVER_ORDER,
         ShipmentError.SHIPMENT_LOT_MISMATCH,
         ShipmentError.RETURN_OVER_SHIPPED,
+        ShipmentError.SCAN_NOT_ON_SHIPMENT,
     }
 )
+
+
+class ScanError(StrEnum):
+    """Why a scan placed no lot on a shipment, before the shipment was asked."""
+
+    #: A scanner may have dropped a separator: the label's lot isn't certain.
+    SCAN_AMBIGUOUS = "SCAN_AMBIGUOUS"
+    #: The scan names an item but no lot: scan the lot's label.
+    SCAN_NAMES_NO_LOT = "SCAN_NAMES_NO_LOT"
+    #: The label's lot isn't one Hoard holds at the shipment's location.
+    SCAN_LOT_NOT_FOUND = "SCAN_LOT_NOT_FOUND"
 
 
 def _refused(refused: ShipmentRefused) -> Exception:
@@ -98,7 +124,9 @@ class ShipmentCreate(BaseModel):
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, responses={**NOT_FOUND, **REFUSED})
-async def create_shipment(db: WriteSessionDep, body: ShipmentCreate) -> OrderRead:
+async def create_shipment(
+    db: WriteSessionDep, session: SessionDep, body: ShipmentCreate
+) -> OrderRead:
     """Plan a shipment of an order, pending."""
     order = await known(db, Order, body.order_id)
     await refuse_store_owned(db, order)
@@ -107,7 +135,8 @@ async def create_shipment(db: WriteSessionDep, body: ShipmentCreate) -> OrderRea
         if body.location_id is None
         else await location_or_main(db, body.location_id)
     )
-    picks = [Pick(line.order_line_id, line.quantity, line.lot_id) for line in body.lines]
+    source = _by_hand(session)
+    picks = [Pick(line.order_line_id, line.quantity, line.lot_id, source) for line in body.lines]
     try:
         shipment = await shipments.add(db, order, location_id, picks)
     except ShipmentRefused as refused:
@@ -193,6 +222,12 @@ async def unship_shipment(db: WriteSessionDep, shipment_id: int) -> OrderRead:
     return await _order_of(db, shipment)
 
 
+def _by_hand(session: SessionClaims) -> LotSource:
+    """How a lot chosen by hand was chosen: by an admin, who may where a scan
+    is required, or by a member."""
+    return LotSource.ADMIN if session.admin else LotSource.CHOSEN
+
+
 async def _line(db: WriteSession, shipment_id: int, line_id: int) -> tuple[Shipment, ShipmentLine]:
     shipment = await known(db, Shipment, shipment_id)
     line = await known(db, ShipmentLine, line_id)
@@ -211,7 +246,11 @@ class ShipmentLineUpdate(BaseModel):
 
 @router.patch("/{shipment_id}/lines/{line_id}", responses={**NOT_FOUND, **REFUSED})
 async def update_shipment_line(
-    db: WriteSessionDep, shipment_id: int, line_id: int, body: ShipmentLineUpdate
+    db: WriteSessionDep,
+    session: SessionDep,
+    shipment_id: int,
+    line_id: int,
+    body: ShipmentLineUpdate,
 ) -> OrderRead:
     """Change how much a pending shipment's line sends, or the lot it draws.
     Only its lot changes while the order's store manages the order."""
@@ -223,7 +262,7 @@ async def update_shipment_line(
         if "quantity" in sent:
             await shipments.set_quantity(db, shipment, line, sent["quantity"])
         if "lot_id" in sent:
-            await shipments.set_lot(db, shipment, line, sent["lot_id"])
+            await shipments.set_lot(db, shipment, line, sent["lot_id"], _by_hand(session))
     except ShipmentRefused as refused:
         raise _refused(refused) from None
     await db.commit()
@@ -241,6 +280,59 @@ async def delete_shipment_line(db: WriteSessionDep, shipment_id: int, line_id: i
         raise _refused(refused) from None
     await db.commit()
     return await _order_of(db, shipment)
+
+
+class ShipmentScan(BaseModel):
+    """A scan of a lot's label, onto a pending shipment."""
+
+    text: str = Field(min_length=1, max_length=2048)
+    #: What the scanner knew of the symbol (``POST /scans``).
+    gs1: bool | None = None
+
+
+class ShipmentScanRead(BaseModel):
+    """The order, with the line the scanned lot was placed on."""
+
+    order: OrderRead
+    line_id: int
+    lot_id: int
+    #: The line sent more than the lot holds, so the rest went to a new line
+    #: that waits for another scan.
+    split: bool
+    #: Another lot is the one the item's picking rule takes first.
+    not_first: bool
+
+
+@router.post("/{shipment_id}/scans", responses={**NOT_FOUND, **SCAN_REFUSED})
+async def scan_onto_shipment(
+    db: WriteSessionDep, shipment_id: int, body: ShipmentScan
+) -> ShipmentScanRead:
+    """Place the lot a scanned label names on the pending shipment's line of
+    its item, as scanned (``hoard.shipments.scan_lot``)."""
+    shipment = await known(db, Shipment, shipment_id)
+    read = await scans.resolve(
+        db, scans.ScanAsk(text=body.text, gs1=body.gs1, location_id=shipment.location_id)
+    )
+    if "ambiguous" in read.problems:
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, ScanError.SCAN_AMBIGUOUS)
+    if not read.lots:
+        code = ScanError.SCAN_LOT_NOT_FOUND if read.lot else ScanError.SCAN_NAMES_NO_LOT
+        raise refuse(status.HTTP_422_UNPROCESSABLE_CONTENT, code)
+    lots = [await db.get_one(Lot, each.id) for each in read.lots]
+    try:
+        scanned = await shipments.scan_lot(db, shipment, lots)
+    except ShipmentRefused as refused:
+        raise _refused(refused) from None
+    line_id, lot_id = scanned.line.id, scanned.line.lot_id
+    assert lot_id is not None
+    await db.commit()
+    return ShipmentScanRead(
+        order=await _order_of(db, shipment),
+        line_id=line_id,
+        lot_id=lot_id,
+        split=scanned.split,
+        not_first=scanned.not_first,
+    )
 
 
 class ShipmentReturnCreate(BaseModel):

@@ -77,5 +77,15 @@
     "HOLD_ENDED": "That hold has already ended.",
     "HOLD_NOT_READY": "It isn't ready yet: release it on or after its ready date.",
     "DISCARD_OVER_BALANCE": "That's more than the lot holds."
+  },
+  "lotScan": {
+    "hint": "Each category's scanning rule says how a shipment's lots are chosen: by hand, with a warning when one is chosen by hand, or only by scanning its label. Where a scan is required, only admins can choose a lot by hand.",
+    "label": "How {{name}} lots are chosen when shipping",
+    "rules": {
+      "by_hand": "Scan or choose by hand",
+      "warn": "Warn when chosen by hand",
+      "required": "Require a scan"
+    },
+    "failed": "The scanning rule couldn't be saved."
   }
 }

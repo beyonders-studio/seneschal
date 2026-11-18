@@ -18,6 +18,8 @@ import type {
   ShipmentCreate,
   ShipmentLineUpdate,
   ShipmentReturnCreate,
+  ShipmentScan,
+  ShipmentScanRead,
   ShipmentShip,
   ShipmentUpdate,
 } from "../hoard.schemas";
@@ -637,6 +639,101 @@ export const useDeleteShipmentLine = <TError = ErrorType<void>, TContext = unkno
   TContext
 > => {
   return useMutation(getDeleteShipmentLineMutationOptions(options), queryClient);
+};
+/**
+ * Place the lot a scanned label names on the pending shipment's line of
+ * its item, as scanned (``hoard.shipments.scan_lot``).
+ * @summary Scan Onto Shipment
+ */
+export const scanOntoShipment = (
+  shipmentId: number,
+  shipmentScan: BodyType<ShipmentScan>,
+  options?: SecondParameter<typeof apiMutator>,
+  signal?: AbortSignal
+) => {
+  return apiMutator<ShipmentScanRead>(
+    {
+      url: `/api/v1/shipments/${shipmentId}/scans`,
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      data: shipmentScan,
+      signal,
+    },
+    options
+  );
+};
+
+export const getScanOntoShipmentMutationKey = () => ["scanOntoShipment"] as const;
+
+export const getScanOntoShipmentMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scanOntoShipment>>,
+    TError,
+    ScanOntoShipmentMutationVariables,
+    TContext
+  >;
+  request?: SecondParameter<typeof apiMutator>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scanOntoShipment>>,
+  TError,
+  ScanOntoShipmentMutationVariables,
+  TContext
+> => {
+  const mutationKey = getScanOntoShipmentMutationKey();
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation && "mutationKey" in options.mutation && options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scanOntoShipment>>,
+    ScanOntoShipmentMutationVariables
+  > = (props) => {
+    const { shipmentId, data } = props ?? {};
+
+    return scanOntoShipment(shipmentId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScanOntoShipmentMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scanOntoShipment>>
+>;
+export type ScanOntoShipmentMutationBody = BodyType<ShipmentScan>;
+export type ScanOntoShipmentMutationError = ErrorType<void>;
+export type ScanOntoShipmentMutationVariables = {
+  shipmentId: number;
+  data: BodyType<ShipmentScan>;
+};
+
+/**
+ * Place the lot a scanned label names on the pending shipment's line of
+ * its item, as scanned (``hoard.shipments.scan_lot``).
+ * @summary Scan Onto Shipment
+ */
+export const useScanOntoShipment = <TError = ErrorType<void>, TContext = unknown>(
+  options?: {
+    mutation?: UseMutationOptions<
+      Awaited<ReturnType<typeof scanOntoShipment>>,
+      TError,
+      ScanOntoShipmentMutationVariables,
+      TContext
+    >;
+    request?: SecondParameter<typeof apiMutator>;
+  },
+  queryClient?: QueryClient
+): UseMutationResult<
+  Awaited<ReturnType<typeof scanOntoShipment>>,
+  TError,
+  ScanOntoShipmentMutationVariables,
+  TContext
+> => {
+  return useMutation(getScanOntoShipmentMutationOptions(options), queryClient);
 };
 /**
  * Record what came back of a shipped line: restocked into the lot it
