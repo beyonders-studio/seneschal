@@ -581,6 +581,16 @@ export interface BaseWrite {
 }
 
 /**
+ * The bundle the image carries, and its signed statement when it has one.
+ */
+export interface BundleManifest {
+  version: string;
+  url: string;
+  statement: string | null;
+  signature: string | null;
+}
+
+/**
  * The kinds of record a category sorts, and a stocktake counts.
  */
 export type CategoryKind = (typeof CategoryKind)[keyof typeof CategoryKind];
