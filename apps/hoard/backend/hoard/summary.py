@@ -374,6 +374,25 @@ class Pricing:
         return share(self.margin, self.price)
 
 
+async def store_prices(db: AsyncSession, variation_ids: Iterable[int]) -> dict[int, Decimal]:
+    """The price a synced store's listing holds for each variation it lists
+    with one, which shows in place of the variation's own."""
+    found = (
+        await db.exec(
+            select(col(Listing.item_id), col(Listing.price))
+            .join(Store, col(Store.id) == Listing.store_id)
+            .where(
+                col(Listing.item_id).in_(list(variation_ids)),
+                col(Listing.price).is_not(None),
+                col(Store.imported_at).is_not(None),
+            )
+            .ext(distinct_on(col(Listing.item_id)))
+            .order_by(col(Listing.item_id), col(Listing.id))
+        )
+    ).all()
+    return {item_id: price for item_id, price in found if item_id is not None and price is not None}
+
+
 async def pricing(db: AsyncSession, variation_ids: Iterable[int]) -> dict[int, Pricing]:
     """Each variation's cost, its price and its margin."""
     ids = list(set(variation_ids))
@@ -390,21 +409,7 @@ async def pricing(db: AsyncSession, variation_ids: Iterable[int]) -> dict[int, P
         variation.id: variation.price if variation.price is not None else product.default_price
         for variation, product in rows
     }
-    listed = dict(
-        (
-            await db.exec(
-                select(col(Listing.item_id), col(Listing.price))
-                .join(Store, col(Store.id) == Listing.store_id)
-                .where(
-                    col(Listing.item_id).in_(ids),
-                    col(Listing.price).is_not(None),
-                    col(Store.imported_at).is_not(None),
-                )
-                .ext(distinct_on(col(Listing.item_id)))
-                .order_by(col(Listing.item_id), col(Listing.id))
-            )
-        ).all()
-    )
+    listed = await store_prices(db, ids)
     held = (
         await db.exec(
             select(Recipe).where(
